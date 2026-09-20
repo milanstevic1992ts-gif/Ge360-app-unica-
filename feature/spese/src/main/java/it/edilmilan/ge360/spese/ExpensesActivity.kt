@@ -293,23 +293,23 @@ class ExpensesActivity : AppCompatActivity() {
             it.scope == FinanceScope.PRIVATE && it.type == FinanceType.EXPENSE
         }.sumOf { it.amount }
 
-        monthLabel.text = "\${month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }} \${month.year}"
+        monthLabel.text = "${month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }} ${month.year}"
 
         balanceValue.text = euro(income - expense)
-        balanceDetail.text = "Entrate \${euro(income)} · Uscite \${euro(expense)}"
+        balanceDetail.text = "Entrate ${euro(income)} · Uscite ${euro(expense)}"
         incomeValue.text = euro(income)
         expenseValue.text = euro(expense)
 
         businessValue.text = euro(businessIncome - businessExpense)
-        businessDetail.text = "Entrate \${euro(businessIncome)}\\nUscite \${euro(businessExpense)}"
+        businessDetail.text = "Entrate ${euro(businessIncome)}\nUscite ${euro(businessExpense)}"
 
         privateValue.text = euro(privateIncome - privateExpense)
-        privateDetail.text = "Entrate \${euro(privateIncome)}\\nUscite \${euro(privateExpense)}"
+        privateDetail.text = "Entrate ${euro(privateIncome)}\nUscite ${euro(privateExpense)}"
 
         visibleCountLabel.text = if (activeFilter == FinanceStore.FILTER_ALL) {
-            "Movimenti · \${rows.size} visibili"
+            "Movimenti · ${rows.size} visibili"
         } else {
-            "Movimenti · \${rows.size} visibili · $activeFilter"
+            "Movimenti · ${rows.size} visibili · $activeFilter"
         }
     }
 
@@ -370,7 +370,7 @@ class ExpensesActivity : AppCompatActivity() {
 
         val jobsites = jobsiteStore.list()
         val jobsiteLabels = mutableListOf("Nessun cantiere").apply {
-            addAll(jobsites.map { "\${it.code} · \${it.displayTitle()}" })
+            addAll(jobsites.map { "${it.code} · ${it.displayTitle()}" })
         }
         val jobsiteSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@ExpensesActivity, android.R.layout.simple_spinner_dropdown_item, jobsiteLabels)
