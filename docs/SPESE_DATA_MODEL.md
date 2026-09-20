@@ -36,6 +36,28 @@ Un movimento `BUSINESS` può essere:
 
 `jobsiteCode` e `jobsiteTitle` sono snapshot leggibili per la UI e per gli export, ma la chiave vera resta sempre `jobsiteId`.
 
+
+## Dashboard finanziaria
+
+La schermata **Spese** usa i movimenti esistenti come un cruscotto mensile. Mostra:
+
+- saldo complessivo del mese;
+- totale entrate e totale uscite;
+- saldo Azienda con dettaglio entrate/uscite;
+- saldo Privato con dettaglio entrate/uscite;
+- numero di movimenti visibili e filtro attivo.
+
+Le card del dashboard sono anche filtri rapidi. Restano disponibili filtri combinati per **Uscite azienda**, **Uscite private**, **Entrate azienda** ed **Entrate private**.
+
+### Inserimento movimento
+
+L'inserimento usa due scelte esplicite:
+
+1. **Uscita / Entrata**;
+2. **Azienda / Privato**.
+
+La selezione dell'ambito cambia le categorie proposte. Il collegamento a un cantiere viene mostrato soltanto per i movimenti aziendali. I movimenti privati continuano a non conservare alcun `jobsiteId`.
+
 ## Riepilogo cantiere
 
 Per ogni `jobsiteId` il modulo calcola:
