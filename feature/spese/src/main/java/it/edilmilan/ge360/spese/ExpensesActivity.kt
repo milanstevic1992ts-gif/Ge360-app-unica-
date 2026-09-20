@@ -37,10 +37,19 @@ class ExpensesActivity : AppCompatActivity() {
     private lateinit var store: FinanceStore
     private lateinit var jobsiteStore: JobsiteStore
     private lateinit var searchInput: EditText
-    private lateinit var summaryLabel: TextView
     private lateinit var monthLabel: TextView
+    private lateinit var balanceValue: TextView
+    private lateinit var balanceDetail: TextView
+    private lateinit var incomeValue: TextView
+    private lateinit var expenseValue: TextView
+    private lateinit var businessValue: TextView
+    private lateinit var businessDetail: TextView
+    private lateinit var privateValue: TextView
+    private lateinit var privateDetail: TextView
+    private lateinit var visibleCountLabel: TextView
     private lateinit var listView: ListView
     private lateinit var adapter: FinanceAdapter
+    private val filterButtons = mutableMapOf<String, MaterialButton>()
     private var activeFilter = FinanceStore.FILTER_ALL
     private var pendingImportReplace = false
 
@@ -66,7 +75,7 @@ class ExpensesActivity : AppCompatActivity() {
         root.addView(buildScreenHeaderWithSubtitle(
             context = this,
             title = "Spese",
-            subtitle = "Entrate, uscite e costi per cantiere",
+            subtitle = "Dashboard entrate, uscite, privato e azienda",
             onBack = { finish() },
             trailingLabel = "Dati",
             onTrailingClick = { showDataMenu() }
@@ -75,15 +84,65 @@ class ExpensesActivity : AppCompatActivity() {
         monthLabel = TextView(this).apply {
             textSize = 17f
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), dp(10), dp(4), dp(2))
+            setPadding(dp(4), dp(10), dp(4), dp(8))
         }
         root.addView(monthLabel)
 
-        summaryLabel = TextView(this).apply {
-            textSize = 14f
-            setPadding(dp(4), dp(2), dp(4), dp(8))
+        root.addView(metricCard(
+            title = "Saldo del mese",
+            onClick = { setActiveFilter(FinanceStore.FILTER_ALL) },
+            bind = { value, detail ->
+                balanceValue = value
+                balanceDetail = detail
+            }
+        ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(104)).apply {
+            bottomMargin = dp(8)
+        })
+
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(metricCard(
+                title = "Entrate",
+                onClick = { setActiveFilter("Entrate") },
+                bind = { value, _ -> incomeValue = value }
+            ), LinearLayout.LayoutParams(0, dp(108), 1f).apply { marginEnd = dp(4) })
+            addView(metricCard(
+                title = "Uscite",
+                onClick = { setActiveFilter("Uscite") },
+                bind = { value, _ -> expenseValue = value }
+            ), LinearLayout.LayoutParams(0, dp(108), 1f).apply { marginStart = dp(4) })
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(108)).apply {
+            bottomMargin = dp(8)
+        })
+
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(metricCard(
+                title = "Azienda",
+                onClick = { setActiveFilter("Azienda") },
+                bind = { value, detail ->
+                    businessValue = value
+                    businessDetail = detail
+                }
+            ), LinearLayout.LayoutParams(0, dp(114), 1f).apply { marginEnd = dp(4) })
+            addView(metricCard(
+                title = "Privato",
+                onClick = { setActiveFilter("Privato") },
+                bind = { value, detail ->
+                    privateValue = value
+                    privateDetail = detail
+                }
+            ), LinearLayout.LayoutParams(0, dp(114), 1f).apply { marginStart = dp(4) })
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(114)).apply {
+            bottomMargin = dp(8)
+        })
+
+        visibleCountLabel = TextView(this).apply {
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(4), dp(4), dp(4), dp(6))
         }
-        root.addView(summaryLabel)
+        root.addView(visibleCountLabel)
 
         searchInput = EditText(this).apply {
             hint = "Cerca categoria, nota, cantiere, data…"
@@ -99,15 +158,17 @@ class ExpensesActivity : AppCompatActivity() {
 
         val filters = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         FinanceStore.FILTERS.forEach { filter ->
-            filters.addView(MaterialButton(this).apply {
-                text = filter
-                textSize = 12f
-                setOnClickListener {
-                    activeFilter = filter
-                    loadData()
-                }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginEnd = dp(6) })
+            val button = MaterialButton(this).apply {
+                textSize = 11f
+                setOnClickListener { setActiveFilter(filter) }
+            }
+            filterButtons[filter] = button
+            filters.addView(
+                button,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginEnd = dp(6) }
+            )
         }
+        refreshFilterButtons()
         root.addView(HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(filters)
@@ -129,15 +190,79 @@ class ExpensesActivity : AppCompatActivity() {
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(MaterialButton(this@ExpensesActivity).apply {
-                text = "Riepilogo cantieri"
+                text = "Cantieri"
                 setOnClickListener { showJobsiteSummary() }
-            }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) })
+            }, LinearLayout.LayoutParams(0, dp(54), 0.8f).apply { marginEnd = dp(4) })
             addView(MaterialButton(this@ExpensesActivity).apply {
-                text = "+ Movimento"
-                setOnClickListener { showEditor(FinanceRecord(date = LocalDate.now().toString())) }
-            }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(6) })
+                text = "+ Uscita"
+                setOnClickListener {
+                    showEditor(
+                        FinanceRecord(date = LocalDate.now().toString(), type = FinanceType.EXPENSE),
+                        FinanceType.EXPENSE
+                    )
+                }
+            }, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
+                marginStart = dp(4)
+                marginEnd = dp(4)
+            })
+            addView(MaterialButton(this@ExpensesActivity).apply {
+                text = "+ Entrata"
+                setOnClickListener {
+                    showEditor(
+                        FinanceRecord(date = LocalDate.now().toString(), type = FinanceType.INCOME),
+                        FinanceType.INCOME
+                    )
+                }
+            }, LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginStart = dp(4) })
         })
         return root
+    }
+
+    private fun metricCard(
+        title: String,
+        onClick: () -> Unit,
+        bind: (TextView, TextView) -> Unit
+    ): MaterialCardView {
+        val value = TextView(this).apply {
+            text = euro(0.0)
+            textSize = 20f
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        val detail = TextView(this).apply {
+            textSize = 11.5f
+            setPadding(0, dp(4), 0, 0)
+        }
+        bind(value, detail)
+        return MaterialCardView(this).apply {
+            radius = dp(18).toFloat()
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            addView(LinearLayout(this@ExpensesActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                addView(TextView(this@ExpensesActivity).apply {
+                    text = title
+                    textSize = 12.5f
+                    setTypeface(typeface, Typeface.BOLD)
+                })
+                addView(value)
+                addView(detail)
+            })
+        }
+    }
+
+    private fun setActiveFilter(filter: String) {
+        activeFilter = filter
+        refreshFilterButtons()
+        if (::adapter.isInitialized) loadData()
+    }
+
+    private fun refreshFilterButtons() {
+        filterButtons.forEach { (filter, button) ->
+            button.text = if (filter == activeFilter) "✓ $filter" else filter
+        }
     }
 
     private fun loadData() {
@@ -147,16 +272,54 @@ class ExpensesActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
 
         val month = YearMonth.now()
-        val allMonth = store.all().filter { runCatching { YearMonth.from(LocalDate.parse(it.date)) }.getOrNull() == month }
+        val allMonth = store.all().filter {
+            runCatching { YearMonth.from(LocalDate.parse(it.date)) }.getOrNull() == month
+        }
+
         val income = allMonth.filter { it.type == FinanceType.INCOME }.sumOf { it.amount }
         val expense = allMonth.filter { it.type == FinanceType.EXPENSE }.sumOf { it.amount }
-        val businessExpense = allMonth.filter { it.type == FinanceType.EXPENSE && it.scope == FinanceScope.BUSINESS }.sumOf { it.amount }
-        monthLabel.text = "${month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }} ${month.year} · saldo ${euro(income - expense)}"
-        summaryLabel.text = "Entrate ${euro(income)} · Uscite ${euro(expense)} · Costi azienda ${euro(businessExpense)} · ${rows.size} movimenti visibili"
+
+        val businessIncome = allMonth.filter {
+            it.scope == FinanceScope.BUSINESS && it.type == FinanceType.INCOME
+        }.sumOf { it.amount }
+        val businessExpense = allMonth.filter {
+            it.scope == FinanceScope.BUSINESS && it.type == FinanceType.EXPENSE
+        }.sumOf { it.amount }
+
+        val privateIncome = allMonth.filter {
+            it.scope == FinanceScope.PRIVATE && it.type == FinanceType.INCOME
+        }.sumOf { it.amount }
+        val privateExpense = allMonth.filter {
+            it.scope == FinanceScope.PRIVATE && it.type == FinanceType.EXPENSE
+        }.sumOf { it.amount }
+
+        monthLabel.text = "\${month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }} \${month.year}"
+
+        balanceValue.text = euro(income - expense)
+        balanceDetail.text = "Entrate \${euro(income)} · Uscite \${euro(expense)}"
+        incomeValue.text = euro(income)
+        expenseValue.text = euro(expense)
+
+        businessValue.text = euro(businessIncome - businessExpense)
+        businessDetail.text = "Entrate \${euro(businessIncome)}\\nUscite \${euro(businessExpense)}"
+
+        privateValue.text = euro(privateIncome - privateExpense)
+        privateDetail.text = "Entrate \${euro(privateIncome)}\\nUscite \${euro(privateExpense)}"
+
+        visibleCountLabel.text = if (activeFilter == FinanceStore.FILTER_ALL) {
+            "Movimenti · \${rows.size} visibili"
+        } else {
+            "Movimenti · \${rows.size} visibili · $activeFilter"
+        }
     }
 
-    private fun showEditor(source: FinanceRecord) {
+    private fun showEditor(source: FinanceRecord, initialType: FinanceType? = null) {
         val record = source.copy()
+        if (record.id == 0L && initialType != null) record.type = initialType
+
+        var selectedType = record.type
+        var selectedScope = record.scope
+
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(8))
@@ -165,56 +328,61 @@ class ExpensesActivity : AppCompatActivity() {
         fun label(text: String) = TextView(this).apply {
             this.text = text
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(10), 0, dp(3))
         }
 
-        content.addView(label("Tipo"))
-        val typeSpinner = Spinner(this)
-        val typeLabels = listOf("Uscita", "Entrata")
-        typeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, typeLabels)
-        typeSpinner.setSelection(if (record.type == FinanceType.INCOME) 1 else 0)
-        content.addView(typeSpinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        content.addView(label("Tipo movimento"))
+        val expenseButton = MaterialButton(this).apply { text = "Uscita" }
+        val incomeButton = MaterialButton(this).apply { text = "Entrata" }
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(expenseButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(4) })
+            addView(incomeButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(4) })
+        })
 
-        content.addView(label("Ambito"))
-        val scopeSpinner = Spinner(this)
-        val scopeLabels = listOf("Azienda", "Privato")
-        scopeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, scopeLabels)
-        scopeSpinner.setSelection(if (record.scope == FinanceScope.PRIVATE) 1 else 0)
-        content.addView(scopeSpinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        content.addView(label("È un movimento aziendale o privato?"))
+        val businessButton = MaterialButton(this).apply { text = "Azienda" }
+        val privateButton = MaterialButton(this).apply { text = "Privato" }
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(businessButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(4) })
+            addView(privateButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(4) })
+        })
+
+        val scopeHint = TextView(this).apply {
+            textSize = 12f
+            setPadding(dp(2), dp(4), dp(2), dp(4))
+        }
+        content.addView(scopeHint)
 
         content.addView(label("Importo €"))
         val amount = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             setText(if (record.amount > 0) record.amount.toString().replace('.', ',') else "")
             hint = "0,00"
+            textSize = 20f
         }
-        content.addView(amount, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        content.addView(amount, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)))
 
         content.addView(label("Categoria"))
         val category = Spinner(this)
-        fun categoriesFor(type: FinanceType): List<String> = if (type == FinanceType.EXPENSE) FinanceStore.EXPENSE_CATEGORIES else FinanceStore.INCOME_CATEGORIES
-        fun refreshCategories(selected: String = "") {
-            val selectedType = if (typeSpinner.selectedItemPosition == 1) FinanceType.INCOME else FinanceType.EXPENSE
-            val values = categoriesFor(selectedType)
-            category.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
-            val idx = values.indexOf(selected)
-            if (idx >= 0) category.setSelection(idx)
-        }
-        refreshCategories(record.category)
         content.addView(category, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
-        typeSpinner.setOnItemSelectedListener(SimpleItemSelectedListener { refreshCategories(if (record.id > 0) record.category else "") })
 
-        content.addView(label("Cantiere (solo Azienda)"))
         val jobsites = jobsiteStore.list()
         val jobsiteLabels = mutableListOf("Nessun cantiere").apply {
-            addAll(jobsites.map { "${it.code} · ${it.displayTitle()}" })
+            addAll(jobsites.map { "\${it.code} · \${it.displayTitle()}" })
         }
         val jobsiteSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@ExpensesActivity, android.R.layout.simple_spinner_dropdown_item, jobsiteLabels)
             val idx = jobsites.indexOfFirst { it.ge360Id == record.jobsiteId }
             setSelection(if (idx >= 0) idx + 1 else 0)
         }
-        content.addView(jobsiteSpinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        val jobsiteBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label("Cantiere (facoltativo)"))
+            addView(jobsiteSpinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        }
+        content.addView(jobsiteBlock)
 
         content.addView(label("Data (AAAA-MM-GG)"))
         val date = EditText(this).apply {
@@ -228,11 +396,84 @@ class ExpensesActivity : AppCompatActivity() {
             setText(record.note)
             minLines = 3
             gravity = Gravity.TOP
+            hint = "Es. acquisto piastrelle, spesa supermercato, acconto cliente…"
         }
         content.addView(note, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(90)))
 
+        fun categoriesFor(type: FinanceType, scope: FinanceScope): List<String> = when {
+            type == FinanceType.EXPENSE && scope == FinanceScope.BUSINESS -> FinanceStore.BUSINESS_EXPENSE_CATEGORIES
+            type == FinanceType.EXPENSE && scope == FinanceScope.PRIVATE -> FinanceStore.PRIVATE_EXPENSE_CATEGORIES
+            type == FinanceType.INCOME && scope == FinanceScope.BUSINESS -> FinanceStore.BUSINESS_INCOME_CATEGORIES
+            else -> FinanceStore.PRIVATE_INCOME_CATEGORIES
+        }
+
+        fun refreshCategories(preferred: String? = null) {
+            val values = categoriesFor(selectedType, selectedScope)
+            val previous = preferred ?: category.selectedItem?.toString().orEmpty()
+            category.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
+            val wanted = when {
+                previous in values -> previous
+                record.category in values -> record.category
+                "Altro" in values -> "Altro"
+                else -> values.first()
+            }
+            val idx = values.indexOf(wanted)
+            if (idx >= 0) category.setSelection(idx)
+        }
+
+        fun refreshTypeUi() {
+            expenseButton.text = if (selectedType == FinanceType.EXPENSE) "✓ Uscita" else "Uscita"
+            incomeButton.text = if (selectedType == FinanceType.INCOME) "✓ Entrata" else "Entrata"
+        }
+
+        fun refreshScopeUi() {
+            businessButton.text = if (selectedScope == FinanceScope.BUSINESS) "✓ Azienda" else "Azienda"
+            privateButton.text = if (selectedScope == FinanceScope.PRIVATE) "✓ Privato" else "Privato"
+            scopeHint.text = if (selectedScope == FinanceScope.BUSINESS) {
+                "Movimento dell'impresa. Puoi anche collegarlo a un cantiere."
+            } else {
+                "Movimento personale. Non verrà collegato ai cantieri."
+            }
+            jobsiteBlock.visibility = if (selectedScope == FinanceScope.BUSINESS) View.VISIBLE else View.GONE
+        }
+
+        expenseButton.setOnClickListener {
+            val previous = category.selectedItem?.toString()
+            selectedType = FinanceType.EXPENSE
+            refreshTypeUi()
+            refreshCategories(previous)
+        }
+        incomeButton.setOnClickListener {
+            val previous = category.selectedItem?.toString()
+            selectedType = FinanceType.INCOME
+            refreshTypeUi()
+            refreshCategories(previous)
+        }
+        businessButton.setOnClickListener {
+            val previous = category.selectedItem?.toString()
+            selectedScope = FinanceScope.BUSINESS
+            refreshScopeUi()
+            refreshCategories(previous)
+        }
+        privateButton.setOnClickListener {
+            val previous = category.selectedItem?.toString()
+            selectedScope = FinanceScope.PRIVATE
+            refreshScopeUi()
+            refreshCategories(previous)
+        }
+
+        refreshTypeUi()
+        refreshScopeUi()
+        refreshCategories(record.category)
+
+        val title = when {
+            record.id > 0 -> "Modifica movimento"
+            selectedType == FinanceType.INCOME -> "Nuova entrata"
+            else -> "Nuova uscita"
+        }
+
         val dialog = AlertDialog.Builder(this)
-            .setTitle(if (record.id > 0) "Modifica movimento" else "Nuovo movimento")
+            .setTitle(title)
             .setView(ScrollView(this).apply { addView(content) })
             .setPositiveButton("Salva", null)
             .setNegativeButton("Annulla", null)
@@ -250,12 +491,14 @@ class ExpensesActivity : AppCompatActivity() {
                     date.error = "Usa il formato AAAA-MM-GG"
                     return@setOnClickListener
                 }
-                record.type = if (typeSpinner.selectedItemPosition == 1) FinanceType.INCOME else FinanceType.EXPENSE
-                record.scope = if (scopeSpinner.selectedItemPosition == 1) FinanceScope.PRIVATE else FinanceScope.BUSINESS
+
+                record.type = selectedType
+                record.scope = selectedScope
                 record.amount = value
                 record.category = category.selectedItem?.toString().orEmpty().ifBlank { "Altro" }
                 record.note = note.text.toString().trim()
                 record.date = parsedDate.toString()
+
                 if (record.scope == FinanceScope.BUSINESS && jobsiteSpinner.selectedItemPosition > 0) {
                     val jobsite = jobsites[jobsiteSpinner.selectedItemPosition - 1]
                     record.jobsiteId = jobsite.ge360Id
@@ -266,6 +509,7 @@ class ExpensesActivity : AppCompatActivity() {
                     record.jobsiteCode = ""
                     record.jobsiteTitle = ""
                 }
+
                 store.save(record)
                 dialog.dismiss()
                 loadData()
