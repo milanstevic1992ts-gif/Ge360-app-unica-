@@ -96,6 +96,22 @@ class FinanceStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
             "Privato" -> { clauses += "scope=?"; args += FinanceScope.PRIVATE.name }
             "Entrate" -> { clauses += "type=?"; args += FinanceType.INCOME.name }
             "Uscite" -> { clauses += "type=?"; args += FinanceType.EXPENSE.name }
+            "Uscite azienda" -> {
+                clauses += "type=?"; args += FinanceType.EXPENSE.name
+                clauses += "scope=?"; args += FinanceScope.BUSINESS.name
+            }
+            "Uscite private" -> {
+                clauses += "type=?"; args += FinanceType.EXPENSE.name
+                clauses += "scope=?"; args += FinanceScope.PRIVATE.name
+            }
+            "Entrate azienda" -> {
+                clauses += "type=?"; args += FinanceType.INCOME.name
+                clauses += "scope=?"; args += FinanceScope.BUSINESS.name
+            }
+            "Entrate private" -> {
+                clauses += "type=?"; args += FinanceType.INCOME.name
+                clauses += "scope=?"; args += FinanceScope.PRIVATE.name
+            }
             "Con cantiere" -> clauses += "jobsite_id<>''"
         }
         return queryInternal(
@@ -345,9 +361,37 @@ class FinanceStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
 
     companion object {
         const val FILTER_ALL = "Tutti"
-        val FILTERS = listOf("Tutti", "Azienda", "Privato", "Entrate", "Uscite", "Con cantiere")
-        val EXPENSE_CATEGORIES = listOf("Materiali", "Carburante", "Attrezzi", "Collaboratori", "Subappalti", "Smaltimenti", "Trasporti", "Casa", "Spesa", "Auto", "Bollette", "Altro")
-        val INCOME_CATEGORIES = listOf("Cliente", "Acconto cliente", "Saldo cliente", "Stipendio", "Rimborso", "Vendita", "Altro")
+        val FILTERS = listOf(
+            "Tutti",
+            "Azienda",
+            "Privato",
+            "Entrate",
+            "Uscite",
+            "Uscite azienda",
+            "Uscite private",
+            "Entrate azienda",
+            "Entrate private",
+            "Con cantiere"
+        )
+
+        val BUSINESS_EXPENSE_CATEGORIES = listOf(
+            "Materiali", "Carburante", "Attrezzi", "Collaboratori", "Subappalti",
+            "Smaltimenti", "Trasporti", "Noleggi", "Assicurazioni", "Commercialista",
+            "Telefono / Internet", "Altro"
+        )
+        val PRIVATE_EXPENSE_CATEGORIES = listOf(
+            "Casa", "Spesa", "Auto", "Bollette", "Salute", "Famiglia", "Svago", "Viaggi", "Altro"
+        )
+        val BUSINESS_INCOME_CATEGORIES = listOf(
+            "Cliente", "Acconto cliente", "Saldo cliente", "Rimborso", "Vendita", "Altro"
+        )
+        val PRIVATE_INCOME_CATEGORIES = listOf(
+            "Stipendio", "Rimborso", "Vendita", "Regalo", "Altro"
+        )
+
+        // Compatibilità per eventuali chiamanti esterni al modulo.
+        val EXPENSE_CATEGORIES = (BUSINESS_EXPENSE_CATEGORIES + PRIVATE_EXPENSE_CATEGORIES).distinct()
+        val INCOME_CATEGORIES = (BUSINESS_INCOME_CATEGORIES + PRIVATE_INCOME_CATEGORIES).distinct()
 
         private const val TABLE = "finance_transactions"
         private const val DB_NAME = "ge360_spese.db"
