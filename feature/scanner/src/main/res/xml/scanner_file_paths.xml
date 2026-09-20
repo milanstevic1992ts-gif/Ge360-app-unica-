@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="scanner_documents" path="scanner/" />
+    <files-path name="tool_warranty_fallback" path="GE360/Scontrini garanzia/" />
+    <external-files-path name="tool_warranty_documents" path="Documents/GE360/Scontrini garanzia/" />
+</paths>

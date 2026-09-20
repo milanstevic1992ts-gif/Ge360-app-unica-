@@ -1,0 +1,83 @@
+name: Test GE360 Integrity
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'feature/**'
+      - 'scripts/verify-backup-coverage.sh'
+      - 'scripts/verify-database-migrations.sh'
+      - 'scripts/verify-operational-dashboard.sh'
+      - 'scripts/verify-jobsite-hub-finance.sh'
+      - 'scripts/verify-branding.sh'
+      - 'scripts/verify-collaborator-weekly-pay.sh'
+      - 'scripts/verify-external-collaborators.sh'
+      - 'scripts/verify-restyling.sh'
+      - 'scripts/verify-materials-v2.sh'
+      - 'scripts/verify-jobsite-labor-days.sh'
+      - 'scripts/verify-jobsite-cost-analytics.sh'
+      - 'scripts/verify-voice-trainer.sh'
+      - 'scripts/verify-proactive-jarvis-phase8.sh'
+      - 'scripts/verify-proactive-actions-phase9.sh'
+      - 'core/common/**'
+      - 'core/bridge/**'
+      - '.github/workflows/integrity-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify persistence coverage
+        run: bash scripts/verify-backup-coverage.sh
+      - name: Verify SQLite migration contracts
+        run: bash scripts/verify-database-migrations.sh
+      - name: Verify operational dashboard contracts
+        run: bash scripts/verify-operational-dashboard.sh
+      - name: Verify Jobsite Hub finance contracts
+        run: bash scripts/verify-jobsite-hub-finance.sh
+      - name: Verify EDIL MILAN STEVIC branding
+        run: bash scripts/verify-branding.sh
+      - name: Verify collaborator weekly pay
+        run: bash scripts/verify-collaborator-weekly-pay.sh
+      - name: Verify external collaborators
+        run: bash scripts/verify-external-collaborators.sh
+      - name: Verify complete restyling contracts
+        run: bash scripts/verify-restyling.sh
+      - name: Verify Materiali 2.0 contracts
+        run: bash scripts/verify-materials-v2.sh
+      - name: Verify jobsite labor day contracts
+        run: bash scripts/verify-jobsite-labor-days.sh
+      - name: Verify jobsite cost analytics contracts
+        run: bash scripts/verify-jobsite-cost-analytics.sh
+      - name: Verify Voice Trainer phase 7 contracts
+        run: bash scripts/verify-voice-trainer.sh
+      - name: Verify Jarvis Proactive phase 8 contracts
+        run: bash scripts/verify-proactive-jarvis-phase8.sh
+      - name: Verify Jarvis Proactive Actions phase 9 contracts
+        run: bash scripts/verify-proactive-actions-phase9.sh
+      - name: Test shared backup merge policy
+        run: gradle :core:common:testDebugUnitTest --stacktrace
+      - name: Test Trainer bridge identity and authentication contracts
+        run: gradle :core:bridge:testDebugUnitTest --stacktrace
+      - name: Test Jarvis proactive policies
+        run: gradle :feature:jarvis:testDebugUnitTest --stacktrace

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/nav_home"
+        android:icon="@drawable/ic_nav_home"
+        android:title="Home" />
+    <item
+        android:id="@+id/nav_cantieri"
+        android:icon="@drawable/ic_nav_jobsites"
+        android:title="Cantieri" />
+    <item
+        android:id="@+id/nav_preventivi"
+        android:icon="@drawable/ic_nav_estimates"
+        android:title="Preventivi" />
+    <item
+        android:id="@+id/nav_rilievi"
+        android:icon="@drawable/ic_nav_floorplans"
+        android:title="Rilievi" />
+    <item
+        android:id="@+id/nav_altro"
+        android:icon="@drawable/ic_nav_more"
+        android:title="Altro" />
+</menu>

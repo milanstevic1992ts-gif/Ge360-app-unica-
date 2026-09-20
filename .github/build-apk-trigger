@@ -1,0 +1,5 @@
+trigger=2026-09-04T12:07+02:00
+purpose=build-signed-apk
+attempt=8
+version=0.21.9
+reason=safe-bootstrap-isolate-startup-crash

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".ToolsHubActivity" android:exported="false" />
+        <activity android:name=".WorkPreparationActivity" android:exported="false" />
+        <activity android:name=".VanModeActivity" android:exported="false" />
+        <activity android:name=".ToolsActivity" android:exported="false" />
+        <activity android:name=".MaterialCalculatorActivity" android:exported="false" />
+        <activity android:name=".MaterialsActivity" android:exported="false" />
+    </application>
+</manifest>

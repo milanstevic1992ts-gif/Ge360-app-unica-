@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F6F7F9">
+
+    <FrameLayout
+        android:id="@+id/mainContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginBottom="72dp" />
+
+    <LinearLayout
+        android:id="@+id/mainBottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_gravity="bottom"
+        android:background="#FFFFFF"
+        android:elevation="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingTop="4dp"
+        android:paddingBottom="3dp">
+
+        <TextView
+            android:id="@+id/navHomeTab"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:contentDescription="Home"
+            android:drawablePadding="2dp"
+            android:drawableTint="@color/main_bottom_nav_colors"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:text="Home"
+            android:textColor="@color/main_bottom_nav_colors"
+            android:textSize="10sp"
+            android:drawableTop="@drawable/ic_nav_home" />
+
+        <TextView
+            android:id="@+id/navJobsitesTab"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:contentDescription="Cantieri"
+            android:drawablePadding="2dp"
+            android:drawableTint="@color/main_bottom_nav_colors"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="Cantieri"
+            android:textColor="@color/main_bottom_nav_colors"
+            android:textSize="10sp"
+            android:drawableTop="@drawable/ic_nav_jobsites" />
+
+        <TextView
+            android:id="@+id/navEstimatesTab"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:contentDescription="Preventivi"
+            android:drawablePadding="2dp"
+            android:drawableTint="@color/main_bottom_nav_colors"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="Preventivi"
+            android:textColor="@color/main_bottom_nav_colors"
+            android:textSize="10sp"
+            android:drawableTop="@drawable/ic_nav_estimates" />
+
+        <TextView
+            android:id="@+id/navFloorPlansTab"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:contentDescription="Rilievi"
+            android:drawablePadding="2dp"
+            android:drawableTint="@color/main_bottom_nav_colors"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="Rilievi"
+            android:textColor="@color/main_bottom_nav_colors"
+            android:textSize="10sp"
+            android:drawableTop="@drawable/ic_nav_floorplans" />
+
+        <TextView
+            android:id="@+id/navMoreTab"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:contentDescription="Altro"
+            android:drawablePadding="2dp"
+            android:drawableTint="@color/main_bottom_nav_colors"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="Altro"
+            android:textColor="@color/main_bottom_nav_colors"
+            android:textSize="10sp"
+            android:drawableTop="@drawable/ic_nav_more" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/quickAddFab"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="18dp"
+        android:layout_marginBottom="84dp"
+        android:background="@drawable/bg_quick_add"
+        android:clickable="true"
+        android:contentDescription="Aggiungi rapidamente"
+        android:elevation="14dp"
+        android:focusable="true"
+        android:gravity="center"
+        android:text="+"
+        android:textColor="#FFFFFF"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+</FrameLayout>

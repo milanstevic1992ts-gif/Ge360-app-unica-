@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="it.edilmilan.ge360.planimetrie.FloorPlanOpeningEditorActivity" android:exported="false" />
+        <activity android:name="it.edilmilan.ge360.planimetrie.FloorPlanWallEditorActivity" android:exported="false" />
+        <activity android:name="it.edilmilan.ge360.planimetrie.FloorPlanEditorActivity" android:exported="false" />
+        <activity android:name="it.edilmilan.ge360.planimetrie.FloorPlansActivity" android:exported="false" />
+    </application>
+</manifest>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name=".JobsiteCloseLifecycleProvider"
+            android:authorities="${applicationId}.ge360.jobsite-close-lifecycle"
+            android:exported="false"
+            android:initOrder="90" />
+
+        <activity
+            android:name=".JobsiteCenterActivity"
+            android:exported="false" />
+        <activity
+            android:name=".JobsiteArchiveActivity"
+            android:exported="false" />
+        <activity
+            android:name=".JobsiteCostAnalyticsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".JobsiteHubActivity"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="it.edilmilan.ge360.action.OPEN_JOBSITE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
