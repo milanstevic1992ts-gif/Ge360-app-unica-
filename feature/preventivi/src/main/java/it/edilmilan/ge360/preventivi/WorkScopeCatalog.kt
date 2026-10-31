@@ -51,16 +51,16 @@ data class WorkScopeRule(
 
 object WorkScopeCatalog {
     private val wallAreaCodes = setOf(
-        4, 7, 10, 28, 29, 37, 44, 45, 46, 48, 49, 51, 52, 53, 54,
+        4, 28, 29, 37, 44, 45, 46, 48, 51, 52, 53, 54,
         64, 65, 70, 72, 75, 82, 85
     )
-    private val wallCeilingCodes = setOf(8, 9, 11, 49, 71)
+    private val wallCeilingCodes = setOf(7, 8, 9, 10, 11, 49, 71)
     private val ceilingCodes = setOf(34, 66, 67)
     private val floorCodes = setOf(
         6, 12, 13, 36, 58, 59, 60, 62, 63, 73, 74, 76, 77, 83
     )
     private val wallFloorCodes = setOf(14, 15, 16, 20, 78)
-    private val perimeterCodes = setOf(18, 19, 55, 56, 57, 90)
+    private val perimeterCodes = setOf(18, 19, 55, 56, 57)
     private val edgeCodes = setOf(5, 17, 47, 50, 68, 79, 81, 84, 87)
     private val elementCodes = setOf(24, 25, 26, 27, 30, 31, 61, 69, 86)
 
