@@ -164,7 +164,13 @@ object RoomWorkCatalog {
         cap("MUFFA", "CAP-10", QuantityBasis.MANUAL, false),
         cap("ISOLAMENTO", "CAP-37", QuantityBasis.MANUAL, false),
         cap("ACCESSO", "CAP-39", QuantityBasis.BODY, false),
-        cap("SMALT-EXTRA", "CAP-40", QuantityBasis.BODY, false)
+        cap("SMALT-EXTRA", "CAP-40", QuantityBasis.BODY, false),
+        cap("AUTOLEV", "CAP-58", QuantityBasis.FLOOR, false),
+        cap("IMPER-DOC-MQ", "CAP-78", QuantityBasis.MANUAL, false),
+        cap("SILICONE-DOCCIA", "CAP-79", QuantityBasis.MANUAL, false),
+        cap("PARASPIGOLI", "CAP-47", QuantityBasis.MANUAL, false),
+        cap("PLACCHETTE", "CAP-86", QuantityBasis.MANUAL, false),
+        cap("CONTROSOFF-UMIDO", "CAP-67", QuantityBasis.CEILING, false)
     ) + commonEnd
 
     private val kitchen = commonStart + listOf(
@@ -184,7 +190,12 @@ object RoomWorkCatalog {
         cap("GRANDE-FORMATO", "CAP-15", QuantityBasis.MANUAL, false),
         cap("TAGLI45", "CAP-17", QuantityBasis.MANUAL, false),
         cap("CARTONGESSO", "CAP-11", QuantityBasis.MANUAL, false),
-        cap("PORTA", "CAP-31", QuantityBasis.BODY, false)
+        cap("PORTA", "CAP-31", QuantityBasis.BODY, false),
+        cap("SCHIENALE-CUCINA", "CAP-82", QuantityBasis.MANUAL, false),
+        cap("RAS-ARM", "CAP-48", QuantityBasis.WALLS, false),
+        cap("AUTOLEV", "CAP-58", QuantityBasis.FLOOR, false),
+        cap("PLACCHETTE", "CAP-86", QuantityBasis.MANUAL, false),
+        cap("CARTA-PARATI", "CAP-44", QuantityBasis.WALLS, false)
     ) + commonEnd
 
     private val room = commonStart + listOf(
@@ -201,7 +212,15 @@ object RoomWorkCatalog {
         cap("CONTROSOFF", "CAP-11", QuantityBasis.CEILING, false, "Controsoffitto in cartongesso"),
         cap("CONTROPARETE", "CAP-29", QuantityBasis.MANUAL, false),
         cap("PORTA-SCORR", "CAP-31", QuantityBasis.BODY, false),
-        cap("MUFFA", "CAP-10", QuantityBasis.MANUAL, false)
+        cap("MUFFA", "CAP-10", QuantityBasis.MANUAL, false),
+        cap("CARTA-PARATI", "CAP-44", QuantityBasis.WALLS, false),
+        cap("PREP-CARTA", "CAP-45", QuantityBasis.WALLS, false),
+        cap("PRIMER-CARTA", "CAP-46", QuantityBasis.WALLS, false),
+        cap("PARASPIGOLI", "CAP-47", QuantityBasis.MANUAL, false),
+        cap("CREPE", "CAP-50", QuantityBasis.MANUAL, false),
+        cap("AUTOLEV", "CAP-58", QuantityBasis.FLOOR, false),
+        cap("RIP-INFILTRAZIONI", "CAP-85", QuantityBasis.WALLS, false),
+        cap("RIM-BATTISCOPA", "CAP-55", QuantityBasis.PERIMETER, false)
     ) + commonEnd
 
     private val balcony = commonStart + listOf(
@@ -215,7 +234,10 @@ object RoomWorkCatalog {
         cap("PITTURA", "CAP-09", QuantityBasis.MANUAL, false),
         cap("SIGILL", "CAP-41", QuantityBasis.BODY, false),
         cap("ACCESSO", "CAP-39", QuantityBasis.BODY, false),
-        cap("SMALT-EXTRA", "CAP-40", QuantityBasis.BODY, false)
+        cap("SMALT-EXTRA", "CAP-40", QuantityBasis.BODY, false),
+        cap("PAV-ESTERNO", "CAP-77", QuantityBasis.FLOOR, false),
+        cap("PENDENZE-SPEC", "CAP-83", QuantityBasis.FLOOR, false),
+        cap("FRONTALINI", "CAP-84", QuantityBasis.MANUAL, false)
     ) + commonEnd
 
     private val other = commonStart + listOf(
@@ -231,7 +253,13 @@ object RoomWorkCatalog {
         cap("PIASTRELLE", "CAP-14", QuantityBasis.FLOOR, false),
         cap("BATTISCOPA", "CAP-18", QuantityBasis.PERIMETER, false),
         cap("IMP", "CAP-20", QuantityBasis.MANUAL, false),
-        cap("ACCESSO", "CAP-39", QuantityBasis.BODY, false)
+        cap("ACCESSO", "CAP-39", QuantityBasis.BODY, false),
+        cap("CARTA-PARATI", "CAP-44", QuantityBasis.WALLS, false),
+        cap("RAS-ARM-SPEC", "CAP-48", QuantityBasis.WALLS, false),
+        cap("CREPE", "CAP-50", QuantityBasis.MANUAL, false),
+        cap("RIM-BATTISCOPA", "CAP-55", QuantityBasis.PERIMETER, false),
+        cap("AUTOLEV", "CAP-58", QuantityBasis.FLOOR, false),
+        cap("VELETTA", "CAP-68", QuantityBasis.MANUAL, false)
     ) + commonEnd
 
     fun forType(type: String): List<RoomWorkTemplate> = when (type) {
