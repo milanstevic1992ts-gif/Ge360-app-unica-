@@ -91,8 +91,11 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
     )
 
     /** Old exports did not declare completeness: they must not produce a false precise delta. */
-    fun hasCompleteMovementHistory(): Boolean =
-        provenance.getBoolean("complete_history_v1", false)
+    fun hasCompleteMovementHistory(): Boolean {
+        // Open the DB first: onCreate establishes provenance for brand-new installations.
+        readableDatabase
+        return provenance.getBoolean("complete_history_v1", false)
+    }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -139,7 +142,7 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_materials_catalog ON materials(catalog_ge360_id)")
         db.execSQL("CREATE INDEX idx_material_movements_material ON material_movements(material_ge360_id, created_at DESC)")
         db.execSQL("CREATE INDEX idx_material_movements_job ON material_movements(jobsite_id, created_at DESC)")
-        provenance.edit().putBoolean("complete_history_v1", true).apply()
+        provenance.edit().putBoolean("complete_history_v1", true).commit()
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
@@ -381,6 +384,7 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         )
     }
 
+    /** Full history is required for backup, never silently truncate this export. */
     fun exportJson(): String {
         val root = JSONObject()
             .put("schema", SCHEMA)
@@ -389,6 +393,31 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
             .put("materials", JSONArray().apply { allMaterials().forEach { put(materialToJson(it)) } })
             .put("movements", JSONArray().apply { allMovementHistory().forEach { put(movementToJson(it)) } })
         return root.toString(2)
+    }
+
+    /**
+     * Bounded view for Data Hub. Full backup stays unchanged.
+     * If more events exist than are included, no client may treat the snapshot
+     * as a complete accounting history or calculate a confirmed variance.
+     */
+    fun exportSyncJson(limit: Int = 500): String {
+        val bounded = limit.coerceIn(1, 1000)
+        val total = readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM material_movements", null
+        ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+        return JSONObject()
+            .put("schema", SCHEMA)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("completeMovementHistory", hasCompleteMovementHistory() && total <= bounded)
+            .put("totalMovementCount", total)
+            .put("syncedMovementCount", minOf(total, bounded.toLong()))
+            .put("materials", JSONArray().apply {
+                allMaterials().forEach { put(materialToJson(it)) }
+            })
+            .put("movements", JSONArray().apply {
+                movements(limit = bounded).forEach { put(movementToJson(it)) }
+            })
+            .toString(2)
     }
 
     fun importJson(json: String, replaceAll: Boolean): Int {
