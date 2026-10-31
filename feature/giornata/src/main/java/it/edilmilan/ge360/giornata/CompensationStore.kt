@@ -61,6 +61,7 @@ class CompensationStore(context: Context) :
             reverses_payment_id TEXT NOT NULL DEFAULT ''
         )""")
         db.execSQL("CREATE INDEX idx_comp_payment_accrual ON payments(accrual_id)")
+        db.execSQL("CREATE UNIQUE INDEX idx_comp_proof_ref ON payments(proof_document_id) WHERE proof_document_id <> '' AND kind='PAYMENT'")
         db.execSQL("CREATE UNIQUE INDEX idx_comp_finance_ref ON payments(finance_record_id) WHERE finance_record_id <> '' AND kind = 'PAYMENT'")
         db.execSQL("""CREATE TABLE invoice_links(
             ge360_id TEXT PRIMARY KEY NOT NULL,
@@ -237,6 +238,41 @@ class CompensationStore(context: Context) :
         }
     }
 
+    /** Reference an existing Scanner PDF; no proof automatically marks a bank transfer as verified. */
+    fun attachPaymentProof(paymentId: String, scannerDocumentGe360Id: String) {
+        require(paymentId.isNotBlank() && scannerDocumentGe360Id.isNotBlank())
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val all = payments()
+            val payment = all.singleOrNull { it.ge360Id == paymentId }
+                ?: error("Evento pagamento non trovato")
+            require(payment.kind == CompensationPaymentKind.PAYMENT) {
+                "Non si può aggiungere una prova a uno storno"
+            }
+            require(all.none { it.ge360Id != paymentId &&
+                it.proofDocumentGe360Id == scannerDocumentGe360Id }) {
+                "Documento già utilizzato come prova per un altro pagamento"
+            }
+            if (payment.proofDocumentGe360Id == scannerDocumentGe360Id) {
+                db.setTransactionSuccessful()
+                return
+            }
+            require(payment.proofDocumentGe360Id.isNullOrBlank()) {
+                "Esiste già una prova associata a questo pagamento"
+            }
+            require(db.update("payments",
+                ContentValues().apply { put("proof_document_id", scannerDocumentGe360Id) },
+                "ge360_id=? AND kind='PAYMENT' AND proof_document_id=''",
+                arrayOf(paymentId)) == 1) {
+                "Prova pagamento non collegata"
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun invoices(): List<CompensationInvoiceLinkV1> =
         read("invoice_links", "accrual_id, ge360_id") { c ->
             CompensationInvoiceLinkV1(c.str("ge360_id"), c.str("accrual_id"),
@@ -366,6 +402,10 @@ class CompensationStore(context: Context) :
             }
             // Validate the complete imported ledger before committing.
             val allPayments = payments()
+            val proofIds = allPayments.mapNotNull { it.proofDocumentGe360Id?.takeIf(String::isNotBlank) }
+            require(proofIds.size == proofIds.distinct().size) {
+                "Documento di prova collegato a più pagamenti"
+            }
             require(allPayments.mapNotNull {
                 if (it.kind == CompensationPaymentKind.PAYMENT) it.financeRecordGe360Id else null
             }.filter(String::isNotBlank).let { it.distinct().size == it.size }) {
