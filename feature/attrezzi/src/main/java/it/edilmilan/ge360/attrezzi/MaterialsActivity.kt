@@ -9,6 +9,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
@@ -42,6 +43,7 @@ import java.util.Locale
  */
 class MaterialsActivity : AppCompatActivity() {
     private lateinit var inventory: MaterialInventoryStore
+    private lateinit var plans: MaterialPlanStore
     private lateinit var tools: ToolsStore
     private lateinit var jobsites: JobsiteStore
     private lateinit var content: LinearLayout
@@ -54,6 +56,7 @@ class MaterialsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         inventory = MaterialInventoryStore(this)
+        plans = MaterialPlanStore(this)
         tools = ToolsStore(this)
         jobsites = JobsiteStore(this)
         jobRows = jobsites.list()
@@ -74,6 +77,7 @@ class MaterialsActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         inventory.close()
+        plans.close()
         tools.close()
         jobsites.close()
         super.onDestroy()
@@ -271,7 +275,97 @@ class MaterialsActivity : AppCompatActivity() {
                 setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(4), 0, 0)
             })
+            addView(MaterialButton(this@MaterialsActivity).apply {
+                text = "PREVISTO / CONSUMATO"
+                textSize = 12f
+                applyGe360Secondary()
+                setOnClickListener { openMaterialVariance(item) }
+            })
         })
+    }
+
+    private fun openMaterialVariance(item: MaterialStockItem) {
+        val jobOptions = listOf("Nessun cantiere · tutti i movimenti") +
+            jobRows.map { it.displayTitle() }
+        val jobIds = listOf<String?>(null) + jobRows.map { it.ge360Id }
+        val jobSelect = spinner(jobOptions, jobOptions.first())
+        val plannedQty = numberField(0.0)
+        val result = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Ge360Brand.Text)
+            setPadding(dp(4), dp(12), dp(4), dp(12))
+        }
+        val form = formBox()
+        addLabeled(form, "AMBITO (FACOLTATIVO)", jobSelect, 56)
+        addLabeled(form, "QUANTITÀ PREVISTA · ${item.unit}", plannedQty, 56)
+        form.addView(result)
+        form.addView(MaterialButton(this).apply {
+            text = "AGGIORNA CONFRONTO"
+            applyGe360Secondary()
+            setOnClickListener { showMaterialVariance(item, jobIds[jobSelect.selectedItemPosition], result) }
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Previsto / consumato · ${item.name}")
+            .setMessage("Le quantità previste sono confermate manualmente. " +
+                "Un carico non prova un acquisto, un reso è rientro a stock.")
+            .setView(form)
+            .setNegativeButton("Chiudi", null)
+            .setPositiveButton("SALVA PREVISIONE", null)
+            .create()
+        jobSelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(
+                parent: AdapterView<*>?, view: View?, position: Int, id: Long
+            ) {
+                val selected = jobIds[position]
+                val previous = plans.latest(item.ge360Id, selected)
+                plannedQty.setText(previous?.let { clean(it.quantity) } ?: "")
+                showMaterialVariance(item, selected, result)
+            }
+        }
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    val qty = plannedQty.text.toString().trim().replace(',', '.').toDoubleOrNull()
+                        ?: error("Inserisci una quantità valida")
+                    require(qty.isFinite() && qty > 0) { "La previsione deve essere maggiore di zero" }
+                    val chosenJobsiteId = jobIds[jobSelect.selectedItemPosition]
+                    plans.saveConfirmed(item, MaterialPlanStore.newManual(item, chosenJobsiteId, qty))
+                }.onSuccess {
+                    dialog.dismiss()
+                    render()
+                    toast("Quantità prevista salvata come nuova revisione")
+                }.onFailure { toast(it.message ?: "Previsione non salvata") }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showMaterialVariance(
+        item: MaterialStockItem, jobsiteId: String?, target: TextView
+    ) {
+        val planned = plans.latest(item.ge360Id, jobsiteId)?.toQuantity()
+        val movements = inventory.allMovementHistory(item.ge360Id, jobsiteId)
+        val summary = MaterialVarianceRulesV1.compare(
+            materialGe360Id = item.ge360Id, unit = item.unit, plan = planned,
+            movements = movements, jobsiteGe360Id = jobsiteId,
+            completeHistory = inventory.hasCompleteMovementHistory()
+        )
+        val delta = when (summary.status) {
+            MaterialComparisonStatusV1.COMPARABLE ->
+                "Scostamento consumato−previsto: ${clean(summary.consumptionDelta ?: 0.0)} ${item.unit}"
+            MaterialComparisonStatusV1.NO_PLAN -> "Previsione non ancora registrata"
+            MaterialComparisonStatusV1.PARTIAL_HISTORY ->
+                "Storico non garantito completo: scostamento non calcolabile"
+            MaterialComparisonStatusV1.UNIT_MISMATCH ->
+                "Unità incompatibili: scostamento non calcolabile"
+        }
+        target.text = "Previsto: ${planned?.let { clean(it.quantity) } ?: "non registrato"} ${item.unit}" +
+            "\nCaricato: ${clean(summary.observedLoads)} ${item.unit}" +
+            "\nConsumato: ${clean(summary.observedConsumption)} ${item.unit}" +
+            "\nRientrato a stock: ${clean(summary.observedReturnsToStock)} ${item.unit}" +
+            "\n${delta}" +
+            "\nDati del registro locale; nessuna fattura o acquisto automaticamente dedotti."
     }
 
     private fun requestCard(request: ResourceRequest): View = MaterialCardView(this).apply {

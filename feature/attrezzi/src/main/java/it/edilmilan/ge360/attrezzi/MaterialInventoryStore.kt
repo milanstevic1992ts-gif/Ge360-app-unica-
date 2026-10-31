@@ -86,6 +86,14 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
     null,
     DB_VERSION
 ) {
+    private val provenance = context.applicationContext.getSharedPreferences(
+        "ge360_material_movement_provenance", Context.MODE_PRIVATE
+    )
+
+    /** Old exports did not declare completeness: they must not produce a false precise delta. */
+    fun hasCompleteMovementHistory(): Boolean =
+        provenance.getBoolean("complete_history_v1", false)
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE materials(
@@ -131,6 +139,7 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_materials_catalog ON materials(catalog_ge360_id)")
         db.execSQL("CREATE INDEX idx_material_movements_material ON material_movements(material_ge360_id, created_at DESC)")
         db.execSQL("CREATE INDEX idx_material_movements_job ON material_movements(jobsite_id, created_at DESC)")
+        provenance.edit().putBoolean("complete_history_v1", true).apply()
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
@@ -328,6 +337,36 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         return out
     }
 
+    /**
+     * Complete local ledger, not the paginated UX list.
+     * Used for full backups and for consumption comparisons with completeHistory=true.
+     */
+    fun allMovementHistory(
+        materialGe360Id: String = "",
+        jobsiteGe360Id: String? = null
+    ): List<MaterialStockMovement> {
+        val filters = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        if (materialGe360Id.isNotBlank()) {
+            filters += "material_ge360_id=?"
+            args += materialGe360Id
+        }
+        if (!jobsiteGe360Id.isNullOrBlank()) {
+            filters += "jobsite_id=?"
+            args += jobsiteGe360Id
+        }
+        val result = mutableListOf<MaterialStockMovement>()
+        readableDatabase.query(
+            "material_movements", null,
+            filters.takeIf { it.isNotEmpty() }?.joinToString(" AND "),
+            args.takeIf { it.isNotEmpty() }?.toTypedArray(),
+            null, null, "created_at ASC, id ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) result += movementFromCursor(cursor)
+        }
+        return result
+    }
+
     fun summary(): MaterialInventorySummary {
         val materials = list()
         val movementCount = readableDatabase.rawQuery("SELECT COUNT(*) FROM material_movements", null).use { c ->
@@ -346,14 +385,17 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         val root = JSONObject()
             .put("schema", SCHEMA)
             .put("exportedAt", System.currentTimeMillis())
+            .put("completeMovementHistory", hasCompleteMovementHistory())
             .put("materials", JSONArray().apply { allMaterials().forEach { put(materialToJson(it)) } })
-            .put("movements", JSONArray().apply { movements(limit = 1000).forEach { put(movementToJson(it)) } })
+            .put("movements", JSONArray().apply { allMovementHistory().forEach { put(movementToJson(it)) } })
         return root.toString(2)
     }
 
     fun importJson(json: String, replaceAll: Boolean): Int {
         val root = JSONObject(json)
         require(root.optString("schema") == SCHEMA) { "Formato Materiali 2.0 non riconosciuto" }
+        val sourceHistoryComplete = root.optBoolean("completeMovementHistory", false)
+        val hadCompleteHistory = hasCompleteMovementHistory()
         var count = 0
         val db = writableDatabase
         db.beginTransaction()
@@ -383,6 +425,9 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         } finally {
             db.endTransaction()
         }
+        provenance.edit().putBoolean("complete_history_v1",
+            if (replaceAll) sourceHistoryComplete else hadCompleteHistory && sourceHistoryComplete
+        ).apply()
         return count
     }
 

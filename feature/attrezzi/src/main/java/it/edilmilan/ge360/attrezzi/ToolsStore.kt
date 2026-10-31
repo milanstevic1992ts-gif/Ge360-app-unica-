@@ -291,6 +291,12 @@ class ToolsStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB
         } finally {
             materialStore.close()
         }
+        val plans = MaterialPlanStore(appContext)
+        try {
+            root.put("materialPlans", JSONObject(plans.exportJson()))
+        } finally {
+            plans.close()
+        }
         return root.toString(2)
     }
 
@@ -326,6 +332,14 @@ class ToolsStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB
                 count += materialStore.importJson(materialsJson.toString(), replaceAll)
             } finally {
                 materialStore.close()
+            }
+        }
+        root.optJSONObject("materialPlans")?.let { plansJson ->
+            val planStore = MaterialPlanStore(appContext)
+            try {
+                count += planStore.importJson(plansJson.toString(), replaceAll)
+            } finally {
+                planStore.close()
             }
         }
         return count
