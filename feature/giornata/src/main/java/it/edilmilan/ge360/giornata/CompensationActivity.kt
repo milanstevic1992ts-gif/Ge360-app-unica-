@@ -16,6 +16,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import it.edilmilan.ge360.scanner.DocumentStore
 import it.edilmilan.ge360.scanner.ScannerDocument
+import it.edilmilan.ge360.spese.FinanceStore
+import it.edilmilan.ge360.spese.FinanceRecord
 import java.io.File
 import com.google.android.material.button.MaterialButton
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -36,6 +38,7 @@ class CompensationActivity : AppCompatActivity() {
     private lateinit var daily: DailyStore
     private lateinit var jobs: JobsiteStore
     private lateinit var ledger: CompensationStore
+    private lateinit var finance: FinanceStore
     private lateinit var body: LinearLayout
     private var pendingInvoiceAccrualId: String? = null
     private val invoicePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -75,6 +78,7 @@ class CompensationActivity : AppCompatActivity() {
         daily = DailyStore(this)
         jobs = JobsiteStore(this)
         ledger = CompensationStore(this)
+        finance = FinanceStore(this)
         pendingInvoiceAccrualId = savedInstanceState?.getString("pending_invoice_accrual_id")
         setContentView(screen())
         refresh()
@@ -92,6 +96,7 @@ class CompensationActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         ledger.close()
+        finance.close()
         jobs.close()
         daily.close()
         super.onDestroy()
@@ -123,6 +128,9 @@ class CompensationActivity : AppCompatActivity() {
         val personnel = daily.personnel(false).associateBy { it.ge360Id }
         val rows = ledger.accruals()
         val invoices = ledger.invoices().groupBy { it.accrualGe360Id }
+        val payEvents = ledger.payments()
+        val movements = finance.all().associateBy { it.ge360Id }
+        val usedFinance = payEvents.mapNotNull { it.financeRecordGe360Id?.takeIf(String::isNotBlank) }.toSet()
         val confirmed = rows.filter { it.status == CompensationAccrualStatus.CONFIRMED }
         val remaining = confirmed.sumOf { ledger.balance(it).remainingCents }
         body.addView(text("REGISTRO COMPENSI", 21f, true))
@@ -170,6 +178,41 @@ class CompensationActivity : AppCompatActivity() {
                     card.addView(action("REGISTRA PAGAMENTO") { recordPayment(row) })
                 } else if (balance.fullyPaid) {
                     card.addView(text("Interamente registrato come pagato", 12f, true))
+                }
+                val entries = payEvents.filter { it.accrualGe360Id == row.ge360Id }
+                val reversedIds = entries.filter { it.kind == CompensationPaymentKind.REVERSAL }
+                    .mapNotNull { it.reversesPaymentGe360Id }.toSet()
+                entries.filter { it.kind == CompensationPaymentKind.PAYMENT }.forEach { payment ->
+                    val linkedId = payment.financeRecordGe360Id
+                    card.addView(text(
+                        "Pagamento ${payment.recordedAt} · ${money(payment.amountCents)}",
+                        12f, true
+                    ))
+                    if (payment.ge360Id in reversedIds) {
+                        card.addView(text("Stornato nel registro Compensi", 12f, false))
+                    } else if (!linkedId.isNullOrBlank()) {
+                        val verified = CompensationFinanceReconciliation.linkedFinanceValid(
+                            payment, movements[linkedId], agreement?.jobsiteGe360Id
+                        )
+                        card.addView(text(
+                            if (verified) "Collegato a Spese · UUID ${linkedId.takeLast(12)}"
+                            else "ATTENZIONE: movimento Spese assente o difforme; riconciliazione da verificare",
+                            12f, verified
+                        ))
+                    } else {
+                        card.addView(text("Non collegato a Spese", 12f, false))
+                        val candidates = CompensationFinanceReconciliation.matching(
+                            payment, agreement?.jobsiteGe360Id, movements.values.toList(), usedFinance
+                        )
+                        if (candidates.isNotEmpty()) {
+                            card.addView(action("COLLEGA A SPESA ESISTENTE") {
+                                chooseExistingFinance(payment, agreement?.jobsiteGe360Id, candidates)
+                            })
+                        }
+                        card.addView(action("STORNA QUESTA REGISTRAZIONE") {
+                            confirmReversal(payment)
+                        })
+                    }
                 }
             } else card.addView(text("Stato: ${row.status.name}", 12f, false))
             val box = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -263,6 +306,76 @@ class CompensationActivity : AppCompatActivity() {
             }
         }
         dialog.show()
+    }
+
+    private fun chooseExistingFinance(
+        payment: CompensationPaymentEventV1,
+        jobsiteId: String?,
+        candidates: List<FinanceRecord>
+    ) {
+        val labels = candidates.map { record ->
+            "${record.date} · ${money(CompensationFinanceReconciliation.financeCents(record))}" +
+                " · ${record.category} · ${record.note.take(45)} · ${record.ge360Id.takeLast(8)}"
+        }
+        val picker = Spinner(this).apply {
+            adapter = ArrayAdapter(this@CompensationActivity,
+                android.R.layout.simple_spinner_dropdown_item, labels)
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(4), dp(16), 0)
+            addView(text(
+                "Seleziona soltanto l'uscita che rappresenta realmente questo pagamento. " +
+                    "Non verrà creata una seconda Spesa.", 12f, false))
+            addView(picker)
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Collega a movimento Spese esistente")
+            .setView(container)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("COLLEGA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    val selected = candidates[picker.selectedItemPosition]
+                    // Always re-read; a record may have been edited while this dialog was open.
+                    val current = finance.getByGe360Id(selected.ge360Id)
+                        ?: error("Uscita non più disponibile")
+                    CompensationFinanceReconciliation.validateLink(payment, current, jobsiteId)
+                    ledger.linkFinanceRecord(payment.ge360Id, current)
+                }.onSuccess {
+                    dialog.dismiss()
+                    refresh()
+                    toast("Collegato a Spese esistente: nessuna nuova uscita creata.")
+                }.onFailure { toast(it.message ?: "Collegamento non valido") }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun confirmReversal(payment: CompensationPaymentEventV1) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Storna registrazione di pagamento")
+            .setMessage("Questo storno conserva lo storico e ripristina il residuo. " +
+                "Non modifica movimenti bancari né crea o cancella Spese.")
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("CONFERMA STORNO") { _, _ ->
+                runCatching {
+                    require(payment.financeRecordGe360Id.isNullOrBlank()) {
+                        "Pagamento collegato a Spese: serve prima una riconciliazione contabile"
+                    }
+                    ledger.recordPayment(CompensationPaymentEventV1(
+                        ge360Id = UUID.randomUUID().toString(),
+                        accrualGe360Id = payment.accrualGe360Id,
+                        kind = CompensationPaymentKind.REVERSAL,
+                        amountCents = payment.amountCents,
+                        recordedAt = LocalDate.now(),
+                        reversesPaymentGe360Id = payment.ge360Id
+                    ))
+                }.onSuccess { refresh() }
+                 .onFailure { toast(it.message ?: "Storno non registrato") }
+            }.show()
     }
 
     private fun recordPayment(row: CompensationAccrualV1) {
