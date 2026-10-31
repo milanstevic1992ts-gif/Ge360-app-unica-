@@ -271,7 +271,7 @@ class ToolsStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB
         )
     }
 
-    fun exportJson(): String {
+    fun exportJson(forSync: Boolean = false): String {
         val root = JSONObject().put("schema", "ge360.attrezzi.v1").put("exportedAt", System.currentTimeMillis())
         root.put("catalog", JSONArray().apply { catalogAll().forEach { put(catalogToJson(it)) } })
         root.put("jobResources", JSONArray().apply { allJobResources().forEach { put(jobResourceToJson(it)) } })
@@ -287,7 +287,7 @@ class ToolsStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB
 
         val materialStore = MaterialInventoryStore(appContext)
         try {
-            root.put("materials2", JSONObject(materialStore.exportJson()))
+            root.put("materials2", JSONObject(if (forSync) materialStore.exportSyncJson() else materialStore.exportJson()))
         } finally {
             materialStore.close()
         }
