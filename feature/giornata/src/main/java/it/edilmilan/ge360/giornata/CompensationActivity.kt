@@ -310,6 +310,10 @@ class CompensationActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun money(cents: Long): String =
+        NumberFormat.getCurrencyInstance(Locale.ITALY)
+            .format(BigDecimal(cents).movePointLeft(2))
+
     private fun parseMoney(raw: String): Long {
         val cleaned = raw.trim().replace("€", "").replace(" ", "").replace(',', '.')
         return BigDecimal(cleaned).movePointRight(2)
