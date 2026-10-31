@@ -249,8 +249,7 @@ class CompensationActivity : AppCompatActivity() {
                         description = description.text.toString().trim()
                     )
                     CompensationLedgerRulesV1.validatePeriod(kind, accrual)
-                    ledger.saveAgreement(agreement)
-                    ledger.saveAccrual(accrual)
+                    ledger.saveConfirmedAccrual(agreement, accrual)
                 }.onSuccess {
                     dialog.dismiss()
                     refresh()
