@@ -328,6 +328,36 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         return out
     }
 
+    /**
+     * Complete local ledger, not the paginated UX list.
+     * Used for full backups and for consumption comparisons with completeHistory=true.
+     */
+    fun allMovementHistory(
+        materialGe360Id: String = "",
+        jobsiteGe360Id: String? = null
+    ): List<MaterialStockMovement> {
+        val filters = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        if (materialGe360Id.isNotBlank()) {
+            filters += "material_ge360_id=?"
+            args += materialGe360Id
+        }
+        if (!jobsiteGe360Id.isNullOrBlank()) {
+            filters += "jobsite_id=?"
+            args += jobsiteGe360Id
+        }
+        val result = mutableListOf<MaterialStockMovement>()
+        readableDatabase.query(
+            "material_movements", null,
+            filters.takeIf { it.isNotEmpty() }?.joinToString(" AND "),
+            args.takeIf { it.isNotEmpty() }?.toTypedArray(),
+            null, null, "created_at ASC, id ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) result += movementFromCursor(cursor)
+        }
+        return result
+    }
+
     fun summary(): MaterialInventorySummary {
         val materials = list()
         val movementCount = readableDatabase.rawQuery("SELECT COUNT(*) FROM material_movements", null).use { c ->
@@ -347,7 +377,7 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
             .put("schema", SCHEMA)
             .put("exportedAt", System.currentTimeMillis())
             .put("materials", JSONArray().apply { allMaterials().forEach { put(materialToJson(it)) } })
-            .put("movements", JSONArray().apply { movements(limit = 1000).forEach { put(movementToJson(it)) } })
+            .put("movements", JSONArray().apply { allMovementHistory().forEach { put(movementToJson(it)) } })
         return root.toString(2)
     }
 
