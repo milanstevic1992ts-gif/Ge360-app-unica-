@@ -21,7 +21,10 @@ Base originaria Android `main` verificata: `91bbf01808fce6acd375ef6f5525ff0d278f
 - Le registrazioni di pagamenti preesistenti in `FinanceStore`, `SlobodanWeeklyPay` e `ExternalCollaboratorsActivity` non vengono importate o sovrascritte automaticamente. I dati dei due registri non vanno sommati senza riconciliazione.
 - I nuovi pagamenti non sono ancora transazioni Spese: non dichiarare contabilità unificata o doppio conteggio risolto a livello di bilancio.
 - L'allegato fattura viene registrato nel DocumentStore/Scanner e legato al maturato per UUID; il PDF resta contenuto nel backup Scanner. Nessuna fattura viene inviata a terzi.
-- Non sono implementati ancora: prova di bonifico per singolo pagamento, controlli/anteprima PDF direttamente dalla scheda, migrazione dei pagamenti legacy, allocazione multi-cantiere con UI, gestione rettifiche/storni attraverso la UI, analitiche consolidate e notifiche del nuovo motore.
+- Esiste ora un collegamento **esplicito** alle Spese già registrate: controllo UUID, tipo uscita aziendale, importo in centesimi, data e cantiere quando entrambi dichiarati. Il movimento resta nel `FinanceStore`, non viene duplicato.
+- In alternativa l'utente può confermare la creazione di **una** uscita aziendale: l'identificativo `ge360-compensi-payment:<UUID>` è stabile per riutilizzare la stessa registrazione nei ritentativi. Il codice non effettua bonifici, né accerta i movimenti bancari.
+- Per ciascun pagamento è possibile allegare un comprovante PDF nello Scanner; non significa che la banca ne abbia attestato l'esecuzione. È possibile registrare uno storno solo per eventi **non collegati** a Spese; uno storno non cancella la prova o il vecchio evento.
+- Mancano ancora: verifica automatica dell'effettivo accredito bancario, anteprima PDF direttamente dalla scheda, migrazione/riconciliazione dei pagamenti legacy, allocazione multi-cantiere con UI, rettifiche di eventi già riconciliati, analitiche consolidate e notifiche del nuovo motore.
 - L'app Web Glass sul backend ha un adapter per il nuovo schema sul proprio branch V3; non esiste ancora alcun deploy della coppia app/backend.
 - Esportazione dati, permessi e accessibilità devono essere collaudati su un dispositivo reale prima dell'uso produttivo.
 
@@ -43,3 +46,13 @@ Base originaria Android `main` verificata: `91bbf01808fce6acd375ef6f5525ff0d278f
 `GE360-COMPENSI-004`: predisporre collegamento confermato del pagamento a `FinanceStore` e prova di versamento preservando gli eventi esistenti; aggiungere UI di storno e aggregazioni solo dopo riconciliazione. L'operatore deve poter scrivere un nome e registrare un compenso senza scegliere un cantiere.
 
 **Non creare PR verso main, non attivare Actions, non eseguire test/build/APK/deploy automaticamente senza nuova verifica delle condizioni.**
+
+## Tranche riconciliazione 1 novembre 2026
+
+- File `CompensationFinanceReconciliation.kt`: validatore puro e ricerca delle Spese ammissibili senza collegamenti per nome o importo soltanto.
+- `CompensationStore.kt`: `linkFinanceRecord()` aggiornamento solo del riferimento UUID, `attachPaymentProof()` per documento Scanner (unicità tra eventi), senza generare transazioni economiche.
+- `CompensationActivity.kt`: selezione manuale uscita esistente, registrazione espressamente confermata con UUID stabile, indicatore di collegamento eventualmente non verificabile se l'uscita è stata cambiata o cancellata, storno di registrazioni non collegate, caricamento PDF prova pagamento.
+- `CompensationFinanceReconciliationTest.kt`: casi JUnit aggiunti per importo, valuta numerica, data, cantiere, doppioni e uscita assente; **non eseguiti**.
+- Risolta mancanza del formattatore EUR nella schermata Kotlin.
+
+**Attenzione:** Compensi usa due database SQLite separati (archivio compensi e Spese). Non c'è una transazione ACID cross-database. Il riferimento stabile consente il ritentativo dopo errore, ma il legame dovrà essere verificato ancora sul dispositivo e dopo i ripristini. Le Spese di collaboratori interni ed esterni hanno categorie contabili differenti; la classificazione è scelta espressamente dall'operatore. Non sommare maturato, pagamento e Spesa come tre costi.
