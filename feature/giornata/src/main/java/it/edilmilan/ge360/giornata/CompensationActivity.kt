@@ -13,6 +13,10 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import it.edilmilan.ge360.scanner.DocumentStore
+import it.edilmilan.ge360.scanner.ScannerDocument
+import java.io.File
 import com.google.android.material.button.MaterialButton
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
@@ -33,6 +37,38 @@ class CompensationActivity : AppCompatActivity() {
     private lateinit var jobs: JobsiteStore
     private lateinit var ledger: CompensationStore
     private lateinit var body: LinearLayout
+    private var pendingInvoiceAccrualId: String? = null
+    private val invoicePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val accrualId = pendingInvoiceAccrualId
+        pendingInvoiceAccrualId = null
+        if (uri == null || accrualId == null) return@registerForActivityResult
+        runCatching {
+            require(ledger.accruals().any { it.ge360Id == accrualId }) { "Maturato non presente" }
+            val documentId = UUID.randomUUID().toString()
+            val target = File(filesDir, "scanner/compensi/$documentId.pdf")
+            require(target.parentFile?.mkdirs() == true || target.parentFile?.isDirectory == true)
+            contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "PDF non leggibile" }
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            val saved = ScannerDocument(
+                ge360Id = documentId,
+                type = "FATTURA_COLLABORATORE",
+                documentDate = LocalDate.now().toString(),
+                category = "Compensi",
+                pdfPath = target.absolutePath
+            )
+            DocumentStore(this).use { store -> store.save(saved) }
+            ledger.attachInvoice(CompensationInvoiceLinkV1(
+                ge360Id = UUID.randomUUID().toString(),
+                accrualGe360Id = accrualId,
+                scannerDocumentGe360Id = documentId
+            ))
+        }.onSuccess {
+            toast("Fattura collegata al maturato: pagamento non registrato.")
+            refresh()
+        }.onFailure { toast(it.message ?: "Allegato non salvato") }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +116,7 @@ class CompensationActivity : AppCompatActivity() {
         val agreements = ledger.agreements().associateBy { it.ge360Id }
         val personnel = daily.personnel(false).associateBy { it.ge360Id }
         val rows = ledger.accruals()
+        val invoices = ledger.invoices().groupBy { it.accrualGe360Id }
         val confirmed = rows.filter { it.status == CompensationAccrualStatus.CONFIRMED }
         val remaining = confirmed.sumOf { ledger.balance(it).remainingCents }
         body.addView(text("REGISTRO COMPENSI", 21f, true))
@@ -108,6 +145,15 @@ class CompensationActivity : AppCompatActivity() {
             card.addView(text("$person · $label", 17f, true))
             card.addView(text("${row.periodStart} · ${row.description.ifBlank { "Prestazione" }}", 12f, false))
             card.addView(text("Maturato confermato: ${money(row.amountCents)}", 14f, true))
+            val attached = invoices[row.ge360Id].orEmpty()
+            card.addView(text(
+                if (attached.isEmpty()) "Nessuna fattura allegata" else "${attached.size} fatture collegate",
+                12f, false
+            ))
+            card.addView(action("ALLEGA FATTURA PDF") {
+                pendingInvoiceAccrualId = row.ge360Id
+                invoicePicker.launch(arrayOf("application/pdf"))
+            })
             if (row.status == CompensationAccrualStatus.CONFIRMED) {
                 val balance = ledger.balance(row)
                 card.addView(text(
