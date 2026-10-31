@@ -262,12 +262,25 @@ class CompensationStore(context: Context) :
                     SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
             }
             val allAccruals = accruals().associateBy { it.ge360Id }
-            pay.forEach {
-                require(allAccruals.containsKey(it.accrualGe360Id)) {
+            pay.forEach { candidate ->
+                require(allAccruals.containsKey(candidate.accrualGe360Id)) {
                     "Maturato del pagamento mancante"
                 }
-                if (db.insertWithOnConflict("payments", null, paymentValues(it),
-                    SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
+                val current = payments()
+                val existing = current.singleOrNull { it.ge360Id == candidate.ge360Id }
+                if (existing != null) {
+                    require(existing == candidate) {
+                        "Conflitto tra eventi Compensi con lo stesso UUID: nessuna sovrascrittura"
+                    }
+                } else {
+                    val financeId = candidate.financeRecordGe360Id?.takeIf { it.isNotBlank() }
+                    require(financeId == null || current.none {
+                        it.kind == CompensationPaymentKind.PAYMENT &&
+                            it.financeRecordGe360Id == financeId
+                    }) { "Movimento Spese già collegato a un altro evento" }
+                    db.insertOrThrow("payments", null, paymentValues(candidate))
+                    inserted++
+                }
             }
             invoices.forEach {
                 require(allAccruals.containsKey(it.accrualGe360Id)) {
