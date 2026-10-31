@@ -262,7 +262,7 @@ object DataHubSyncCoordinator {
                 snapshot("preventivi_lifecycle", estimateLifecycle.exportJson()),
                 snapshot("preventivi_customizations", estimateCustomizations.exportFullJson()),
                 snapshot("planimetrie", floorPlans.exportJson()),
-                snapshot("attrezzi", toolsPayload(tools.exportJson(), VanPreparationStore(context).list())),
+                snapshot("attrezzi", toolsPayload(tools.exportJson(forSync = true), VanPreparationStore(context).list())),
                 snapshot("attrezzi_custom_packs", customWorkPacks.exportJson()),
                 snapshot("galleria", gallery.exportJson()),
                 snapshot("fisco_settings", fiscalSettingsJson(context))
