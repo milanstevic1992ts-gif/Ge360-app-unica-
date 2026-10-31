@@ -14,6 +14,7 @@ import it.edilmilan.ge360.core.bridge.JsonHttpClient
 import it.edilmilan.ge360.core.bridge.SecureBridgeSettings
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.DailyStore
+import it.edilmilan.ge360.giornata.CompensationStore
 import it.edilmilan.ge360.messaggi.TemplateStore
 import it.edilmilan.ge360.preventivi.EstimateStore
 import it.edilmilan.ge360.preventivi.EstimateLifecycleStore
@@ -230,6 +231,7 @@ object DataHubSyncCoordinator {
         val workflow = JobsiteWorkflowStore(context)
         val jobsiteArchive = JobsiteArchiveStore(context)
         val daily = DailyStore(context)
+        val compensi = CompensationStore(context)
         val messages = TemplateStore(context)
         val finances = FinanceStore(context)
         val documents = DocumentStore(context)
@@ -250,6 +252,7 @@ object DataHubSyncCoordinator {
                 snapshot("centrocantiere", workflow.exportJson()),
                 snapshot("jobsite_archive", jobsiteArchive.exportJson()),
                 snapshot("giornata", daily.exportJson()),
+                snapshot("compensi", compensi.exportJson()),
                 snapshot("messaggi", messages.exportJson()),
                 snapshot("spese", finances.exportJson()),
                 snapshot("scanner", documents.exportJson()),
@@ -270,6 +273,7 @@ object DataHubSyncCoordinator {
             workflow.close()
             jobsiteArchive.close()
             daily.close()
+            compensi.close()
             messages.close()
             finances.close()
             documents.close()
