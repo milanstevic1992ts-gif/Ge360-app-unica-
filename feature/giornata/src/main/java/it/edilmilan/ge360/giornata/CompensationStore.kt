@@ -117,6 +117,28 @@ class CompensationStore(context: Context) :
             )
         }
 
+    /** Both rows are written in one SQLite transaction, never as a half-created compensation. */
+    fun saveConfirmedAccrual(agreement: CompensationAgreementV1, accrual: CompensationAccrualV1) {
+        require(accrual.agreementGe360Id == agreement.ge360Id) {
+            "Accordo e maturato non corrispondenti"
+        }
+        require(accrual.status == CompensationAccrualStatus.CONFIRMED) {
+            "Questa operazione richiede un maturato confermato"
+        }
+        CompensationLedgerRulesV1.validatePeriod(agreement.mode, accrual)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            require(agreements().none { it.ge360Id == agreement.ge360Id }) { "Accordo già registrato" }
+            require(accruals().none { it.ge360Id == accrual.ge360Id }) { "Maturato già registrato" }
+            db.insertOrThrow("agreements", null, agreementValues(agreement))
+            db.insertOrThrow("accruals", null, accrualValues(accrual))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun saveAgreement(agreement: CompensationAgreementV1) {
         writableDatabase.beginTransaction()
         try {
