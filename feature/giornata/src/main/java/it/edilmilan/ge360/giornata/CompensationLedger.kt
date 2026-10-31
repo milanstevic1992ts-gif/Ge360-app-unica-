@@ -94,7 +94,7 @@ data class CompensationBalanceV1(
     val paymentCount: Int,
     val reversedPaymentCount: Int
 ) {
-    val fullyPaid: Boolean get() = remainingCents == 0L
+    val fullyPaid: Boolean get() = accruedCents > 0L && remainingCents == 0L
 }
 
 object CompensationLedgerRulesV1 {
@@ -139,6 +139,10 @@ object CompensationLedgerRulesV1 {
 
         val payments = events.filter { it.kind == CompensationPaymentKind.PAYMENT }
         val paymentsById = payments.associateBy { it.ge360Id }
+        val financeIds = payments.mapNotNull { it.financeRecordGe360Id?.takeIf(String::isNotBlank) }
+        require(financeIds.toSet().size == financeIds.size) {
+            "Lo stesso movimento Spese non può provare due pagamenti"
+        }
         val reversals = events.filter { it.kind == CompensationPaymentKind.REVERSAL }
         val reversedIds = mutableSetOf<String>()
 
@@ -147,6 +151,9 @@ object CompensationLedgerRulesV1 {
                 ?: throw IllegalArgumentException("Pagamento originale dello storno mancante")
             require(original.amountCents == reversal.amountCents) {
                 "Uno storno V1 annulla l'intero pagamento originale"
+            }
+            require(!reversal.recordedAt.isBefore(original.recordedAt)) {
+                "Uno storno non può precedere il pagamento originale"
             }
             require(reversedIds.add(original.ge360Id)) { "Pagamento già stornato" }
         }
