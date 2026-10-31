@@ -16,6 +16,7 @@ import it.edilmilan.ge360.galleria.GalleryArchive
 import it.edilmilan.ge360.galleria.GalleryPhoto
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.DailyStore
+import it.edilmilan.ge360.giornata.CompensationStore
 import it.edilmilan.ge360.messaggi.TemplateStore
 import it.edilmilan.ge360.planimetrie.FloorPlanStore
 import it.edilmilan.ge360.preventivi.EstimateStore
@@ -59,6 +60,7 @@ class BackupCoordinator(private val context: Context) {
         val workflow = JobsiteWorkflowStore(context)
         val jobsiteArchive = JobsiteArchiveStore(context)
         val daily = DailyStore(context)
+        val compensi = CompensationStore(context)
         val messages = TemplateStore(context)
         val finances = FinanceStore(context)
         val documents = DocumentStore(context)
@@ -79,6 +81,7 @@ class BackupCoordinator(private val context: Context) {
                 "modules/centro-cantiere.json" to workflow.exportJson(),
                 "modules/jobsite-archive.json" to jobsiteArchive.exportJson(),
                 "modules/giornata.json" to daily.exportJson(),
+                "modules/compensi.json" to compensi.exportJson(),
                 "modules/messaggi.json" to messages.exportJson(),
                 "modules/spese.json" to finances.exportJson(),
                 "modules/scanner.json" to documents.exportJson(),
@@ -159,7 +162,7 @@ class BackupCoordinator(private val context: Context) {
             val driveDone = copyToDrive && archive.driveReady() && runCatching { archive.copyToDrive(info.file) }.isSuccess
             return CreateResult(info, driveDone, galleryIncluded, gallerySkipped, scannerFiles)
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
         }
     }
 
@@ -194,6 +197,7 @@ class BackupCoordinator(private val context: Context) {
         val workflow = JobsiteWorkflowStore(context)
         val jobsiteArchive = JobsiteArchiveStore(context)
         val daily = DailyStore(context)
+        val compensi = CompensationStore(context)
         val messages = TemplateStore(context)
         val finances = FinanceStore(context)
         val documents = DocumentStore(context)
@@ -228,6 +232,10 @@ class BackupCoordinator(private val context: Context) {
             val dailyJson = runCatching { archive.readText(file, "modules/giornata.json") }.getOrNull()
             if (dailyJson != null) counts["Giornata"] = daily.importJson(dailyJson, replaceAll)
             else warnings += "Backup precedente a Giornata: nessun dato ore/rapportini da ripristinare."
+
+            val compensiJson = runCatching { archive.readText(file, "modules/compensi.json") }.getOrNull()
+            if (compensiJson != null) counts["Compensi"] = compensi.importJson(compensiJson, replaceAll)
+            else warnings += "Backup precedente al nuovo registro Compensi: archivio Compensi attuale conservato, nessun pagamento storico dedotto."
 
             counts["Messaggi"] = messages.importJson(archive.readText(file, "modules/messaggi.json"), replaceAll)
             counts["Spese"] = finances.importJson(archive.readText(file, "modules/spese.json"), replaceAll)
@@ -286,7 +294,7 @@ class BackupCoordinator(private val context: Context) {
             }
             throw error
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
         }
     }
 
@@ -327,6 +335,7 @@ class BackupCoordinator(private val context: Context) {
             "modules/preventivi-lifecycle.json" to EstimateLifecycleStore.BACKUP_SCHEMA,
             "modules/preventivi-customizations.json" to PreventiviCustomizationStore.FULL_BACKUP_SCHEMA,
             "modules/attrezzi-custom-packs.json" to CustomWorkPackStore.BACKUP_SCHEMA,
+            "modules/compensi.json" to CompensationStore.SCHEMA,
             "modules/furgone.json" to VanPreparationStore.BACKUP_SCHEMA
         )
         optionalSchemas.forEach { (path, schema) ->
