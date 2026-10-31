@@ -88,7 +88,7 @@ class CollaboratorsActivity : AppCompatActivity() {
         body.addView(sectionTitle("NUOVO REGISTRO COMPENSI",
             "Compensi settimanali e a cottimo, separati dalle ore e dai pagamenti storici."))
         body.addView(MaterialButton(this).apply {
-            text = "APR I COMPENSI SETTIMANALI / A COTTIMO".replace("APR I", "APRI")
+            text = "APRI COMPENSI · SETTIMANA / COTTIMO"
             minHeight = dp(54)
             setOnClickListener {
                 startActivity(Intent(this@CollaboratorsActivity, CompensationActivity::class.java))
