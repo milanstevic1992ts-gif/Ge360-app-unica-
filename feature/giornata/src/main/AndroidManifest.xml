@@ -14,6 +14,9 @@
             android:name=".CollaboratorsActivity"
             android:exported="false" />
         <activity
+            android:name=".CompensationActivity"
+            android:exported="false" />
+        <activity
             android:name=".ExternalCollaboratorsActivity"
             android:exported="false" />
 
