@@ -16,6 +16,17 @@ import java.time.LocalDate
  * No payment creates a FinanceRecord; optional finance UUID is only a cross-reference.
  * Backup is versioned; import is transactional and never overwrites an existing UUID in merge mode.
  */
+data class CompensationInvoiceLinkV1(
+    val ge360Id: String,
+    val accrualGe360Id: String,
+    val scannerDocumentGe360Id: String
+) {
+    init {
+        require(ge360Id.isNotBlank() && accrualGe360Id.isNotBlank() &&
+            scannerDocumentGe360Id.isNotBlank())
+    }
+}
+
 class CompensationStore(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DATABASE, null, VERSION) {
 
@@ -51,6 +62,12 @@ class CompensationStore(context: Context) :
         )""")
         db.execSQL("CREATE INDEX idx_comp_payment_accrual ON payments(accrual_id)")
         db.execSQL("CREATE UNIQUE INDEX idx_comp_finance_ref ON payments(finance_record_id) WHERE finance_record_id <> '' AND kind = 'PAYMENT'")
+        db.execSQL("""CREATE TABLE invoice_links(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            accrual_id TEXT NOT NULL,
+            scanner_document_id TEXT NOT NULL UNIQUE
+        )""")
+        db.execSQL("CREATE INDEX idx_comp_invoice_accrual ON invoice_links(accrual_id)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -149,6 +166,29 @@ class CompensationStore(context: Context) :
         }
     }
 
+    fun invoices(): List<CompensationInvoiceLinkV1> =
+        read("invoice_links", "accrual_id, ge360_id") { c ->
+            CompensationInvoiceLinkV1(c.str("ge360_id"), c.str("accrual_id"),
+                c.str("scanner_document_id"))
+        }
+
+    fun attachInvoice(link: CompensationInvoiceLinkV1) {
+        writableDatabase.beginTransaction()
+        try {
+            require(accruals().any { it.ge360Id == link.accrualGe360Id }) {
+                "Maturato della fattura mancante"
+            }
+            require(invoices().none {
+                it.ge360Id == link.ge360Id ||
+                    it.scannerDocumentGe360Id == link.scannerDocumentGe360Id
+            }) { "Fattura già associata" }
+            writableDatabase.insertOrThrow("invoice_links", null, invoiceValues(link))
+            writableDatabase.setTransactionSuccessful()
+        } finally {
+            writableDatabase.endTransaction()
+        }
+    }
+
     fun balance(accrual: CompensationAccrualV1): CompensationBalanceV1 =
         CompensationLedgerRulesV1.balance(accrual,
             payments().filter { it.accrualGe360Id == accrual.ge360Id })
@@ -160,6 +200,7 @@ class CompensationStore(context: Context) :
         .put("agreements", JSONArray().apply { agreements().forEach { put(agreementJson(it)) } })
         .put("accruals", JSONArray().apply { accruals().forEach { put(accrualJson(it)) } })
         .put("payments", JSONArray().apply { payments().forEach { put(paymentJson(it)) } })
+        .put("invoiceLinks", JSONArray().apply { invoices().forEach { put(invoiceJson(it)) } })
         .toString(2)
 
     fun importJson(json: String, replaceAll: Boolean): Int {
@@ -168,6 +209,11 @@ class CompensationStore(context: Context) :
         val ag = decodeArray(root, "agreements", ::agreementFromJson)
         val ac = decodeArray(root, "accruals", ::accrualFromJson)
         val pay = decodeArray(root, "payments", ::paymentFromJson)
+        val invoices = if (root.has("invoiceLinks")) {
+            decodeArray(root, "invoiceLinks", ::invoiceFromJson)
+        } else emptyList()
+        require(invoices.distinctBy { it.ge360Id }.size == invoices.size)
+        require(invoices.distinctBy { it.scannerDocumentGe360Id }.size == invoices.size)
         require(ag.distinctBy { it.ge360Id }.size == ag.size)
         require(ac.distinctBy { it.ge360Id }.size == ac.size)
         require(pay.distinctBy { it.ge360Id }.size == pay.size)
@@ -176,6 +222,7 @@ class CompensationStore(context: Context) :
         db.beginTransaction()
         try {
             if (replaceAll) {
+                db.delete("invoice_links", null, null)
                 db.delete("payments", null, null)
                 db.delete("accruals", null, null)
                 db.delete("agreements", null, null)
@@ -198,6 +245,13 @@ class CompensationStore(context: Context) :
                     "Maturato del pagamento mancante"
                 }
                 if (db.insertWithOnConflict("payments", null, paymentValues(it),
+                    SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
+            }
+            invoices.forEach {
+                require(allAccruals.containsKey(it.accrualGe360Id)) {
+                    "Maturato di fattura mancante"
+                }
+                if (db.insertWithOnConflict("invoice_links", null, invoiceValues(it),
                     SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
             }
             // Validate the complete imported ledger before committing.
@@ -231,6 +285,12 @@ class CompensationStore(context: Context) :
     private fun Cursor.str(column: String) = getString(getColumnIndexOrThrow(column))
     private fun Cursor.long(column: String) = getLong(getColumnIndexOrThrow(column))
 
+    private fun invoiceValues(x: CompensationInvoiceLinkV1) = ContentValues().apply {
+        put("ge360_id", x.ge360Id)
+        put("accrual_id", x.accrualGe360Id)
+        put("scanner_document_id", x.scannerDocumentGe360Id)
+    }
+
     private fun agreementValues(x: CompensationAgreementV1) = ContentValues().apply {
         put("ge360_id", x.ge360Id)
         put("collaborator_id", x.collaboratorGe360Id)
@@ -260,6 +320,11 @@ class CompensationStore(context: Context) :
         put("reverses_payment_id", x.reversesPaymentGe360Id.orEmpty())
     }
 
+    private fun invoiceJson(x: CompensationInvoiceLinkV1) = JSONObject()
+        .put("ge360Id", x.ge360Id)
+        .put("accrualGe360Id", x.accrualGe360Id)
+        .put("scannerDocumentGe360Id", x.scannerDocumentGe360Id)
+
     private fun agreementJson(x: CompensationAgreementV1) = JSONObject()
         .put("ge360Id", x.ge360Id).put("collaboratorGe360Id", x.collaboratorGe360Id)
         .put("mode", x.mode.name).put("agreedAmountCents", x.agreedAmountCents)
@@ -279,6 +344,12 @@ class CompensationStore(context: Context) :
         .put("proofDocumentGe360Id", x.proofDocumentGe360Id.orEmpty())
         .put("financeRecordGe360Id", x.financeRecordGe360Id.orEmpty())
         .put("reversesPaymentGe360Id", x.reversesPaymentGe360Id.orEmpty())
+
+    private fun invoiceFromJson(x: JSONObject) = CompensationInvoiceLinkV1(
+        ge360Id = x.getString("ge360Id"),
+        accrualGe360Id = x.getString("accrualGe360Id"),
+        scannerDocumentGe360Id = x.getString("scannerDocumentGe360Id")
+    )
 
     private fun agreementFromJson(x: JSONObject) = CompensationAgreementV1(
         ge360Id = x.getString("ge360Id"), collaboratorGe360Id = x.getString("collaboratorGe360Id"),
