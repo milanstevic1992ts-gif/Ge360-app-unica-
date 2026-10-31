@@ -85,6 +85,16 @@ class CollaboratorsActivity : AppCompatActivity() {
         val weekStart = SlobodanWeeklyPay.weekStart()
         val currentPayment = SlobodanWeeklyPay.paymentForWeek(financeStore, slobodan, weekStart)
 
+        body.addView(sectionTitle("NUOVO REGISTRO COMPENSI",
+            "Compensi settimanali e a cottimo, separati dalle ore e dai pagamenti storici."))
+        body.addView(MaterialButton(this).apply {
+            text = "APR I COMPENSI SETTIMANALI / A COTTIMO".replace("APR I", "APRI")
+            minHeight = dp(54)
+            setOnClickListener {
+                startActivity(Intent(this@CollaboratorsActivity, CompensationActivity::class.java))
+            }
+        }, full(dp(58)))
+
         body.addView(sectionTitle("SLOBODAN", "Compenso fisso settimanale e stato del pagamento corrente."))
         body.addView(slobodanCard(currentPayment, weekStart))
 
