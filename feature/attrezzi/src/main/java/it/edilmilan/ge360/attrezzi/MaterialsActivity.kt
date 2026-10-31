@@ -292,7 +292,7 @@ class MaterialsActivity : AppCompatActivity() {
         val plannedQty = numberField(0.0)
         val result = TextView(this).apply {
             textSize = 13f
-            setTextColor(Ge360Brand.TextPrimary)
+            setTextColor(Ge360Brand.Text)
             setPadding(dp(4), dp(12), dp(4), dp(12))
         }
         val form = formBox()
