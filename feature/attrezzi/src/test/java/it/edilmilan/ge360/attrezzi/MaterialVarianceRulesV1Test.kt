@@ -83,4 +83,51 @@ class MaterialVarianceRulesV1Test {
                 jobsiteGe360Id = "job-1", completeHistory = true)
         }
     }
+
+
+    @Test
+    fun same_name_is_not_enough_to_combine_materials() {
+        val plan = PlannedMaterialQuantityV1("material-1", 10.0, "sacchi", "job-1")
+        val other = MaterialStockMovement(
+            ge360Id = "other", materialGe360Id = "material-2",
+            materialName = "Rasante", type = MaterialStockMovement.TYPE_CONSUME,
+            quantity = -9.0, unit = "sacchi", jobsiteId = "job-1"
+        )
+        val result = MaterialVarianceRulesV1.compare(
+            "material-1", "sacchi", plan, listOf(other),
+            jobsiteGe360Id = "job-1", completeHistory = true
+        )
+        assertEquals(0.0, result.observedConsumption, 0.0)
+        assertEquals(-10.0, result.consumptionDelta ?: Double.NaN, 0.0001)
+    }
+
+    @Test
+    fun no_automatic_percent_when_planned_quantity_is_zero() {
+        val plan = PlannedMaterialQuantityV1("material-1", 0.0, "sacchi", "job-1")
+        val result = MaterialVarianceRulesV1.compare(
+            "material-1", "sacchi", plan, listOf(
+                move(MaterialStockMovement.TYPE_CONSUME, -2.0)
+            ), jobsiteGe360Id = "job-1", completeHistory = true
+        )
+        assertEquals(2.0, result.consumptionDelta ?: Double.NaN, 0.0001)
+        assertNull(result.consumptionPct)
+    }
+
+    @Test
+    fun material_plan_revision_uses_explicit_material_and_cantiere_uuids() {
+        val revision = MaterialPlanRevisionV1(
+            ge360Id = "revision-1",
+            materialGe360Id = "material-1",
+            jobsiteGe360Id = "job-1",
+            quantity = 16.0,
+            unit = "sacchi",
+            confirmedAt = 1761948000000L
+        )
+        val quantity = revision.toQuantity()
+        assertEquals("material-1", quantity.materialGe360Id)
+        assertEquals("job-1", quantity.jobsiteGe360Id)
+        assertEquals("revision-1", quantity.planVersion)
+        assertEquals(16.0, quantity.quantity, 0.0)
+    }
+
 }
