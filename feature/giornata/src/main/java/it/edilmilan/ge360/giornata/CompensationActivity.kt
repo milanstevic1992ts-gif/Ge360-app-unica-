@@ -265,10 +265,19 @@ class CompensationActivity : AppCompatActivity() {
         val input = edit("Pagamento registrato €", true).apply {
             setText(BigDecimal(balance.remainingCents).movePointLeft(2).toPlainString())
         }
+        val paymentDate = edit("Data pagamento (AAAA-MM-GG)").apply {
+            setText(LocalDate.now().toString())
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), 0)
+            addView(input)
+            addView(paymentDate)
+        }
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("Registra pagamento dichiarato")
             .setMessage("Registra soltanto un pagamento già effettuato. Questa azione non crea una Spesa e non invia un bonifico.")
-            .setView(input)
+            .setView(form)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("CONFERMA", null)
             .create()
@@ -284,7 +293,7 @@ class CompensationActivity : AppCompatActivity() {
                         accrualGe360Id = row.ge360Id,
                         kind = CompensationPaymentKind.PAYMENT,
                         amountCents = cents,
-                        recordedAt = LocalDate.now()
+                        recordedAt = LocalDate.parse(paymentDate.text.toString().trim())
                     ))
                 }.onSuccess {
                     dialog.dismiss()
