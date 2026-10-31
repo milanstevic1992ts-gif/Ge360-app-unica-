@@ -43,6 +43,39 @@ class CompensationActivity : AppCompatActivity() {
     private lateinit var finance: FinanceStore
     private lateinit var body: LinearLayout
     private var pendingInvoiceAccrualId: String? = null
+    private var pendingProofPaymentId: String? = null
+    private val proofPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val paymentId = pendingProofPaymentId
+        pendingProofPaymentId = null
+        if (uri == null || paymentId == null) return@registerForActivityResult
+        runCatching {
+            val payment = ledger.payments().singleOrNull { it.ge360Id == paymentId }
+                ?: error("Pagamento da documentare non trovato")
+            require(payment.kind == CompensationPaymentKind.PAYMENT) {
+                "Seleziona un pagamento, non uno storno"
+            }
+            val documentId = UUID.randomUUID().toString()
+            val target = File(filesDir, "scanner/compensi/payment_$documentId.pdf")
+            require(target.parentFile?.mkdirs() == true || target.parentFile?.isDirectory == true)
+            contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "PDF non leggibile" }
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            DocumentStore(this).use { store ->
+                store.save(ScannerDocument(
+                    ge360Id = documentId,
+                    type = "PROVA_PAGAMENTO_COLLABORATORE",
+                    documentDate = payment.recordedAt.toString(),
+                    category = "Compensi",
+                    pdfPath = target.absolutePath
+                ))
+            }
+            ledger.attachPaymentProof(paymentId, documentId)
+        }.onSuccess {
+            toast("Comprovante allegato. Il pagamento resta una registrazione dichiarata.")
+            refresh()
+        }.onFailure { toast(it.message ?: "Comprovante non collegato") }
+    }
     private val invoicePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val accrualId = pendingInvoiceAccrualId
         pendingInvoiceAccrualId = null
@@ -82,6 +115,7 @@ class CompensationActivity : AppCompatActivity() {
         ledger = CompensationStore(this)
         finance = FinanceStore(this)
         pendingInvoiceAccrualId = savedInstanceState?.getString("pending_invoice_accrual_id")
+        pendingProofPaymentId = savedInstanceState?.getString("pending_proof_payment_id")
         setContentView(screen())
         refresh()
     }
@@ -93,6 +127,7 @@ class CompensationActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("pending_invoice_accrual_id", pendingInvoiceAccrualId)
+        outState.putString("pending_proof_payment_id", pendingProofPaymentId)
         super.onSaveInstanceState(outState)
     }
 
@@ -190,6 +225,14 @@ class CompensationActivity : AppCompatActivity() {
                         "Pagamento ${payment.recordedAt} · ${money(payment.amountCents)}",
                         12f, true
                     ))
+                    if (payment.proofDocumentGe360Id.isNullOrBlank()) {
+                        card.addView(action("ALLEGA COMPROVANTE PDF") {
+                            pendingProofPaymentId = payment.ge360Id
+                            proofPicker.launch(arrayOf("application/pdf"))
+                        })
+                    } else {
+                        card.addView(text("Comprovante PDF registrato · ID ${payment.proofDocumentGe360Id.takeLast(8)}", 12f, false))
+                    }
                     if (payment.ge360Id in reversedIds) {
                         card.addView(text("Stornato nel registro Compensi", 12f, false))
                     } else if (!linkedId.isNullOrBlank()) {
