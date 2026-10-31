@@ -18,6 +18,8 @@ import it.edilmilan.ge360.scanner.DocumentStore
 import it.edilmilan.ge360.scanner.ScannerDocument
 import it.edilmilan.ge360.spese.FinanceStore
 import it.edilmilan.ge360.spese.FinanceRecord
+import it.edilmilan.ge360.spese.FinanceScope
+import it.edilmilan.ge360.spese.FinanceType
 import java.io.File
 import com.google.android.material.button.MaterialButton
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -209,6 +211,9 @@ class CompensationActivity : AppCompatActivity() {
                                 chooseExistingFinance(payment, agreement?.jobsiteGe360Id, candidates)
                             })
                         }
+                        card.addView(action("REGISTRA ANCHE IN SPESE") {
+                            confirmNewFinanceExpense(payment, agreement?.jobsiteGe360Id)
+                        })
                         card.addView(action("STORNA QUESTA REGISTRAZIONE") {
                             confirmReversal(payment)
                         })
@@ -349,6 +354,72 @@ class CompensationActivity : AppCompatActivity() {
                     refresh()
                     toast("Collegato a Spese esistente: nessuna nuova uscita creata.")
                 }.onFailure { toast(it.message ?: "Collegamento non valido") }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun confirmNewFinanceExpense(
+        payment: CompensationPaymentEventV1, jobsiteId: String?
+    ) {
+        val options = listOf("Collaboratori", "Collaboratori esterni")
+        val categories = Spinner(this).apply {
+            adapter = ArrayAdapter(this@CompensationActivity,
+                android.R.layout.simple_spinner_dropdown_item, options)
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), 0)
+            addView(text(
+                "Il movimento verrà aggiunto una sola volta a Spese aziendali. " +
+                    "Controlla prima che non sia già presente nel tuo archivio: " +
+                    "due uscite distinte con stesso importo e data possono essere reali.",
+                12f, false
+            ))
+            addView(text("Categoria dell'uscita", 12f, true))
+            addView(categories)
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Registra uscita in Spese")
+            .setView(container)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("REGISTRA USCITA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    val stableId = "ge360-compensi-payment:${payment.ge360Id}"
+                    val existing = finance.getByGe360Id(stableId)
+                    val job = jobsiteId?.takeIf { it.isNotBlank() }
+                        ?.let { jobs.getByGe360Id(it) }
+                    val amount = BigDecimal(payment.amountCents).movePointLeft(2).toDouble()
+                    require(amount.isFinite() && amount > 0) { "Importo non rappresentabile in Spese" }
+                    val expense = existing ?: FinanceRecord(
+                        ge360Id = stableId,
+                        type = FinanceType.EXPENSE,
+                        amount = amount,
+                        category = options[categories.selectedItemPosition],
+                        note = "Pagamento registrato Compensi · ${payment.ge360Id}",
+                        date = payment.recordedAt.toString(),
+                        scope = FinanceScope.BUSINESS,
+                        jobsiteId = jobsiteId.orEmpty(),
+                        jobsiteCode = job?.code.orEmpty(),
+                        jobsiteTitle = job?.displayTitle().orEmpty()
+                    )
+                    CompensationFinanceReconciliation.validateLink(
+                        payment, expense, jobsiteId
+                    )
+                    if (existing == null) {
+                        finance.save(expense)
+                    }
+                    val recorded = finance.getByGe360Id(stableId)
+                        ?: error("Movimento Spese non verificabile dopo il salvataggio")
+                    ledger.linkFinanceRecord(payment.ge360Id, recorded)
+                }.onSuccess {
+                    dialog.dismiss()
+                    refresh()
+                    toast("Uscita collegata a Compensi: una sola registrazione in Spese.")
+                }.onFailure { toast(it.message ?: "Non è stato possibile registrare l'uscita") }
             }
         }
         dialog.show()
