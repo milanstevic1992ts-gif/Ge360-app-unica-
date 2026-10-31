@@ -75,6 +75,7 @@ class CompensationActivity : AppCompatActivity() {
         daily = DailyStore(this)
         jobs = JobsiteStore(this)
         ledger = CompensationStore(this)
+        pendingInvoiceAccrualId = savedInstanceState?.getString("pending_invoice_accrual_id")
         setContentView(screen())
         refresh()
     }
@@ -82,6 +83,11 @@ class CompensationActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::body.isInitialized) refresh()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("pending_invoice_accrual_id", pendingInvoiceAccrualId)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
