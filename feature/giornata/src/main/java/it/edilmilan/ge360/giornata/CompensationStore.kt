@@ -188,6 +188,55 @@ class CompensationStore(context: Context) :
         }
     }
 
+    /**
+     * Links to an existing FinanceStore expense. It does NOT create a second expense.
+     * The caller must supply the current FinanceRecord; no matching by amount alone.
+     */
+    fun linkFinanceRecord(paymentId: String, finance: it.edilmilan.ge360.spese.FinanceRecord) {
+        require(paymentId.isNotBlank()) { "Identificativo pagamento mancante" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val events = payments()
+            val payment = events.singleOrNull { it.ge360Id == paymentId }
+                ?: error("Pagamento del nuovo registro non trovato")
+            require(payment.kind == CompensationPaymentKind.PAYMENT) {
+                "Impossibile associare un evento di storno"
+            }
+            require(events.none { it.kind == CompensationPaymentKind.REVERSAL &&
+                it.reversesPaymentGe360Id == paymentId }) {
+                "Un pagamento già stornato non può essere associato a Spese"
+            }
+            val accrual = accruals().singleOrNull { it.ge360Id == payment.accrualGe360Id }
+                ?: error("Maturato del pagamento assente")
+            val agreement = agreements().singleOrNull { it.ge360Id == accrual.agreementGe360Id }
+                ?: error("Accordo del maturato assente")
+            CompensationFinanceReconciliation.validateLink(
+                payment, finance, agreement.jobsiteGe360Id
+            )
+            require(events.none { it.ge360Id != paymentId &&
+                it.kind == CompensationPaymentKind.PAYMENT &&
+                it.financeRecordGe360Id == finance.ge360Id }) {
+                "La stessa uscita è già associata a un altro pagamento"
+            }
+            if (payment.financeRecordGe360Id == finance.ge360Id) {
+                db.setTransactionSuccessful()
+                return
+            }
+            require(payment.financeRecordGe360Id.isNullOrBlank()) {
+                "Pagamento già associato a un altro documento Spese"
+            }
+            val changed = db.update("payments",
+                ContentValues().apply { put("finance_record_id", finance.ge360Id) },
+                "ge360_id=? AND kind='PAYMENT' AND finance_record_id=''",
+                arrayOf(paymentId))
+            require(changed == 1) { "Collegamento non salvato: riprovare" }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun invoices(): List<CompensationInvoiceLinkV1> =
         read("invoice_links", "accrual_id, ge360_id") { c ->
             CompensationInvoiceLinkV1(c.str("ge360_id"), c.str("accrual_id"),
