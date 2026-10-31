@@ -252,7 +252,7 @@ object DataHubSyncCoordinator {
                 snapshot("centrocantiere", workflow.exportJson()),
                 snapshot("jobsite_archive", jobsiteArchive.exportJson()),
                 snapshot("giornata", daily.exportJson()),
-                snapshot("compensi", compensi.exportJson()),
+                snapshot("compensi", compensiSnapshot(compensi, daily)),
                 snapshot("messaggi", messages.exportJson()),
                 snapshot("spese", finances.exportJson()),
                 snapshot("scanner", documents.exportJson()),
@@ -285,6 +285,19 @@ object DataHubSyncCoordinator {
             tools.close()
             gallery.close()
         }
+    }
+
+    private fun compensiSnapshot(compensi: CompensationStore, daily: DailyStore): String {
+        val root = JSONObject(compensi.exportJson())
+        // Display-only projection. Personnel remain authoritative in Giornata.
+        root.put("collaborators", JSONArray().apply {
+            daily.personnel(false).forEach { person ->
+                put(JSONObject()
+                    .put("ge360Id", person.ge360Id)
+                    .put("name", person.name))
+            }
+        })
+        return root.toString()
     }
 
     private fun snapshot(name: String, json: String): ModuleSnapshot {
