@@ -250,16 +250,31 @@ class CompensationStore(context: Context) :
                 db.delete("agreements", null, null)
             }
             var inserted = 0
-            ag.forEach {
-                if (db.insertWithOnConflict("agreements", null, agreementValues(it),
-                    SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
+            ag.forEach { candidate ->
+                val existing = agreements().singleOrNull { it.ge360Id == candidate.ge360Id }
+                if (existing != null) {
+                    require(existing == candidate) {
+                        "Accordo già presente con dati divergenti; merge annullato"
+                    }
+                } else {
+                    db.insertOrThrow("agreements", null, agreementValues(candidate))
+                    inserted++
+                }
             }
             val allAgreements = agreements().associateBy { it.ge360Id }
-            ac.forEach {
-                val parent = allAgreements[it.agreementGe360Id] ?: error("Accordo del maturato mancante")
-                CompensationLedgerRulesV1.validatePeriod(parent.mode, it)
-                if (db.insertWithOnConflict("accruals", null, accrualValues(it),
-                    SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
+            ac.forEach { candidate ->
+                val parent = allAgreements[candidate.agreementGe360Id]
+                    ?: error("Accordo del maturato mancante")
+                CompensationLedgerRulesV1.validatePeriod(parent.mode, candidate)
+                val existing = accruals().singleOrNull { it.ge360Id == candidate.ge360Id }
+                if (existing != null) {
+                    require(existing == candidate) {
+                        "Maturato già presente con dati divergenti; merge annullato"
+                    }
+                } else {
+                    db.insertOrThrow("accruals", null, accrualValues(candidate))
+                    inserted++
+                }
             }
             val allAccruals = accruals().associateBy { it.ge360Id }
             pay.forEach { candidate ->
@@ -282,12 +297,23 @@ class CompensationStore(context: Context) :
                     inserted++
                 }
             }
-            invoices.forEach {
-                require(allAccruals.containsKey(it.accrualGe360Id)) {
+            invoices.forEach { candidate ->
+                require(allAccruals.containsKey(candidate.accrualGe360Id)) {
                     "Maturato di fattura mancante"
                 }
-                if (db.insertWithOnConflict("invoice_links", null, invoiceValues(it),
-                    SQLiteDatabase.CONFLICT_IGNORE) != -1L) inserted++
+                val current = this.invoices()
+                val existing = current.singleOrNull { it.ge360Id == candidate.ge360Id }
+                if (existing != null) {
+                    require(existing == candidate) {
+                        "Collegamento fattura già presente con dati divergenti"
+                    }
+                } else {
+                    require(current.none {
+                        it.scannerDocumentGe360Id == candidate.scannerDocumentGe360Id
+                    }) { "Lo stesso documento Scanner è già collegato a un altro maturato" }
+                    db.insertOrThrow("invoice_links", null, invoiceValues(candidate))
+                    inserted++
+                }
             }
             // Validate the complete imported ledger before committing.
             val allPayments = payments()
