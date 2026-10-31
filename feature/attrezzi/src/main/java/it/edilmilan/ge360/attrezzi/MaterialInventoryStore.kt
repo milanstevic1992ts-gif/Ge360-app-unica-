@@ -436,17 +436,43 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
             root.optJSONArray("materials")?.let { rows ->
                 for (i in 0 until rows.length()) {
                     val item = materialFromJson(rows.getJSONObject(i))
-                    findByGe360(item.ge360Id)?.let { item.id = it.id }
-                    save(item)
-                    count++
+                    require(item.ge360Id.isNotBlank() && item.name.isNotBlank() &&
+                        item.stockQty.isFinite() && item.stockQty >= 0 &&
+                        item.avgUnitCost.isFinite() && item.avgUnitCost >= 0) {
+                        "Anagrafica materiale non valida nel backup"
+                    }
+                    val existing = findByGe360(item.ge360Id)
+                    if (existing == null) {
+                        save(item)
+                        count++
+                    } else {
+                        // In merge mode, never overwrite real stock or a more recent catalog.
+                        // Timestamp is not a business value and save() refreshes it.
+                        require(existing.copy(id = 0, updatedAt = 0) ==
+                            item.copy(id = 0, updatedAt = 0)) {
+                            "Materiale con UUID già presente e dati divergenti: ripristino annullato"
+                        }
+                    }
                 }
             }
             root.optJSONArray("movements")?.let { rows ->
                 for (i in 0 until rows.length()) {
                     val movement = movementFromJson(rows.getJSONObject(i))
-                    if (!movementExists(movement.ge360Id)) {
+                    require(movement.ge360Id.isNotBlank() && movement.materialGe360Id.isNotBlank() &&
+                        movement.type in MaterialStockMovement.TYPES &&
+                        movement.quantity.isFinite() && movement.quantity != 0.0 &&
+                        movement.unitCost.isFinite() && movement.unitCost >= 0.0 &&
+                        findByGe360(movement.materialGe360Id) != null) {
+                        "Movimento materiale non valido o senza anagrafica"
+                    }
+                    val existing = findMovementByGe360(movement.ge360Id)
+                    if (existing == null) {
                         db.insertOrThrow("material_movements", null, movementValues(movement))
                         count++
+                    } else {
+                        require(existing.copy(id = 0) == movement.copy(id = 0)) {
+                            "Movimento con UUID già presente e dati divergenti: ripristino annullato"
+                        }
                     }
                 }
             }
@@ -472,6 +498,14 @@ class MaterialInventoryStore(context: Context) : SQLiteOpenHelper(
         readableDatabase.query("materials", null, selection, args, null, null, null, "1").use { c ->
             return if (c.moveToFirst()) materialFromCursor(c) else null
         }
+    }
+
+    private fun findMovementByGe360(ge360Id: String): MaterialStockMovement? {
+        if (ge360Id.isBlank()) return null
+        return readableDatabase.query(
+            "material_movements", null, "ge360_id=?", arrayOf(ge360Id),
+            null, null, null, "1"
+        ).use { c -> if (c.moveToFirst()) movementFromCursor(c) else null }
     }
 
     private fun movementExists(ge360Id: String): Boolean {
