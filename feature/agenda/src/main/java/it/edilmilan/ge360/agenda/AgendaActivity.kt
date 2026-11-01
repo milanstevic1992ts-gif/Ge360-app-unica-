@@ -2,6 +2,9 @@ package it.edilmilan.ge360.agenda
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.HorizontalScrollView
 import android.graphics.Typeface
 import android.os.Bundle
@@ -286,6 +289,8 @@ class AgendaActivity : AppCompatActivity() {
         var dueAt = entry.dueAt
         var clientId = entry.clientGe360Id
         var jobsiteId = entry.jobsiteGe360Id
+        var repeatRule = entry.repeat
+        var leadMinutes = entry.reminderLeadMinutes
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(17), dp(8), dp(17), dp(10))
@@ -334,6 +339,44 @@ class AgendaActivity : AppCompatActivity() {
         val private = CheckBox(this).apply { text = "Privato (non inviare al Data Hub)"; isChecked = entry.scope == AgendaEntry.PRIVATE }
         form.addView(high)
         form.addView(private)
+        val notifyMe = CheckBox(this).apply {
+            text = "Notifica sul telefono"
+            isChecked = entry.reminderEnabled ||
+                (entry.kind == AgendaEntry.EVENT && entry.title.isBlank())
+        }
+        if (entry.kind != AgendaEntry.NOTE) {
+            val labels = arrayOf("Non ripetere", "Ogni giorno", "Ogni settimana", "Ogni mese")
+            val options = AgendaEntry.REPEAT_OPTIONS
+            form.addView(MaterialButton(this).apply {
+                text = "Ripeti: " + labels[options.indexOf(repeatRule).coerceAtLeast(0)]
+                isAllCaps = false
+                setOnClickListener {
+                    val control = this
+                    AlertDialog.Builder(this@AgendaActivity)
+                        .setTitle("Ripetizione")
+                        .setItems(labels) { _, index ->
+                            repeatRule = options[index]
+                            control.text = "Ripeti: " + labels[index]
+                        }.show()
+                }
+            })
+            form.addView(notifyMe)
+            val times = listOf(0, 15, 60, 1440)
+            val descriptions = arrayOf("All'orario", "15 minuti prima", "1 ora prima", "1 giorno prima")
+            form.addView(MaterialButton(this).apply {
+                text = "Avvisa: " + descriptions[times.indexOf(leadMinutes).coerceAtLeast(0)]
+                isAllCaps = false
+                setOnClickListener {
+                    val control = this
+                    AlertDialog.Builder(this@AgendaActivity)
+                        .setTitle("Anticipo del promemoria")
+                        .setItems(descriptions) { _, index ->
+                            leadMinutes = times[index]
+                            control.text = "Avvisa: " + descriptions[index]
+                        }.show()
+                }
+            })
+        }
         val clientButton = MaterialButton(this).apply { text = if (clientId.isEmpty()) "Collega cliente (facoltativo)" else "Cliente collegato ✓" }
         clientButton.setOnClickListener {
             runCatching {
@@ -378,12 +421,27 @@ class AgendaActivity : AppCompatActivity() {
                     message("Scegli data e ora dell'appuntamento")
                     return@setOnClickListener
                 }
+                if (repeatRule != AgendaEntry.REPEAT_NONE && dueAt <= 0) {
+                    message("Imposta una data per la ripetizione")
+                    return@setOnClickListener
+                }
+                if (entry.kind != AgendaEntry.NOTE && notifyMe.isChecked && dueAt <= 0) {
+                    message("Imposta una data per ricevere l'avviso")
+                    return@setOnClickListener
+                }
+                val day = if (repeatRule == AgendaEntry.REPEAT_MONTHLY && dueAt > 0) {
+                    entry.repeatAnchorDay.takeIf { it in 1..31 && entry.dueAt == dueAt }
+                        ?: Calendar.getInstance().apply { timeInMillis = dueAt }.get(Calendar.DAY_OF_MONTH)
+                } else 0
                 runCatching {
                     store.save(entry.copy(
                         title = textTitle, body = body.text.toString().trim(),
                         dueAt = dueAt, priority = if (high.isChecked) AgendaEntry.HIGH else AgendaEntry.NORMAL,
                         scope = if (private.isChecked) AgendaEntry.PRIVATE else AgendaEntry.WORK,
-                        clientGe360Id = clientId, jobsiteGe360Id = jobsiteId
+                        clientGe360Id = clientId, jobsiteGe360Id = jobsiteId,
+                        repeat = repeatRule, repeatAnchorDay = day,
+                        reminderEnabled = entry.kind != AgendaEntry.NOTE && notifyMe.isChecked,
+                        reminderLeadMinutes = leadMinutes
                     ))
                 }.onSuccess {
                         filter = when (entry.kind) {
@@ -393,6 +451,11 @@ class AgendaActivity : AppCompatActivity() {
                         }
                         dialog.dismiss()
                         refresh()
+                        if (entry.kind != AgendaEntry.NOTE && notifyMe.isChecked &&
+                            Build.VERSION.SDK_INT >= 33 &&
+                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+                        }
                     }
                     .onFailure { message(it.message ?: "Salvataggio non riuscito") }
             }
@@ -403,7 +466,20 @@ class AgendaActivity : AppCompatActivity() {
     private fun message(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
     private fun dp(v: Int) = (resources.displayMetrics.density * v).toInt()
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_NOTIFICATIONS) {
+            runCatching { AgendaReminderScheduler.reschedule(applicationContext) }
+            if (!AgendaReminderScheduler.notificationsAllowed(this)) {
+                message("Le notifiche sono disattivate, ma gli impegni restano salvati.")
+            }
+        }
+    }
+
     companion object {
         const val EXTRA_CREATE_KIND = "ge360.agenda.create_kind"
+        private const val REQUEST_NOTIFICATIONS = 7004
     }
 }
