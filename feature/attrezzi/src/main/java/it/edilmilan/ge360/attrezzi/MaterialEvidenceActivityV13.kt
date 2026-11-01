@@ -333,9 +333,11 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                 }
                 val invoiceDoc = docs[source.documentGe360Id]
                 val ddtDoc = docs[target.documentGe360Id]
-                val suppliersDiffer = invoiceDoc?.supplier?.trim()?.isNotBlank() == true &&
-                    ddtDoc?.supplier?.trim()?.isNotBlank() == true &&
-                    !invoiceDoc.supplier.trim().equals(ddtDoc.supplier.trim(), ignoreCase = true)
+                val invoiceSupplier = invoiceDoc?.supplier.orEmpty().trim()
+                val ddtSupplier = ddtDoc?.supplier.orEmpty().trim()
+                val suppliersDiffer = invoiceSupplier.isNotBlank() &&
+                    ddtSupplier.isNotBlank() &&
+                    !invoiceSupplier.equals(ddtSupplier, ignoreCase = true)
                 AlertDialog.Builder(this).setTitle("Conferma abbinamento manuale")
                     .setMessage(
                         "FATTURA: " + detail(source) +
