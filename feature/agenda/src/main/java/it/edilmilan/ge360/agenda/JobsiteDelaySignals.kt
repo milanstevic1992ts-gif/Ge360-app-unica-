@@ -79,6 +79,13 @@ object JobsiteDelaySignals {
         if (job.status == JobsiteStore.STATUS_PAUSED) reasons += "Cantiere attualmente sospeso"
         if (state.progressPercent != null) reasons += "Avanzamento registrato: " + state.progressPercent + "% (dato attuale)"
         if (state.openWork > 0) reasons += state.openWork.toString() + " lavorazioni attualmente aperte"
+        val plannedEnd = state.taskSchedule?.possibleFinish
+        val planBeyondTarget = plannedEnd != null && deadline != null && plannedEnd.isAfter(deadline)
+        if (planBeyondTarget) reasons +=
+            "Piano attività lun–ven: fine teorica " + plannedEnd +
+                " oltre il termine previsto; non sono allocate squadre e risorse"
+        if (state.taskSchedule != null && state.taskSchedule.missing > 0) reasons +=
+            state.taskSchedule.missing.toString() + " attività da programmare o dipendenze incomplete"
         state.finishScenarios?.takeIf { it.canShowDates }?.let { forecast ->
             forecast.scenarios.firstOrNull { it.label.startsWith("Base") }?.let { scenario ->
                 reasons += "Scenario condizionale del 100% fisico: " + scenario.date +
@@ -110,7 +117,7 @@ object JobsiteDelaySignals {
             daysLeft != null && daysLeft < 0 -> JobsiteDelayAssessment.Level.OVERDUE
             daysLeft != null && daysLeft <= 7 && (obstacle || state.openWork > 0 || state.progressPercent == null) ->
                 JobsiteDelayAssessment.Level.HIGH
-            obstacle || (daysLeft != null && daysLeft <= 7) -> JobsiteDelayAssessment.Level.ATTENTION
+            obstacle || planBeyondTarget || (daysLeft != null && daysLeft <= 7) -> JobsiteDelayAssessment.Level.ATTENTION
             deadline == null || materialDataMissing || !state.workflowAvailable || state.progressPercent == null ->
                 JobsiteDelayAssessment.Level.UNKNOWN
             else -> JobsiteDelayAssessment.Level.OBSERVE
@@ -122,6 +129,7 @@ object JobsiteDelaySignals {
             blockers -> "Verifica le attività bloccate e le condizioni necessarie per ripartire"
             missingMaterials -> "Controlla disponibilità e ordini dei materiali nel modulo dedicato"
             openRequests -> "Verifica le richieste materiali e le eventuali consegne"
+            planBeyondTarget -> "Rivedi durate, dipendenze e disponibilità squadra prima di confermare una fine"
             job.status == JobsiteStore.STATUS_PAUSED -> "Verifica le ragioni della sospensione e ripianifica"
             deadline == null -> "Imposta una data di fine realistica nella scheda cantiere"
             level == JobsiteDelayAssessment.Level.HIGH || level == JobsiteDelayAssessment.Level.ATTENTION ->

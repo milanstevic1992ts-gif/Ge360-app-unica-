@@ -577,12 +577,20 @@ class JobsiteCenterActivity : AppCompatActivity() {
     }
 
     private fun showTaskActions(task: WorkflowTask) {
-        val actions = WorkflowStatuses.ALL + "Elimina attività"
+        val actions = WorkflowStatuses.ALL + "Pianifica durata / precedenze" + "Elimina attività"
         AlertDialog.Builder(this)
             .setTitle(task.title)
             .setItems(actions.toTypedArray()) { _, index ->
-                if (index < WorkflowStatuses.ALL.size) workflowStore.updateStatus(task, WorkflowStatuses.ALL[index])
-                else workflowStore.deleteTask(task)
+                when {
+                    index < WorkflowStatuses.ALL.size ->
+                        workflowStore.updateStatus(task, WorkflowStatuses.ALL[index])
+                    index == WorkflowStatuses.ALL.size ->
+                        startActivity(Intent(this, JobsiteTaskPlanActivity::class.java).apply {
+                            putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, jobsite.ge360Id)
+                            putExtra(JobsiteTaskPlanActivity.EXTRA_TASK_ID, task.ge360Id)
+                        })
+                    else -> workflowStore.deleteTask(task)
+                }
                 refreshAll()
             }
             .setNegativeButton("Chiudi", null)

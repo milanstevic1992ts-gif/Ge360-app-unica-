@@ -9,6 +9,8 @@ import it.edilmilan.ge360.cantieri.JobsiteProgressTrend
 import it.edilmilan.ge360.cantieri.ProgressFinishAssessment
 import it.edilmilan.ge360.centrocantiere.JobsiteWorkflowStore
 import it.edilmilan.ge360.centrocantiere.WorkflowStatuses
+import it.edilmilan.ge360.centrocantiere.TaskScheduleEngine
+import it.edilmilan.ge360.centrocantiere.TaskScheduleReport
 import it.edilmilan.ge360.giornata.DailyStore
 import it.edilmilan.ge360.giornata.PersonnelAssignment
 import it.edilmilan.ge360.giornata.PersonnelRecord
@@ -27,7 +29,8 @@ data class WeeklyJobHealth(
     val progressPercent: Int?,
     val workflowAvailable: Boolean,
     val progressHistory: JobsiteProgressTrend?,
-    val finishScenarios: ProgressFinishAssessment?
+    val finishScenarios: ProgressFinishAssessment?,
+    val taskSchedule: TaskScheduleReport?
 ) {
     val needsReview: Boolean
         get() = resources == null || !workflowAvailable ||
@@ -125,6 +128,13 @@ object WeeklySitePlanner {
                             job.status == JobsiteStore.STATUS_PAUSED ||
                             summary == null || taskResult.isFailure)
                     }.onFailure { warnings += "Scenario non leggibile per " + job.displayTitle() }
+                        .getOrNull(),
+                    if (taskResult.isFailure) null else runCatching {
+                        TaskScheduleEngine.project(
+                            tasks, workflow.taskPlans(job.ge360Id),
+                            LocalDate.now(), job.targetEndDate
+                        )
+                    }.onFailure { warnings += "Piano lavorazioni non leggibile per " + job.displayTitle() }
                         .getOrNull()
                 )
             }

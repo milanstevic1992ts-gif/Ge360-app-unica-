@@ -22,6 +22,7 @@ import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
 import it.edilmilan.ge360.attrezzi.MaterialEvidenceActivityV13
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteProgressActivity
+import it.edilmilan.ge360.centrocantiere.JobsiteTaskPlanActivity
 import it.edilmilan.ge360.cantieri.ProgressFinishAssessment
 import java.time.temporal.ChronoUnit
 import it.edilmilan.ge360.core.common.Ge360Contracts
@@ -272,6 +273,15 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                         append("\nDate teoriche del 100% fisico, non date di consegna.")
                     }
                 }
+                state.taskSchedule?.let { plan ->
+                    append("\nPiano lavorazioni: ").append(plan.scheduled).append("/")
+                        .append(plan.active).append(" attività con data teorica")
+                    if (plan.possibleFinish != null) append(
+                        "\nFine ipotetica sequenza attività: "
+                    ).append(plan.possibleFinish).append(" (senza capacità squadra)")
+                    else if (plan.problems.isNotEmpty()) append("\nPiano: ")
+                        .append(plan.problems.take(2).joinToString("; "))
+                }
                 state.progressHistory?.let { trend ->
                     append("\nStorico: ").append(trend.observations).append(" rilevazioni · ")
                         .append(trend.observedDays).append(" giorni osservati")
@@ -304,10 +314,10 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 else if (risk?.isActionable == true) 0xFFFFF2E9.toInt()
                 else Ge360Brand.Surface,
                 onOpen = { openJobsite(state.job) },
-                secondaryLabel = "Fasi e scenari",
-                onSecondary = { openProgress(state.job) },
-                tertiaryLabel = "Materiali",
-                onTertiary = { chooseMaterials(state.job) }
+                secondaryLabel = "Piano lavorazioni",
+                onSecondary = { openTaskPlan(state.job) },
+                tertiaryLabel = "Fasi / materiali",
+                onTertiary = { chooseModules(state.job) }
             ))
         }
         items.addView(hint(
@@ -517,16 +527,25 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         else toast("Centro Cantiere non disponibile")
     }
 
+    private fun openTaskPlan(job: JobsiteRecord) {
+        startActivity(Intent(this, JobsiteTaskPlanActivity::class.java)
+            .putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, job.ge360Id))
+    }
+
     private fun openProgress(job: JobsiteRecord) {
         startActivity(Intent(this, JobsiteProgressActivity::class.java)
             .putExtra(JobsiteProgressActivity.EXTRA_JOB_ID, job.ge360Id))
     }
 
-    private fun chooseMaterials(job: JobsiteRecord) {
+    private fun chooseModules(job: JobsiteRecord) {
         AlertDialog.Builder(this)
             .setTitle("Materiali · " + job.displayTitle())
-            .setItems(arrayOf("Prepara materiali", "Confronta previsti / consumati")) { _, choice ->
-                if (choice == 0) openMaterials(job) else openMaterialEvidence(job)
+            .setItems(arrayOf("Avanzamento & scenari", "Prepara materiali", "Confronta previsti / consumati")) { _, choice ->
+                when (choice) {
+                    0 -> openProgress(job)
+                    1 -> openMaterials(job)
+                    else -> openMaterialEvidence(job)
+                }
             }
             .setNegativeButton("Annulla", null)
             .show()
