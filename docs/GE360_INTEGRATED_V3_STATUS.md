@@ -348,3 +348,35 @@ Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file tem
 - Necessari, **solo se autorizzati**, test con backup ZIP legacy, V8 cifrati, password errata, tag modificato, dispositivo senza Keystore originale, SAF Drive, restore fallito a metà, pieno disco, crash simulato dopo zip/temp e dopo rename, e confronto della completezza dei record.
 
 **Vincoli rispettati:** solo branch Android `feature/ge360-integrated-v3-20261101` e documentazione separata, Android main/backend Glass/Debian invariati. Nessuna affermazione di test superati.
+
+
+## V10 — Ripristino coerente tra Clienti, Cantieri, Preventivi e Documenti (1 novembre 2026)
+
+**Stato: IMPLEMENTATO_NEL_CODICE SU BRANCH. NON COMPILATO / NON TESTATO / NON COLLAUDATO / NON DISTRIBUITO.**
+
+### Diagnosi sulla sorgente live
+- `BackupCoordinator.restoreInternal` importava in sequenza DB differenti, pur con backup di sicurezza e rollback compensativo; un collegamento UUID a un cliente/cantiere inesistente poteva emergere solo dopo alcune scritture. Gli `id` numerici locali vengono rimappati, ma la coerenza degli UUID deve essere controllata prima di modificare i database.
+- V7 validava gli allegati metrici, ma gli indici manifest `scannerFiles` e `jobsiteArchiveFiles` potevano indicare percorsi assenti, inattesi o non corrispondenti a un documento presente nel relativo JSON. Il controllo ZIP degli hash non verificava il legame semantico fra indice e record.
+
+### Codice V10
+1. `feature/backup/.../RestoreLinksV10.kt` — validatore **read-only** del grafo UUID canonico proveniente dai moduli `clienti.json`, `cantieri.json`, `preventivi.json`, `scanner.json`, `galleria.json`, facoltativamente `planimetrie.json` e `jobsite-archive.json`. Controlla UUID duplicati in ciascun gruppo, cliente associato al cantiere, cliente/cantiere associati al preventivo, collegamenti Scanner/Galleria/archivio al cantiere, planimetrie e binding a stanza/preventivo. Controlla anche che un preventivo e il suo cantiere non nominino clienti diversi e che una planimetria e il suo preventivo non nominino cantieri diversi.
+2. **Modalità ripristino differenziate:** in `Sostituisci` le destinazioni dei collegamenti devono figurare nel backup in ingresso; in `Unisci` sono ammesse anche le destinazioni già presenti nei DB locali, verificate in sola lettura prima dell'import. Identificatori storici non canonici non sono convertiti in UUID inventati e sono riportati come avviso; nessuna modifica ad associazioni o importi effettuata dal preflight.
+3. `BackupCoordinator.preflightCrossModuleLinks` blocca un restore incoerente **prima** di creare una safety snapshot o eseguire scritture. Il rollback d'emergenza del precedente stato locale (`guardRollback=false`) **non** usa il gate V10, per non impedire il ritorno ai dati esistenti anche se già imperfetti; rimangono le verifiche ZIP e V7.
+4. `BackupCoordinator.preflightDocumentArchiveLinks` convalida indici `scannerFiles` e `jobsiteArchiveFiles` ↔ record nel JSON ↔ percorso ZIP atteso ↔ entry non vuota, prima di qualunque import. I vecchi pacchetti privi di indice continuano a essere gestiti dai percorsi legacy senza ricostruzioni arbitrarie; le entries ZIP continuano a beneficiare del controllo checksum già esistente.
+5. `feature/backup/src/test/.../RestoreLinksV10Test.kt` — test sintetici per grafo valido, standalone, UUID duplicati, genitori mancanti, `Sostituisci` vs `Unisci`, Scanner/Galleria orfani, binding rilievo-stanza, mismatch cliente-cantiere, mismatch rilievo-preventivo e riferimenti legacy. Dipendenza JUnit di modulo aggiunta. **I test sono stati solamente scritti, non eseguiti.**
+
+### Commit GitHub Android V10
+- `a38a5f717cadcf554ff93aca5a14e5e8d036db92` — validatore nuovo.
+- `a571c1f1ef15f6476af6e338186eca65e6928651` — integrazione del preflight nel restore.
+- `a2edbd7972a8ecb996433e2bf1159d1e013de043` — compatibilità identificatori storici opzionali.
+- `9fa82891e18784f2fa07cd17af05e147a2098c9b` — JUnit sintetici scritti.
+- `f9274c012d86b9a9d29db7083274dc5f74fe47ea` — validazione incrociata cliente-cantiere-preventivo e rilievo-cantiere.
+- `c7dc4220874d045069c76a65f79c37481e02acc9` — relazioni locali per il merge e test regressione.
+- `307bbe27e4f84522d013ebc7ec5baff711e3239d` — eccezione V10 per rollback d'emergenza.
+- `f108d3dfe657a0bdc8bda33def3bc967c4d5bba5` — preflight semantico indici Scanner/Cartella Cantiere.
+
+### Limiti noti, prossimi gate
+- Gli UUID **canonici** sono verificati; riferimenti legacy non canonici non sono ricostruiti automaticamente. Durante merge le entità locali possono soddisfare un riferimento; dati storici con UUID dangling possono far rifiutare un ripristino ordinario, intenzionalmente.
+- Scanner, Galleria e Cartella Cantiere mantengono i propri importer/file store: nessuna atomicità fra i database, né nuova verifica SHA256 dei singoli PDF fuori dagli hash del ZIP. Documenti legacy assenti dal manifest possono ancora essere ripristinati solo come metadati secondo politica preesistente.
+- V10 è controllo **prima** delle scritture, non una transazione distribuita ACID né un colludo effettivo. Necessari test autorizzati con backup sintetici misti V5–V9, merge/replace, riferimenti mancanti, PDF inesistenti, duplicati, safety restore fallito e rollback cifrato.
+- Non sono stati eseguiti Gradle/compilazione, JUnit, Actions, CI, APK, merge, deploy o accessi a Debian. `main` e backend Glass invariati; marketing sospeso.
