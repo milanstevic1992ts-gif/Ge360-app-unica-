@@ -181,6 +181,13 @@ class MaterialCostStoreV15(context: Context) :
                 document.pdfPath.isNotBlank() && java.io.File(document.pdfPath).isFile) {
                 "PDF della fattura o riferimento al cantiere non verificabile"
             }
+            val stock = MaterialInventoryStore(app)
+            try {
+                require(stock.list().any {
+                    it.ge360Id == source.materialGe360Id &&
+                        it.unit.trim().equals(source.unit.trim(), ignoreCase = true)
+                }) { "Materiale o unità originali non più verificabili" }
+            } finally { stock.close() }
             val db = writableDatabase
             db.beginTransaction()
             try {
@@ -225,6 +232,14 @@ class MaterialCostStoreV15(context: Context) :
             require(stock.list().any { it.ge360Id == plan.materialGe360Id &&
                 it.unit.trim().equals(plan.unit.trim(), ignoreCase = true) }) {
                 "Materiale o unità del piano non disponibile"
+            }
+            if (!plan.jobsiteGe360Id.isNullOrBlank()) {
+                val jobs = it.edilmilan.ge360.cantieri.JobsiteStore(app)
+                try {
+                    require(jobs.list().any { it.ge360Id == plan.jobsiteGe360Id }) {
+                        "Cantiere del piano non più presente"
+                    }
+                } finally { jobs.close() }
             }
             val row = MaterialBudgetRevisionV15(UUID.randomUUID().toString(),
                 plan.ge360Id, plan.materialGe360Id, plan.jobsiteGe360Id.orEmpty(),

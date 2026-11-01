@@ -290,6 +290,12 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
                 (it.invoiceLineGe360Id == ge360Id || it.ddtLineGe360Id == ge360Id) }) {
                 "Annullare prima le riconciliazioni attive di questa riga"
             }
+            val costStore = MaterialCostStoreV15(app)
+            try {
+                require(costStore.invoiceCosts().none {
+                    it.active && it.invoiceLineGe360Id == ge360Id
+                }) { "Annullare prima l'importo V15 collegato a questa fattura" }
+            } finally { costStore.close() }
             val count = db.update("material_document_lines",
                 ContentValues().apply {
                     put("voided_at", System.currentTimeMillis().coerceAtLeast(current.confirmedAt))
