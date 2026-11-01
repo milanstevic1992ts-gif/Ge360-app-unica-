@@ -4,12 +4,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
+import android.text.InputType
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -64,6 +66,7 @@ class BackupActivity : AppCompatActivity() {
             })
         })
 
+        root.addView(button("Proteggi i nuovi backup con password") { activateEncryption() })
         root.addView(button("Crea backup adesso") { runBackup(false) })
         root.addView(button("Backup completo con fotografie") { confirmFullBackup() })
         root.addView(button("Scegli cartella backup sul telefono") { choosePersistentLocal() })
@@ -78,10 +81,65 @@ class BackupActivity : AppCompatActivity() {
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(list)
         root.addView(TextView(this).apply {
-            text = "I backup GE360 ZIP contengono dati di clienti e documenti leggibili: SHA-256 verifica l'integrità ma NON cifra i file. Proteggi l'accesso alla cartella del telefono e a Drive e non condividere gli ZIP. La copia interna può sparire disinstallando l'app. I backup automatici includono i PDF e le fotografie leggibili."
+            text = "Cifratura V8: dopo l'attivazione, i NUOVI backup vengono protetti con password (AES-256-GCM). Salva la password fuori dal telefono: senza di essa non potrai recuperare i dati su un altro dispositivo. I vecchi ZIP non vengono cifrati automaticamente e vanno custoditi separatamente. La copia interna può sparire disinstallando l'app."
             textSize = 11f; setPadding(dp(2), dp(14), dp(2), 0)
         })
         return scroll
+    }
+
+    private fun secretInput(hint: String) = EditText(this).apply {
+        this.hint = hint
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        isSingleLine = true
+    }
+
+    /** One deliberate opt-in; existing .ge360.zip files are never rewritten. */
+    private fun activateEncryption() {
+        if (coordinator.archive.encryptionEnabled()) {
+            toast("Cifratura già attiva. Custodisci la password di recupero fuori dal telefono.")
+            return
+        }
+        val first = secretInput("Password di recupero (almeno 12 caratteri)")
+        val repeated = secretInput("Ripeti la password")
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+            addView(TextView(this@BackupActivity).apply {
+                text = "La password serve per recuperare un backup su un altro telefono. " +
+                    "Android Keystore protegge la copia locale per i backup automatici. " +
+                    "Se perdi la password, non esiste recupero tramite GE360. " +
+                    "I vecchi ZIP rimangono leggibili e vanno protetti separatamente."
+                textSize = 14f
+            })
+            addView(first)
+            addView(repeated)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Attiva cifratura nuovi backup")
+            .setView(layout)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("ATTIVA", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val password = first.text.toString().toCharArray()
+                val repeat = repeated.text.toString().toCharArray()
+                try {
+                    require(password.contentEquals(repeat)) { "Le due password non coincidono" }
+                    coordinator.archive.enableEncryption(password)
+                    first.text.clear()
+                    repeated.text.clear()
+                    dialog.dismiss()
+                    toast("Cifratura attiva per nuovi backup. Conserva la password!")
+                    refresh()
+                } catch (error: Exception) {
+                    toast(error.message ?: "Impossibile attivare la cifratura")
+                } finally {
+                    password.fill('\u0000')
+                    repeat.fill('\u0000')
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun runBackup(full: Boolean) {
@@ -171,11 +229,60 @@ class BackupActivity : AppCompatActivity() {
     }
 
     private fun restore(uri: Uri, replace: Boolean) {
-        status.text = "Verifica checksum e ripristino…"
+        status.text = "Riconoscimento archivio GE360…"
+        thread(name = "ge360-restore-header") {
+            val result = runCatching { coordinator.requiresRecoveryPassword(uri) }
+            runOnUiThread {
+                result.onSuccess { encrypted ->
+                    if (encrypted) askRecoveryPassword(uri, replace)
+                    else performRestore(uri, replace, null)
+                }.onFailure {
+                    status.text = "Archivio non leggibile: " + (it.message ?: "Errore")
+                    toast(status.text.toString())
+                }
+            }
+        }
+    }
+
+    private fun askRecoveryPassword(uri: Uri, replace: Boolean) {
+        val passwordInput = secretInput("Password del backup cifrato")
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(TextView(this@BackupActivity).apply {
+                text = "Backup GE360 cifrato: inserisci la password originale. " +
+                    "La password non viene salvata durante il ripristino."
+            })
+            addView(passwordInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sblocca backup V8")
+            .setView(box)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("CONTINUA") { _, _ ->
+                val password = passwordInput.text.toString().toCharArray()
+                passwordInput.text.clear()
+                if (password.isEmpty()) {
+                    password.fill('\u0000')
+                    toast("Password necessaria")
+                } else {
+                    performRestore(uri, replace, password)
+                }
+            }.show()
+    }
+
+    private fun performRestore(uri: Uri, replace: Boolean, password: CharArray?) {
+        status.text = "Verifica cifratura, checksum e ripristino…"
         thread(name = "ge360-restore") {
-            val result = runCatching {
-                val file = coordinator.importFromUri(uri)
-                coordinator.restore(file, replace)
+            var temporary: java.io.File? = null
+            val result = try {
+                runCatching {
+                    temporary = coordinator.importFromUri(uri, password)
+                    coordinator.restore(requireNotNull(temporary), replace)
+                }
+            } finally {
+                temporary?.delete()
+                password?.fill('\u0000')
             }
             runOnUiThread {
                 result.onSuccess { r ->
@@ -185,8 +292,12 @@ class BackupActivity : AppCompatActivity() {
                         r.counts.forEach { (k, v) -> appendLine("$k: $v") }
                         if (r.warnings.isNotEmpty()) { appendLine(); appendLine("Avvisi:"); r.warnings.forEach { appendLine("• $it") } }
                     }
-                    AlertDialog.Builder(this).setTitle("Ripristino completato").setMessage(detail.trim()).setPositiveButton("OK", null).show()
-                }.onFailure { status.text = "Ripristino fallito: ${it.message}"; toast(status.text.toString()) }
+                    AlertDialog.Builder(this).setTitle("Ripristino completato")
+                        .setMessage(detail.trim()).setPositiveButton("OK", null).show()
+                }.onFailure {
+                    status.text = "Ripristino fallito: " + (it.message ?: "Errore")
+                    toast(status.text.toString())
+                }
             }
         }
     }
@@ -206,7 +317,9 @@ class BackupActivity : AppCompatActivity() {
         val a = coordinator.archive
         val latest = a.latestLocal()
         status.text = buildString {
-            append("Copia di lavoro: ")
+            append("Cifratura nuovi backup: ")
+            append(if (a.encryptionEnabled()) "ATTIVA (password richiesta per restore)" else "NON ATTIVA")
+            append("\nCopia di lavoro: ")
             append(if (latest == null) "nessun backup" else "${latest.name} · ${human(latest.length())}")
             append("\nBackup telefono persistente: ")
             append(if (a.persistentLocalReady()) "configurato" else "DA CONFIGURARE")
