@@ -77,14 +77,15 @@ internal object JobsiteControlV12 {
                 }.thenBy { it.ge360Id })!!
             }
         val history = movementHistory.filter { it.jobsiteId == jobsiteId }
-        val names = (latest.keys + history.map { it.materialGe360Id }).filter { it.isNotBlank() }.toSet()
+        val historyByMaterial = history.groupBy { it.materialGe360Id }
+        val names = (latest.keys + historyByMaterial.keys).filter { it.isNotBlank() }.toSet()
         var comparable = 0
         var over = 0
         var mismatch = 0
         var unplanned = 0
         for (id in names) {
             val plan = latest[id]
-            val moves = history.filter { it.materialGe360Id == id }
+            val moves = historyByMaterial[id].orEmpty()
             val unit = plan?.unit ?: moves.firstOrNull()?.unit.orEmpty()
             if (unit.isBlank()) continue
             val result = MaterialVarianceRulesV1.compare(
@@ -143,7 +144,7 @@ internal object JobsiteControlV12 {
                 Signal("Lavorazioni", value,
                     "${summary.inProgress} in corso · ${summary.todo} da fare · ${summary.blocked} bloccate" +
                         (progress?.let { " · ${it.percent}% avanzamento ponderato" } ?: " · avanzamento non registrato") +
-                        if (pending > 0) " · $pending SAL da richiedere" else "",
+                        (if (pending > 0) " · $pending SAL da richiedere" else ""),
                     level, Action.WORK)
             } finally { workflow.close(); jobs.close() }
         }
