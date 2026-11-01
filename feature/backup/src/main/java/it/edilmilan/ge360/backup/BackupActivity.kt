@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.core.backup.BackupScratchV9
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -67,6 +68,7 @@ class BackupActivity : AppCompatActivity() {
         })
 
         root.addView(button("Proteggi i nuovi backup con password") { activateEncryption() })
+        root.addView(button("Ripara accesso ai backup automatici") { chooseKeyRepair() })
         root.addView(button("Crea backup adesso") { runBackup(false) })
         root.addView(button("Backup completo con fotografie") { confirmFullBackup() })
         root.addView(button("Scegli cartella backup sul telefono") { choosePersistentLocal() })
@@ -140,6 +142,67 @@ class BackupActivity : AppCompatActivity() {
             }
         }
         dialog.show()
+    }
+
+    /**
+     * Re-enroll an unavailable Android Keystore credential by proving knowledge
+     * of the password against an existing encrypted backup chosen by the user.
+     * No password survives the dialog/worker. Existing archives are unchanged.
+     */
+    private fun chooseKeyRepair() {
+        if (!coordinator.archive.encryptionEnabled()) {
+            toast("Attiva prima la cifratura per i nuovi backup")
+            return
+        }
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+        }, REQ_KEY_REPAIR)
+    }
+
+    private fun askKeyRepair(uri: Uri) {
+        val input = secretInput("Password originale del backup scelto")
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(TextView(this@BackupActivity).apply {
+                text = "Usa una copia GE360 già cifrata e la sua password. " +
+                    "Solo dopo la verifica verrà riparata la chiave Android per " +
+                    "i backup futuri. I vecchi archivi conservano la loro password."
+            })
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Recupera chiave locale")
+            .setView(layout)
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("VERIFICA E RIPARA") { _, _ ->
+                val password = input.text.toString().toCharArray()
+                input.text.clear()
+                if (password.isEmpty()) {
+                    toast("Password richiesta")
+                    password.fill('\u0000')
+                } else {
+                    status.text = "Verifica archivio cifrato e recupero chiave locale…"
+                    thread(name = "ge360-key-repair") {
+                        val result = try {
+                            runCatching { coordinator.archive.recoverLocalKeyFromUri(uri, password) }
+                        } finally {
+                            password.fill('\u0000')
+                        }
+                        runOnUiThread {
+                            result.onSuccess {
+                                toast("Chiave locale riparata per i backup futuri")
+                                refresh()
+                            }.onFailure {
+                                status.text = "Riparazione chiave fallita: " +
+                                    (it.message ?: "Errore")
+                                toast(status.text.toString())
+                            }
+                        }
+                    }
+                }
+            }.show()
     }
 
     private fun runBackup(full: Boolean) {
@@ -310,6 +373,7 @@ class BackupActivity : AppCompatActivity() {
             REQ_LOCAL -> { coordinator.archive.setPersistentLocalRoot(uri); JobsiteReplicaCoordinator.requestSync(this); toast("Cartella backup telefono salvata"); refresh() }
             REQ_DRIVE -> { coordinator.archive.setDriveRoot(uri); JobsiteReplicaCoordinator.requestSync(this); toast("Cartella Drive salvata"); refresh() }
             REQ_RESTORE -> askRestore(uri)
+            REQ_KEY_REPAIR -> askKeyRepair(uri)
         }
     }
 
@@ -330,6 +394,13 @@ class BackupActivity : AppCompatActivity() {
             if (a.lastPersistentLocalAt() > 0) append("\nUltima copia telefono: ${date(a.lastPersistentLocalAt())}")
             if (a.lastDriveBackupAt() > 0) append("\nUltima copia Drive: ${date(a.lastDriveBackupAt())}")
             BackupScheduler.lastStatus(this@BackupActivity).takeIf { it.isNotBlank() }?.let { append("\n").append(it) }
+            val recovered = BackupScratchV9.lastSummary(this@BackupActivity)
+            if (recovered.deleted > 0 || recovered.failed > 0) {
+                append("\nResidui backup da precedente interruzione: eliminati ")
+                    .append(recovered.deleted)
+                    .append(" · non eliminati ")
+                    .append(recovered.failed)
+            }
         }
         refreshList()
     }
@@ -368,5 +439,6 @@ class BackupActivity : AppCompatActivity() {
         private const val REQ_LOCAL = 800
         private const val REQ_DRIVE = 801
         private const val REQ_RESTORE = 802
+        private const val REQ_KEY_REPAIR = 803
     }
 }
