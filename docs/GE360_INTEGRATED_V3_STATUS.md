@@ -98,3 +98,29 @@ Codice su `feature/ge360-integrated-v3-20261101` soltanto. **NESSUNA BUILD, TEST
 4. Hash geometria è controllo d'integrità **della selezione locale**, non misura certificata, firma digitale né prova fotografica. Non viene promossa automaticamente alcuna quantità.
 5. Backup Planimetrie esistente resta solo parzialmente transazionale tra record e database separati: è necessaria prova di restore/rollback prima dell'uso in produzione.
 6. Test preparati in `PlanGeometryQuantitiesV2Test.kt`, **non eseguiti**. Per test delle aperture basati su `org.json`, usare runtime JSON effettivo/strumentazione.
+
+
+## GE360 Rilievi → Revisione quantità → Preventivi — incremento V3J, 1 novembre 2026
+
+**Stato: CODICE SU FEATURE BRANCH, NON COMPILATO / NON COLLAUDATO.** È stata scritta una via di ingresso conservativa per trasferire una quantità da un rilievo già collegato a un preventivo in **Bozza** o **Da controllare**, senza produrre fatture, prezzi, computi ufficiali o modifiche ai preventivi già inviati/accettati.
+
+### Nuovo percorso operativo
+1. Dalla lista Rilievi, selezionare `RIVEDI QUANTITÀ → BOZZA PREVENTIVO`. La schermata mostra le selezioni `workBindings[]` già create e lo stato **PRONTA PER REVISIONE / MISURE DA RICONFERMARE**, ricalcolato con il motore di fingerprinting geometrico. Le vecchie selezioni senza fingerprint non sono importabili.
+2. Scegliere una selezione: vengono visualizzati preventivo, ambiente, catalogo, superficie, **lordo, aperture già sottratte e netto rilevato**.
+3. Inserire una **ulteriore detrazione manuale** in m² (opzionale; se maggiore di zero la motivazione è obbligatoria). Non sottrarre una seconda volta le aperture già dedotte. La detrazione deve essere arrotondata al centesimo e lasciare superficie positiva.
+4. Verificare le altre voci simili: se il preventivo contiene una voce manuale dello stesso codice e ambiente, richiedere esplicita conferma e motivazione. Le sovrapposizioni fra intere pareti e singole pareti già importate con lo stesso codice sono bloccate anche se confermate.
+5. Solo dopo spunta `CONFERMO`, una voce catalogo `m²` viene inserita con `included=false`, `optional=false`, `unitPrice=0`, `total=0` e quantitativo registrato. Si può aprire subito l'editor Preventivi.
+
+### Implementazione
+- `MeasuredEstimateDraft.kt` (modulo `feature:preventivi`): DTO di collegamento tra UUID binding/rilievo/ambiente/parete, hash geometrico, quantità misurata, detrazione aggiuntiva, motivo e verifica sovrapposizioni. UUID **deterministico** della voce per prevenire doppie importazioni con la stessa fonte. Annotazione di provenienza `GE360_METRICO_V1:` in `EstimateItem.internalNote` (già esportata dal backup Preventivi).
+- `EstimateStore.insertMeasuredReviewLine()`: **un'unica transazione SQLite** sul DB Preventivi, verifica preventivo e versione `updatedAt`, status `Bozza/Da controllare`, codice catalogo `m²`, assenza di stesso binding e di lavoro sovrapposto sul medesimo ambiente, assenza di voce manuale ambigua non riconosciuta. Inserisce soltanto la nuova riga esclusa e aggiorna `updated_at`; **non cancella né reinserisce le altre righe e non tocca subtotal/finalTotal**.
+- `FloorPlansActivity` ripete il controllo della geometria all'ultimo momento prima del trasferimento, poi chiede conferma e offre il collegamento diretto alla scheda del preventivo.
+- `EstimatesActivity.editItem()` conserva identità/quantità/unità/ambiente e nota di origine delle nuove voci metriche: per cambiare metratura si torna a Rilievi. Quando l'operatore decide di includere la voce nel totale deve confermare esplicitamente il controllo delle misure e del prezzo.
+- `MeasuredEstimateDraftTest.kt`: scenari per detrazioni, idempotenza UUID, superfici sovrapposte, origine e conferme. **I test sono stati solo scritti, non eseguiti.**
+
+### Limiti e gate
+- Prezzi **non calcolati automaticamente** e nessuna autorizzazione bancaria/contabile implicita.
+- Il salvataggio del preventivo tramite vecchi editor usa ancora `EstimateStore.save()` e può riscrivere le righe quando l'editor aveva caricato una copia stantia: richiede futura protezione optimistic lock complessiva, o un registro dedicato agli import metrici. Il controllo `expectedEstimateUpdatedAt` copre soltanto il nuovo ingresso metrico.
+- I database Rilievi e Preventivi sono separati: il fingerprint viene riletto prima della transazione, ma non c'è transazione ACID cross-database. Le dimensioni non sono computi certificati o quantità contrattuali.
+- L'annotazione `internalNote` resta tecnicamente editabile attraverso altri client/API/import. Per maggiore robustezza in produzione, progettare vincolo persistente di origine fuori dalle note e gestione delle revisioni a preventivo già prezzato.
+- Verificare migrazioni, export/import, scenari con duplicati manuali e reali, cantiere collegato e stessa lavorazione su due facce diverse. Compilazione, UI Android, JUnit, GitHub Actions, APK, PR, merge e deploy **non autorizzati e non eseguiti**.
