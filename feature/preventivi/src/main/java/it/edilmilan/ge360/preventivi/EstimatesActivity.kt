@@ -173,7 +173,7 @@ class EstimatesActivity : AppCompatActivity() {
     private fun actions(r: EstimateRecord) {
         AlertDialog.Builder(this)
             .setTitle("${r.number} · ${r.clientName.ifBlank { "Senza cliente" }}")
-            .setItems(arrayOf("Apri / modifica", "Lavorazioni guidate, capitolato e prezzi", "Economia cantiere", "Condividi preventivo", "Prompt IA", "Duplica")) { _, i ->
+            .setItems(arrayOf("Apri / modifica", "Lavorazioni guidate, capitolato e prezzi", "Economia cantiere", "Condividi preventivo", "Prompt IA", "Duplica", "Varianti di metratura")) { _, i ->
                 when (i) {
                     0 -> editHeader(r)
                     1 -> editItems(r)
@@ -181,8 +181,104 @@ class EstimatesActivity : AppCompatActivity() {
                     3 -> share(customerSummary(r), "Preventivo ${r.number}")
                     4 -> textDialog("Prompt preventivo", aiPrompt(r))
                     5 -> { store.duplicate(r); refresh(); toast("Preventivo duplicato") }
+                    6 -> showMetricVariants(r.ge360Id)
                 }
             }.show()
+    }
+
+    /** Read-only economic comparison. Only technical acknowledgment is writable. */
+    private fun showMetricVariants(estimateGe360Id: String) {
+        val variants = store.metricVariants(estimateGe360Id)
+        if (variants.isEmpty()) {
+            textDialog("Varianti di metratura", "Nessuna variante proposta. " +
+                "Dal Rilievo seleziona una nuova revisione della stessa superficie.")
+            return
+        }
+        val labels = variants.map { v ->
+            v.workCode + " · " + v.status + " · " +
+                String.format(Locale.ITALY, "%+.2f m²", v.deltaQuantityM2()) +
+                " · delta indicativo " +
+                String.format(Locale.ITALY, "%+.2f €", v.referenceDeltaEuro())
+        }
+        AlertDialog.Builder(this).setTitle("Varianti · preventivo invariato")
+            .setItems(labels.toTypedArray()) { _, position ->
+                reviewMetricVariant(estimateGe360Id, variants[position])
+            }
+            .setNeutralButton("STORICO") { _, _ ->
+                val events = store.metricVariantEvents(estimateGe360Id)
+                textDialog("Cronologia varianti", events.joinToString("\n\n") { event ->
+                    event.action + " · " + event.variantGe360Id.take(8) + "\n" +
+                        event.reason
+                }.ifBlank { "Nessun evento" })
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun reviewMetricVariant(
+        estimateGe360Id: String, variant: MetricVariantV3
+    ) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+        }
+        box.addView(TextView(this).apply {
+            text = "Stato: ${variant.status}\n" +
+                "Lavorazione: ${variant.workCode} · ${variant.surface}\n" +
+                "Quantità originale: " +
+                String.format(Locale.ITALY, "%.2f m²", variant.previousQuantityM2) + "\n" +
+                "Quantità proposta: " +
+                String.format(Locale.ITALY, "%.2f m²", variant.proposedQuantityM2) + "\n" +
+                "Differenza: " +
+                String.format(Locale.ITALY, "%+.2f m²", variant.deltaQuantityM2()) + "\n" +
+                "Prezzo storico: " +
+                String.format(Locale.ITALY, "%.2f €/m²", variant.priorUnitPrice) + "\n" +
+                "Impatto INDICATIVO: " +
+                String.format(Locale.ITALY, "%+.2f €", variant.referenceDeltaEuro()) + "\n" +
+                "Motivo proposta: ${variant.reason}\n\n" +
+                "La verifica tecnica NON approva corrispettivi e non modifica " +
+                "le somme del preventivo, nemmeno se già accettato."
+            textSize = 14f
+        })
+        if (variant.status == MetricVariantV3.STATUS_TECH_REVIEWED) {
+            box.addView(TextView(this).apply {
+                text = "Verifica tecnica già registrata: " + variant.reviewReason
+            })
+            AlertDialog.Builder(this).setTitle("Variante già verificata")
+                .setView(ScrollView(this).apply { addView(box) })
+                .setPositiveButton("Chiudi", null).show()
+            return
+        }
+        val note = EditText(this).apply {
+            hint = "Esito della verifica tecnica e motivo (almeno 8 caratteri)"
+            minLines = 3
+        }
+        val confirm = CheckBox(this).apply {
+            text = "Ho controllato le nuove quantità. " +
+                "Confermo solo la verifica tecnica, NON l'importo economico."
+        }
+        box.addView(note)
+        box.addView(confirm)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Verifica tecnica variante")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("CONFERMA VERIFICA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    require(confirm.isChecked) { "Selezionare la conferma esplicita" }
+                    store.reviewMetricVariant(estimateGe360Id,
+                        variant.ge360Id, note.text.toString().trim())
+                }.onSuccess {
+                    dialog.dismiss()
+                    toast("Verifica tecnica registrata; nessuna modifica agli importi")
+                    showMetricVariants(estimateGe360Id)
+                }.onFailure { toast(it.message ?: "Verifica non salvata") }
+            }
+        }
+        dialog.show()
     }
 
     private fun editHeader(source: EstimateRecord) {
