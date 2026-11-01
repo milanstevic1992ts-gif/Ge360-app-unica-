@@ -7,5 +7,6 @@
         <activity android:name=".ToolsActivity" android:exported="false" />
         <activity android:name=".MaterialCalculatorActivity" android:exported="false" />
         <activity android:name=".MaterialsActivity" android:exported="false" />
+        <activity android:name=".MaterialEvidenceActivityV13" android:exported="false" />
     </application>
 </manifest>

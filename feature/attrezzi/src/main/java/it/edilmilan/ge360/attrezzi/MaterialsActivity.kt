@@ -1,6 +1,8 @@
 package it.edilmilan.ge360.attrezzi
 
 import android.app.AlertDialog
+import android.content.Intent
+import it.edilmilan.ge360.core.common.Ge360Contracts
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.Editable
@@ -105,6 +107,19 @@ class MaterialsActivity : AppCompatActivity() {
             setPadding(dp(4), dp(5), dp(4), dp(8))
         }
         root.addView(summaryLabel)
+        root.addView(MaterialButton(this).apply {
+            text = "Fatture e DDT → materiali · V13"
+            applyGe360Secondary()
+            setOnClickListener {
+                startActivity(Intent(this@MaterialsActivity,
+                    MaterialEvidenceActivityV13::class.java).apply {
+                    // Preserve an explicit jobsite context; none is invented.
+                    intent.getStringExtra(Ge360Contracts.EXTRA_JOBSITE_ID)?.let {
+                        putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, it)
+                    }
+                })
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
 
         val modeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
