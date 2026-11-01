@@ -552,6 +552,10 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 variant.status == MetricVariantV3.STATUS_TECH_REVIEWED) {
                 "Serve prima la verifica tecnica delle quantità"
             }
+            require(variant.priorIncluded && variant.priorUnitPrice > 0.0) {
+                "La variante economica richiede una voce originale inclusa e prezzata: " +
+                    "altrimenti prepara una nuova voce di preventivo"
+            }
             val source = metricSourcesForEstimateId(quote.id)
                 .singleOrNull { it.itemGe360Id == variant.previousItemGe360Id }
                 ?: error("Fonte metratura originale non disponibile")
@@ -832,6 +836,8 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             if (record.id > 0) {
                 val current = get(record.id) ?: error("Preventivo cancellato o non disponibile")
                 val sources = metricSourcesForEstimateId(record.id)
+                val lockedCommercialItems = metricVariantEconomics(current.ge360Id)
+                    .map { it.sourceItemGe360Id }.toSet()
                 val hasLegacyWithoutSource = current.items.any {
                     it.internalNote.contains(MeasuredEstimateDraftV1.SOURCE_MARKER) &&
                         sources.none { origin -> origin.itemGe360Id == it.ge360Id }
@@ -859,6 +865,10 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                     val changed = before.included != after.included ||
                         kotlin.math.abs(before.unitPrice - after.unitPrice) > 0.001
                     if (changed) {
+                        require(origin.itemGe360Id !in lockedCommercialItems) {
+                            "Esiste già una proposta o accordo economico per questa voce: " +
+                                "prezzo e inclusione storici bloccati per evitare doppi conteggi"
+                        }
                         val reason = metricConfirmations[origin.itemGe360Id].orEmpty().trim()
                         require(origin.trust == MetricProvenanceV2.TRUST_VERIFIED &&
                             current.status in setOf(EstimateStatuses.DRAFT, EstimateStatuses.REVIEW) &&
@@ -905,7 +915,14 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         } finally { db.endTransaction() }
     }
 
-    fun delete(id: Long) { writableDatabase.delete("estimates", "id=?", arrayOf(id.toString())) }
+    fun delete(id: Long) {
+        val current = get(id) ?: return
+        require(metricVariants(current.ge360Id).isEmpty() &&
+            metricVariantEconomics(current.ge360Id).isEmpty()) {
+            "Il preventivo contiene varianti e uno storico economico: non cancellarlo da qui"
+        }
+        writableDatabase.delete("estimates", "id=?", arrayOf(id.toString()))
+    }
     fun duplicate(source: EstimateRecord): EstimateRecord = source.copy(
         id = 0, ge360Id = UUID.randomUUID().toString(), legacyId = "", number = "",
         status = EstimateStatuses.DRAFT,
