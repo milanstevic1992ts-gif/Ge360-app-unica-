@@ -31,6 +31,7 @@ import java.util.Locale
  */
 class MaterialEvidenceActivityV13 : AppCompatActivity() {
     private lateinit var ledger: MaterialDocumentEvidenceStoreV13
+    private lateinit var costs: MaterialCostStoreV15
     private lateinit var inventory: MaterialInventoryStore
     private lateinit var plans: MaterialPlanStore
     private lateinit var scanner: DocumentStore
@@ -42,6 +43,7 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         jobFilter = intent.getStringExtra(Ge360Contracts.EXTRA_JOBSITE_ID).orEmpty()
         ledger = MaterialDocumentEvidenceStoreV13(this)
+        costs = MaterialCostStoreV15(this)
         inventory = MaterialInventoryStore(this)
         plans = MaterialPlanStore(this)
         scanner = DocumentStore(this)
@@ -67,6 +69,16 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
             applyGe360Secondary()
             setOnClickListener { chooseMatch() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+        root.addView(MaterialButton(this).apply {
+            text = "IMPORTO RIGA FATTURA · V15"
+            applyGe360Secondary()
+            setOnClickListener { chooseInvoiceCost() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
+        root.addView(MaterialButton(this).apply {
+            text = "BUDGET MATERIALI · V15"
+            applyGe360Secondary()
+            setOnClickListener { chooseBudget() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(10), 0, dp(20))
@@ -84,6 +96,7 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
 
     override fun onDestroy() {
         if (::ledger.isInitialized) ledger.close()
+        if (::costs.isInitialized) costs.close()
         if (::inventory.isInitialized) inventory.close()
         if (::plans.isInitialized) plans.close()
         if (::scanner.isInitialized) scanner.close()
@@ -114,6 +127,8 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
         val credibleMatches = matches.filter { it.active &&
             it.invoiceLineGe360Id in trustedIds && it.ddtLineGe360Id in trustedIds }
         val plansByMaterial = plans.all()
+        val allCosts = costs.invoiceCosts()
+        val allBudgets = costs.budgets()
         val fullHistory = inventory.hasCompleteMovementHistory()
         val movements = inventory.allMovementHistory(
             jobsiteGe360Id = jobFilter.takeIf { it.isNotBlank() })
@@ -175,6 +190,39 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                     "non calcolabile (storico incompleto)"
                 MaterialComparisonStatusV1.NO_PLAN -> "non calcolabile (nessun piano)"
             }
+            val eligible = trusted.map { it.ge360Id }.toSet()
+            val coverage = MaterialCostRulesV15.coverage(
+                rows, allCosts, key.first, key.second, eligible)
+            val budget = plan?.let { current ->
+                allBudgets.filter {
+                    it.planRevisionGe360Id == current.ge360Id
+                }.maxWithOrNull(compareBy<MaterialBudgetRevisionV15> {
+                    it.confirmedAt
+                }.thenBy { it.ge360Id })
+            }
+            val plannedNet = if (plan != null && budget != null)
+                runCatching { MaterialCostRulesV15.plannedNetCents(plan, budget) }
+                    .getOrNull() else null
+            val economicDelta = if (plannedNet != null && coverage.completeForRecordedLines)
+                runCatching { Math.subtractExact(coverage.confirmedNetCents, plannedNet) }
+                    .getOrNull() else null
+            val costText = buildString {
+                append("\nV15 · Imponibile fatture confermato: ")
+                if (coverage.valuedLines > 0) append(MaterialCostRulesV15.euro(coverage.confirmedNetCents))
+                else append("non registrato")
+                append(" (").append(coverage.valuedLines).append("/")
+                    .append(coverage.invoiceLines).append(" righe con importo)")
+                if (coverage.orphanCosts > 0) append(" · ")
+                    .append(coverage.orphanCosts).append(" fonti da verificare")
+                append("\nBudget materiale: ")
+                if (plannedNet != null) append(MaterialCostRulesV15.euro(plannedNet))
+                else append("non confermato per questa revisione")
+                append("\nDifferenza documentata vs budget: ")
+                if (economicDelta != null) append(MaterialCostRulesV15.euro(economicDelta))
+                    .append(" (parziale: solo fatture censite)")
+                else append("non calcolabile")
+                append("\nCosti senza IVA; non sono pagamenti o margine di cantiere.")
+            }
             val site = if (key.second.isBlank()) "Senza cantiere"
                 else jobs[key.second]?.displayTitle() ?: "Cantiere mancante"
             addCard(mat?.name ?: "Materiale mancante", site + " · " + unit,
@@ -195,7 +243,8 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                     "\nDDT non abbinati: " +
                         (if (values.ddtLines > 0) fmt(notMatchedDelivered) + " " + unit
                          else "non documentati") +
-                    "\nL'abbinamento NON somma né duplica fatture e DDT.", null)
+                    "\nL'abbinamento NON somma né duplica fatture e DDT." +
+                    costText, null)
         }
         body.addView(label("RICONCILIAZIONI FATTURA ↔ DDT · V14", 12f))
         if (matches.isEmpty()) body.addView(label(
@@ -228,6 +277,41 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                 } else null)
         }
 
+        body.addView(label("IMPORTI FATTURA CONFERMATI · V15", 12f))
+        val allLineIds = rows.map { it.ge360Id }.toSet()
+        allCosts.filter { jobFilter.isBlank() || it.invoiceLineGe360Id in allLineIds }
+            .forEach { cost ->
+                val line = rows.firstOrNull { it.ge360Id == cost.invoiceLineGe360Id }
+                val doc = line?.let { docs[it.documentGe360Id] }
+                addCard((if (cost.active) "" else "ANNULLATO · ") +
+                    (line?.let { materials[it.materialGe360Id]?.name } ?: "Riga fattura non trovata"),
+                    MaterialCostRulesV15.euro(cost.netCents) + " · imponibile riga",
+                    "FATTURA " + (doc?.documentNumber ?: "non disponibile") +
+                        " · conferma manuale, IVA esclusa",
+                    if (cost.active) "ANNULLA IMPORTO" to {
+                        confirmVoidCost(cost.ge360Id)
+                    } else null)
+            }
+        body.addView(label("BUDGET UNITARI APPROVATI · V15", 12f))
+        val planIds = plansByMaterial.filter { jobFilter.isBlank() ||
+            it.jobsiteGe360Id == jobFilter }.map { it.ge360Id }.toSet()
+        allBudgets.filter { jobFilter.isBlank() || it.planRevisionGe360Id in planIds }
+            .forEach { budget ->
+                val plan = plansByMaterial.firstOrNull {
+                    it.ge360Id == budget.planRevisionGe360Id
+                }
+                addCard(materials[budget.materialGe360Id]?.name ?: "Materiale non disponibile",
+                    MaterialCostRulesV15.euro(budget.unitNetCents) + " / " + budget.unit,
+                    "Budget approvato per una specifica revisione: " +
+                        (plan?.quantity?.let(::fmt) ?: "piano non presente") +
+                        " " + budget.unit +
+                        (if (plan == null || plans.latest(plan.materialGe360Id,
+                            plan.jobsiteGe360Id)?.ge360Id != plan.ge360Id)
+                            "\nRevisione superata: riconfermare il prezzo sul nuovo piano"
+                         else "\nRevisione corrente"),
+                    null)
+            }
+
         body.addView(label("RIGHE DOCUMENTALI CONFERMATE", 12f))
         rows.forEach { row ->
             val name = materials[row.materialGe360Id]?.name ?: "Materiale mancante"
@@ -251,6 +335,174 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                         }.show()
                 } else null)
         }
+    }
+
+    private fun chooseInvoiceCost() {
+        val already = costs.invoiceCosts().filter { it.active }
+            .map { it.invoiceLineGe360Id }.toSet()
+        val docs = scanner.list().associateBy { it.ge360Id }
+        val materials = inventory.list().associateBy { it.ge360Id }
+        val invoices = ledger.all().filter {
+            it.active && it.documentKind == "FATTURA" &&
+                it.ge360Id !in already &&
+                (jobFilter.isBlank() || it.jobsiteGe360Id == jobFilter) &&
+                docs[it.documentGe360Id]?.let { doc ->
+                    doc.type.equals("FATTURA", ignoreCase = true) &&
+                        doc.pdfPath.isNotBlank() && java.io.File(doc.pdfPath).isFile &&
+                        (doc.jobsiteId.isBlank() || doc.jobsiteId == it.jobsiteGe360Id)
+                } == true &&
+                materials[it.materialGe360Id]?.unit?.equals(it.unit, ignoreCase = true) == true
+        }
+        if (invoices.isEmpty()) {
+            toast("Nessuna riga fattura V13 valida senza importo; per correggere annulla il precedente")
+            return
+        }
+        val picker = select(invoices.map {
+            val doc = docs[it.documentGe360Id]
+            (doc?.documentNumber ?: "senza numero") + " · " +
+                (materials[it.materialGe360Id]?.name ?: "materiale") +
+                " · " + fmt(it.quantity) + " " + it.unit
+        })
+        val amount = EditText(this).apply {
+            hint = "Es. 149,50 (imponibile riga, IVA esclusa)"
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            addView(label("RIGA DI FATTURA CONFERMATA", 11f))
+            addView(picker)
+            addView(label("IMPONIBILE DI QUESTA SOLA RIGA · EUR", 11f))
+            addView(amount)
+            addView(label("Copia il valore verificato dalla fattura. " +
+                "Non viene ripartito il totale OCR, e non si crea un movimento Spese.", 11f))
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Costo documentato · V15")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("Chiudi", null)
+            .setPositiveButton("CONTINUA", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val line = invoices[picker.selectedItemPosition]
+                val netCents = runCatching {
+                    MaterialCostRulesV15.parseEuroCents(amount.text.toString())
+                }.getOrElse {
+                    toast(it.message ?: "Importo non valido")
+                    return@setOnClickListener
+                }
+                val doc = docs[line.documentGe360Id]
+                val sourceTotal = doc?.taxableAmount
+                val caution = if (sourceTotal != null && sourceTotal.isFinite() &&
+                    sourceTotal >= 0 &&
+                    netCents > (sourceTotal * 100.0).toLong()) {
+                    "\nATTENZIONE: supera l'imponibile totale indicato in Scanner; " +
+                        "controllare il PDF originale, perché il dato OCR può essere errato."
+                } else ""
+                AlertDialog.Builder(this)
+                    .setTitle("Conferma importo imponibile")
+                    .setMessage("Riga: " +
+                        (materials[line.materialGe360Id]?.name ?: "materiale") +
+                        "\nQuantità: " + fmt(line.quantity) + " " + line.unit +
+                        "\nImponibile assegnato: " + MaterialCostRulesV15.euro(netCents) +
+                        caution + "\nNon include IVA, trasporti non attribuiti, " +
+                        "né costituisce prova di pagamento.")
+                    .setNegativeButton("Rivedi", null)
+                    .setPositiveButton("REGISTRA") { _, _ ->
+                        runCatching { costs.confirmInvoiceCost(line.ge360Id, netCents) }
+                            .onSuccess { dialog.dismiss(); render(); toast("Importo V15 confermato") }
+                            .onFailure { toast(it.message ?: "Registrazione rifiutata") }
+                    }.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun chooseBudget() {
+        val available = plans.all().groupBy {
+            it.materialGe360Id to it.jobsiteGe360Id.orEmpty()
+        }.values.mapNotNull { it.maxWithOrNull(compareBy<MaterialPlanRevisionV1> {
+            it.confirmedAt
+        }.thenBy { it.ge360Id }) }.filter {
+            jobFilter.isBlank() || it.jobsiteGe360Id == jobFilter
+        }
+        val materials = inventory.list().associateBy { it.ge360Id }
+        val current = available.filter {
+            materials[it.materialGe360Id]?.unit?.trim()
+                ?.equals(it.unit.trim(), ignoreCase = true) == true
+        }
+        if (current.isEmpty()) {
+            toast("Conferma prima una previsione quantità in Materiali → confronto")
+            return
+        }
+        val picker = select(current.map {
+            (materials[it.materialGe360Id]?.name ?: "materiale") +
+                " · " + fmt(it.quantity) + " " + it.unit +
+                " · " + (it.jobsiteGe360Id ?: "senza cantiere")
+        })
+        val value = EditText(this).apply {
+            hint = "EUR / unità · imponibile, es. 12,50"
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            addView(label("REVISIONE DEL PIANO CONFERMATO", 11f))
+            addView(picker)
+            addView(label("PREZZO UNITARIO PREVISTO · EUR IVA ESCLUSA", 11f))
+            addView(value)
+            addView(label("Il prezzo budget rimane associato a questa revisione. " +
+                "Una nuova previsione richiede una nuova conferma economica.", 11f))
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Budget materiali · V15")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("Chiudi", null)
+            .setPositiveButton("CONTINUA", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val plan = current[picker.selectedItemPosition]
+                val unitCents = runCatching {
+                    MaterialCostRulesV15.parseEuroCents(value.text.toString())
+                }.getOrElse {
+                    toast(it.message ?: "Prezzo non valido")
+                    return@setOnClickListener
+                }
+                val preview = runCatching {
+                    MaterialCostRulesV15.plannedNetCents(plan,
+                        MaterialBudgetRevisionV15("preview", plan.ge360Id,
+                            plan.materialGe360Id, plan.jobsiteGe360Id.orEmpty(), plan.unit,
+                            unitCents, System.currentTimeMillis()))
+                }.getOrElse {
+                    toast("Budget oltre i limiti numerici")
+                    return@setOnClickListener
+                }
+                AlertDialog.Builder(this).setTitle("Conferma budget")
+                    .setMessage("Quantità piano: " + fmt(plan.quantity) + " " + plan.unit +
+                        "\nPrezzo unitario: " + MaterialCostRulesV15.euro(unitCents) +
+                        "\nBudget totale: " + MaterialCostRulesV15.euro(preview) +
+                        "\nValore previsto, non spesa effettuata.")
+                    .setNegativeButton("Rivedi", null)
+                    .setPositiveButton("CONFERMA") { _, _ ->
+                        runCatching { costs.confirmBudget(plan.ge360Id, unitCents) }
+                            .onSuccess { dialog.dismiss(); render(); toast("Budget confermato") }
+                            .onFailure { toast(it.message ?: "Budget non salvato") }
+                    }.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun confirmVoidCost(costId: String) {
+        AlertDialog.Builder(this).setTitle("Annullare l'importo?")
+            .setMessage("La registrazione rimarrà nello storico. " +
+                "Non cambierà fattura, magazzino, pagamento o movimento Spese.")
+            .setNegativeButton("Indietro", null)
+            .setPositiveButton("ANNULLA IMPORTO") { _, _ ->
+                runCatching { costs.voidInvoiceCost(costId) }
+                    .onSuccess { render() }
+                    .onFailure { toast("Impossibile annullare l'importo") }
+            }.show()
     }
 
     /** Only two explicitly selected V13 rows can be reconciled. */
