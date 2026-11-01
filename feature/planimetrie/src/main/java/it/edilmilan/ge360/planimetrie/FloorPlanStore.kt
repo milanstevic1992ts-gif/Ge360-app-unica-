@@ -298,6 +298,7 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         val db = writableDatabase
         db.beginTransaction()
         try {
+            db.delete("floor_plan_work_bindings", "plan_ge360_id=?", arrayOf(record.ge360Id))
             db.delete("floor_plan_walls", "floor_plan_id=?", arrayOf(record.ge360Id))
             db.delete("floor_plan_rooms", "floor_plan_id=?", arrayOf(record.ge360Id))
             db.delete("floor_plans", "ge360_id=?", arrayOf(record.ge360Id))
@@ -479,6 +480,9 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
     fun exportJson(): String = JSONObject().apply {
         put("schema", BACKUP_SCHEMA)
         put("exportedAt", System.currentTimeMillis())
+        put("workBindings", JSONArray().apply {
+            list().forEach { p -> workBindings(p.ge360Id).forEach { put(it.toJson()) } }
+        })
         put("floorPlans", JSONArray().apply {
             list().forEach { plan ->
                 put(JSONObject().apply {
@@ -504,7 +508,18 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         val root = JSONObject(json)
         require(root.optString("schema") == BACKUP_SCHEMA) { "Backup Planimetrie non compatibile" }
         val rows = root.optJSONArray("floorPlans") ?: JSONArray()
-        if (replaceAll) clearAll()
+        val bindingRows = root.optJSONArray("workBindings")
+        val incomingBindings = if (bindingRows == null) null else
+            (0 until bindingRows.length()).map {
+                PlanWorkBindingV1.fromJson(bindingRows.getJSONObject(it))
+            }.also {
+                require(it.all { item -> item.valid() })
+                require(it.distinctBy { item -> item.ge360Id }.size == it.size)
+            }
+        if (replaceAll) {
+            if (incomingBindings != null) writableDatabase.delete("floor_plan_work_bindings", null, null)
+            clearAll()
+        }
         var count = 0
         for (i in 0 until rows.length()) {
             val o = rows.optJSONObject(i) ?: continue
@@ -543,6 +558,20 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
                 rooms(planId).filterNot { it.ge360Id in incomingRoomIds }.forEach { deleteRoom(it.ge360Id) }
             }
             count++
+        }
+        if (incomingBindings != null) {
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                incomingBindings.forEach { incoming ->
+                    require(get(incoming.planGe360Id) != null) { "Rilievo collegato non presente" }
+                    val old = workBindings(incoming.planGe360Id)
+                        .singleOrNull { it.ge360Id == incoming.ge360Id }
+                    if (old != null) require(old == incoming) { "Conflitto UUID collegamento rilievo" }
+                    else db.insertOrThrow("floor_plan_work_bindings", null, bindingValues(incoming))
+                }
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
         }
         return count
     }
