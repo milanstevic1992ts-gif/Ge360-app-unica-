@@ -111,9 +111,25 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
             " da controllare · " + (rows.size - active.size) + " annullate", 12f))
         if (active.isEmpty()) body.addView(label("Nessuna riga attribuita. " +
             "Scegli il documento Scanner, il materiale, il cantiere e la quantità.", 13f))
-        trusted.groupBy { it.materialGe360Id to it.jobsiteGe360Id }.forEach { (key, lines) ->
+        // Include planned and consumed materials even when no invoice/DDT
+        // has been linked yet. An absent purchase is NOT inferred as zero
+        // purchased: it is simply "not documented" in this registry.
+        val plannedKeys = plansByMaterial.filter {
+            jobFilter.isBlank() || it.jobsiteGe360Id == jobFilter
+        }.map { it.materialGe360Id to it.jobsiteGe360Id.orEmpty() }
+        val consumedKeys = movements.filter {
+            it.jobsiteId.isNotBlank() &&
+                (jobFilter.isBlank() || it.jobsiteId == jobFilter)
+        }.map { it.materialGe360Id to it.jobsiteId }
+        val keys = (trusted.map { it.materialGe360Id to it.jobsiteGe360Id } +
+            plannedKeys + consumedKeys).distinct()
+        keys.forEach { key ->
             val mat = materials[key.first]
-            val unit = mat?.unit ?: lines.first().unit
+            val unit = mat?.unit ?: trusted.firstOrNull {
+                it.materialGe360Id == key.first && it.jobsiteGe360Id == key.second
+            }?.unit ?: movements.firstOrNull {
+                it.materialGe360Id == key.first && it.jobsiteId == key.second
+            }?.unit ?: return@forEach
             val values = MaterialDocumentEvidenceRulesV13.totals(
                 trusted, key.first, key.second, unit)
             val plan = plansByMaterial.filter {
@@ -133,8 +149,12 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                 else jobs[key.second]?.displayTitle() ?: "Cantiere mancante"
             addCard(mat?.name ?: "Materiale mancante", site + " · " + unit,
                 "Previsto: " + forecast + " " + unit +
-                    "\nFatturato: " + fmt(values.invoiced) + " " + unit +
-                    "\nConsegnato DDT: " + fmt(values.delivered) + " " + unit +
+                    "\nFatturato documentato: " +
+                        (if (values.invoiceLines > 0) fmt(values.invoiced) + " " + unit
+                         else "nessuna riga confermata") +
+                    "\nConsegna DDT documentata: " +
+                        (if (values.ddtLines > 0) fmt(values.delivered) + " " + unit
+                         else "nessuna riga confermata") +
                     "\nConsumo magazzino: " + fmt(consumed) + " " + unit +
                     "\nPrevisto − consumato: " + remaining +
                     "\nUnità non compatibili: " + values.invalidUnits +
