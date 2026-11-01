@@ -190,6 +190,14 @@ class MaterialCostStoreV15(context: Context) :
                         it.unit.trim().equals(source.unit.trim(), ignoreCase = true)
                 }) { "Materiale o unità originali non più verificabili" }
             } finally { stock.close() }
+            if (source.jobsiteGe360Id.isNotBlank()) {
+                val jobs = JobsiteStore(app)
+                try {
+                    require(jobs.list().any { it.ge360Id == source.jobsiteGe360Id }) {
+                        "Cantiere associato alla riga fattura non più presente"
+                    }
+                } finally { jobs.close() }
+            }
             val db = writableDatabase
             db.beginTransaction()
             try {
