@@ -61,7 +61,8 @@ class BackupArchive(private val context: Context) {
         val target = File(backupDir(), "${prefix}_$stamp.ge360.zip")
         val hashes = JSONObject()
         var count = 0
-        ZipOutputStream(BufferedOutputStream(FileOutputStream(target))).use { zip ->
+        try {
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(target))).use { zip ->
             entries.forEach { source ->
                 val normalized = source.path.trimStart('/').replace("..", "_")
                 val digest = MessageDigest.getInstance("SHA-256")
@@ -85,6 +86,11 @@ class BackupArchive(private val context: Context) {
             zip.write(manifestBytes)
             zip.closeEntry()
             count++
+            }
+        } catch (error: Throwable) {
+            // A failed stream can leave a valid-looking, unencrypted partial ZIP.
+            target.delete()
+            throw error
         }
         // Run feature-level semantic checks before rotation/last_backup_at.
         // An archive may have internally correct ZIP hashes yet contain
