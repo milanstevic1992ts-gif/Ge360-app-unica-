@@ -39,6 +39,7 @@ import it.edilmilan.ge360.spese.ExpensesActivity
 import it.edilmilan.ge360.spese.FinanceStore
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.concurrent.thread
 
 class JobsiteHubActivity : AppCompatActivity() {
     private lateinit var jobsiteStore: JobsiteStore
@@ -52,6 +53,8 @@ class JobsiteHubActivity : AppCompatActivity() {
     private lateinit var financeStore: FinanceStore
     private lateinit var jobsite: JobsiteRecord
     private lateinit var summaryContainer: LinearLayout
+    private lateinit var controlContainer: LinearLayout
+    private var controlRequest = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,9 +80,11 @@ class JobsiteHubActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::summaryContainer.isInitialized) refreshSummary()
+        if (::controlContainer.isInitialized && ::jobsite.isInitialized) loadControlPulse()
     }
 
     override fun onDestroy() {
+        controlRequest++ // Ignore callbacks from an activity that is closing.
         jobsiteStore.close()
         dailyStore.close()
         documentStore.close()
@@ -114,7 +119,12 @@ class JobsiteHubActivity : AppCompatActivity() {
         }
         scroll.addView(body)
 
-        body.addView(sectionTitle("CANTIERE", "Un'unica cartella: lavorazioni, ore, documenti, preventivi, spese, foto, planimetrie e appunti."))
+        body.addView(sectionTitle("CONTROLLO OPERATIVO",
+            "Una lettura guidata del cantiere: dati registrati, attenzione e prossima azione."))
+        controlContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(controlContainer)
+        body.addView(sectionTitle("CANTIERE",
+            "Un'unica cartella: lavorazioni, ore, documenti, preventivi, spese, foto, planimetrie e appunti."))
         summaryContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(summaryContainer)
 
@@ -146,6 +156,167 @@ class JobsiteHubActivity : AppCompatActivity() {
 
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
+    }
+
+    private fun loadControlPulse() {
+        val request = ++controlRequest
+        controlContainer.removeAllViews()
+        controlContainer.addView(MaterialCardView(this).apply {
+            applyGe360Card(fill = Ge360Brand.Surface, stroke = Ge360Brand.Border, radiusDp = 18)
+            addView(TextView(this@JobsiteHubActivity).apply {
+                text = "Lettura delle informazioni del cantiere…"
+                textSize = 12f
+                setTextColor(Ge360Brand.TextSecondary)
+                setPadding(dp(15), dp(14), dp(15), dp(14))
+            })
+        })
+        val selected = jobsite.copy()
+        thread(name = "ge360-jobsite-v12") {
+            val outcome = runCatching { JobsiteControlV12.read(applicationContext, selected) }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || request != controlRequest) return@runOnUiThread
+                controlContainer.removeAllViews()
+                outcome.onSuccess { renderControlPulse(it) }.onFailure {
+                    controlContainer.addView(controlTextCard(
+                        "Controllo non completato",
+                        "Alcuni archivi non sono leggibili: riprova o apri il Centro diagnostico.",
+                        JobsiteControlV12.Level.ATTENZIONE))
+                }
+            }
+        }
+    }
+
+    private fun renderControlPulse(pulse: JobsiteControlV12.Pulse) {
+        val level = when {
+            pulse.critical > 0 -> JobsiteControlV12.Level.CRITICO
+            pulse.issues > 0 -> JobsiteControlV12.Level.ATTENZIONE
+            else -> JobsiteControlV12.Level.INFO
+        }
+        controlContainer.addView(controlTextCard(
+            pulse.headline,
+            "${pulse.signals.size} aree lette · ${pulse.issues} da verificare · " +
+                "Stato indicativo; nessuna operazione automatica",
+            level))
+        pulse.signals.forEach { signal ->
+            val view = MaterialCardView(this).apply {
+                applyGe360Card(fill = Ge360Brand.Surface,
+                    stroke = Ge360Brand.Border, radiusDp = 17)
+                addView(LinearLayout(this@JobsiteHubActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(13), dp(14), dp(12))
+                    addView(LinearLayout(this@JobsiteHubActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(TextView(this@JobsiteHubActivity).apply {
+                            text = signal.title
+                            textSize = 14f
+                            setTypeface(typeface, Typeface.BOLD)
+                            setTextColor(Ge360Brand.ForestDark)
+                        }, LinearLayout.LayoutParams(0,
+                            ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                        addView(TextView(this@JobsiteHubActivity).apply {
+                            text = when (signal.level) {
+                                JobsiteControlV12.Level.OK -> "REGISTRATO"
+                                JobsiteControlV12.Level.INFO -> "INFORMATIVO"
+                                JobsiteControlV12.Level.ATTENZIONE -> "VERIFICARE"
+                                JobsiteControlV12.Level.CRITICO -> "BLOCCATO"
+                            }
+                            textSize = 10f
+                            setTypeface(typeface, Typeface.BOLD)
+                            setTextColor(Ge360Brand.PrimaryDark)
+                        })
+                    })
+                    addView(TextView(this@JobsiteHubActivity).apply {
+                        text = signal.value
+                        textSize = 18f
+                        setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(Ge360Brand.ForestDark)
+                        setPadding(0, dp(5), 0, 0)
+                    })
+                    addView(TextView(this@JobsiteHubActivity).apply {
+                        text = signal.detail
+                        textSize = 11.5f
+                        setTextColor(Ge360Brand.TextSecondary)
+                        setPadding(0, dp(5), 0, 0)
+                    })
+                    if (signal.action != JobsiteControlV12.Action.NONE) {
+                        addView(TextView(this@JobsiteHubActivity).apply {
+                            text = "Apri modulo  ›"
+                            textSize = 12f
+                            setTypeface(typeface, Typeface.BOLD)
+                            setTextColor(Ge360Brand.PrimaryDark)
+                            setPadding(0, dp(9), 0, dp(3))
+                            isClickable = true
+                            isFocusable = true
+                            contentDescription = "Apri modulo ${signal.title}"
+                            setOnClickListener { openControlAction(signal.action) }
+                        })
+                    }
+                })
+            }
+            controlContainer.addView(view, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        }
+        controlContainer.addView(TextView(this).apply {
+            text = "Materiali: carichi di magazzino ≠ acquisti fatturati. " +
+                "Costi ore e compensi non vengono sommati automaticamente alle Spese."
+            textSize = 10.5f
+            setTextColor(Ge360Brand.TextSecondary)
+            setPadding(dp(5), dp(6), dp(5), dp(6))
+        })
+        controlContainer.addView(TextView(this).apply {
+            text = "Aggiorna quadro"
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Ge360Brand.PrimaryDark)
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { loadControlPulse() }
+        })
+    }
+
+    private fun controlTextCard(
+        heading: String,
+        detail: String,
+        level: JobsiteControlV12.Level
+    ): View = MaterialCardView(this).apply {
+        val fill = when (level) {
+            JobsiteControlV12.Level.CRITICO -> Ge360Brand.WarningSoft
+            JobsiteControlV12.Level.ATTENZIONE -> Ge360Brand.SurfaceWarm
+            else -> Ge360Brand.PrimarySoft
+        }
+        applyGe360Card(fill = fill, stroke = Ge360Brand.Border, radiusDp = 17)
+        addView(LinearLayout(this@JobsiteHubActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            addView(TextView(this@JobsiteHubActivity).apply {
+                text = heading
+                textSize = 15f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Ge360Brand.ForestDark)
+            })
+            addView(TextView(this@JobsiteHubActivity).apply {
+                text = detail
+                textSize = 11f
+                setTextColor(Ge360Brand.TextSecondary)
+                setPadding(0, dp(5), 0, 0)
+            })
+        })
+    }
+
+    private fun openControlAction(action: JobsiteControlV12.Action) {
+        when (action) {
+            JobsiteControlV12.Action.WORK -> openContext(JobsiteCenterActivity::class.java)
+            JobsiteControlV12.Action.MATERIALS -> openContext(WorkPreparationActivity::class.java)
+            JobsiteControlV12.Action.DOCUMENTS -> openContext(ScannerActivity::class.java)
+            JobsiteControlV12.Action.LABOR -> openContext(JobsiteLaborActivity::class.java)
+            JobsiteControlV12.Action.COSTS -> openContext(JobsiteCostAnalyticsActivity::class.java)
+            JobsiteControlV12.Action.ESTIMATES -> openContext(EstimatesActivity::class.java)
+            JobsiteControlV12.Action.NONE -> Unit
+        }
     }
 
     private fun refreshSummary() {
