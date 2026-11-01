@@ -279,3 +279,6 @@ Intervento V7:
 - Nessuna modifica Scanner/FIR, infrastruttura, fatture, contabilità, permessi esterni o sincronizzazioni.
 
 Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file temporanei residui possibili dopo interruzione brutale del processo, rollback fra diversi DB non ACID, il filesystem della Galleria e scanner ha protocolli separati, nessuna garanzia reale senza build/test/restore su dati sintetici autorizzati.
+
+### V7 integrazione creazione backup
+- Validazione documentale su ZIP appena generato, **prima** della rotazione dei 10 backup e del salvataggio dell'ultima data. Se hash/dimensione/header dell'evidenza differiscono dalla metadata Preventivi, il file ZIP appena creato viene eliminato e nessuna copia Drive viene richiesta. Controllo genericamente iniettato in `BackupArchive.create`, senza dipendenze inverse verso Preventivi; legacy caller conserva il comportamento precedente. Scritto, non collaudato.

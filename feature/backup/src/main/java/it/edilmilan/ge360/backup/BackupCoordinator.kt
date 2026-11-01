@@ -181,7 +181,11 @@ class BackupCoordinator(private val context: Context) {
                 .put("galleryFilesSkipped", gallerySkipped)
                 .put("modules", JSONArray(textEntries.keys.toList()))
 
-            val info = archive.create(entries, manifest, if (includeGalleryFiles) "GE360_FULL" else "GE360_AUTO")
+            val info = archive.create(
+                entries, manifest, if (includeGalleryFiles) "GE360_FULL" else "GE360_AUTO"
+            ) { candidate ->
+                preflightAgreementEvidence(candidate, archive.readManifest(candidate))
+            }
             val driveDone = copyToDrive && archive.driveReady() && runCatching { archive.copyToDrive(info.file) }.isSuccess
             return CreateResult(info, driveDone, galleryIncluded, gallerySkipped, scannerFiles)
         } finally {

@@ -46,7 +46,12 @@ class BackupArchive(private val context: Context) {
     fun localBackups(): List<File> = backupDir().listFiles { f -> f.isFile && f.name.endsWith(".ge360.zip") }
         ?.sortedByDescending { it.lastModified() }.orEmpty()
 
-    fun create(entries: List<BackupEntrySource>, manifest: JSONObject, prefix: String = "GE360"): BackupFileInfo {
+    fun create(
+        entries: List<BackupEntrySource>,
+        manifest: JSONObject,
+        prefix: String = "GE360",
+        validateBeforePublish: ((File) -> Unit)? = null
+    ): BackupFileInfo {
         val runtimeVersion = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull()
@@ -81,7 +86,17 @@ class BackupArchive(private val context: Context) {
             zip.closeEntry()
             count++
         }
-        val info = inspect(target, verifyHashes = true)
+        // Run feature-level semantic checks before rotation/last_backup_at.
+        // An archive may have internally correct ZIP hashes yet contain
+        // documents that disagree with the app's authoritative metadata.
+        val info = try {
+            inspect(target, verifyHashes = true).also {
+                validateBeforePublish?.invoke(target)
+            }
+        } catch (error: Throwable) {
+            target.delete()
+            throw error
+        }
         rotate(10)
         prefs.edit().putLong("last_backup_at", System.currentTimeMillis()).putString("last_backup_sha256", info.sha256).apply()
         return info
