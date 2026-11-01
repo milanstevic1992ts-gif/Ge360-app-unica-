@@ -298,6 +298,7 @@ class EstimatesActivity : AppCompatActivity() {
 
     private fun editItems(source: EstimateRecord, afterSave: (() -> Unit)? = null) {
         val r = if (source.id > 0) store.get(source.id) ?: source else source
+        val metricConfirmations = mutableMapOf<String, String>()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(6), dp(16), dp(8))
@@ -308,6 +309,20 @@ class EstimatesActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(8))
         }
         root.addView(total)
+        val provenanceHistory = store.metricEvents(r.ge360Id)
+        if (provenanceHistory.isNotEmpty()) root.addView(MaterialButton(this).apply {
+            text = "STORICO CONFERME METRICHE · ${provenanceHistory.size}"
+            setOnClickListener {
+                val details = provenanceHistory.joinToString("\n\n") { event ->
+                    "${event.action} · ${event.itemGe360Id.take(8)} · " +
+                        "${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+                            .format(java.util.Date(event.occurredAt))}\n" +
+                        "Prezzo: ${event.priorPrice} → ${event.newPrice} € · " +
+                        "Incluso: ${event.wasIncluded} → ${event.nowIncluded}\n" + event.reason
+                }
+                textDialog("Registro verifiche metriche", details)
+            }
+        })
         root.addView(TextView(this).apply {
             text = "Tocca una voce per modificarla · pressione lunga per rimuoverla"
             textSize = 11f
@@ -317,9 +332,16 @@ class EstimatesActivity : AppCompatActivity() {
         root.addView(ListView(this).apply {
             adapter = itemAdapter
             dividerHeight = 0
-            setOnItemClickListener { _, _, p, _ -> editItem(r.items[p]) { itemAdapter.notifyDataSetChanged(); updateTotal(r, total) } }
+            setOnItemClickListener { _, _, p, _ -> editItem(r.items[p], metricConfirmations) {
+                itemAdapter.notifyDataSetChanged(); updateTotal(r, total)
+            } }
             setOnItemLongClickListener { _, _, p, _ ->
-                r.items.removeAt(p); itemAdapter.notifyDataSetChanged(); updateTotal(r, total); true
+                if (store.metricProvenance(r.items[p].ge360Id) != null) {
+                    toast("La metratura collegata non si elimina qui: gestire una variante dal rilievo")
+                } else {
+                    r.items.removeAt(p); itemAdapter.notifyDataSetChanged(); updateTotal(r, total)
+                }
+                true
             }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(310)))
 
@@ -354,7 +376,9 @@ class EstimatesActivity : AppCompatActivity() {
                 setOnClickListener {
                     val x = EstimateItem(ge360Id = UUID.randomUUID().toString())
                     r.items += x
-                    editItem(x) { itemAdapter.notifyDataSetChanged(); updateTotal(r, total) }
+                    editItem(x, metricConfirmations) {
+                        itemAdapter.notifyDataSetChanged(); updateTotal(r, total)
+                    }
                 }
             }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(4); topMargin = dp(4) })
         })
@@ -380,17 +404,28 @@ class EstimatesActivity : AppCompatActivity() {
                 r.surchargeValue = parseAmount(surcharge.text.toString()).coerceAtLeast(0.0)
                 r.surchargeType = if (r.surchargeValue > 0) "percent" else "none"
                 r.rounding = parseAmount(rounding.text.toString())
-                store.save(r)
-                dialog.dismiss()
-                refresh()
-                afterSave?.invoke()
+                runCatching { store.save(r, metricConfirmations) }
+                    .onSuccess {
+                        dialog.dismiss()
+                        refresh()
+                        afterSave?.invoke()
+                    }
+                    .onFailure { error ->
+                        toast(error.message ?: "Salvataggio non consentito: verificare le quantità")
+                    }
             }
         }
         dialog.show()
     }
 
-    private fun editItem(item: EstimateItem, done: () -> Unit) {
-        val measuredOrigin = MeasuredEstimateDraftV1.sourceOf(item)
+    private fun editItem(
+        item: EstimateItem,
+        metricConfirmations: MutableMap<String, String> = mutableMapOf(),
+        done: () -> Unit
+    ) {
+        val measuredOrigin = store.metricProvenance(item.ge360Id)
+        val isMeasured = measuredOrigin != null ||
+            item.internalNote.contains(MeasuredEstimateDraftV1.SOURCE_MARKER)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(8))
@@ -433,10 +468,14 @@ class EstimatesActivity : AppCompatActivity() {
         val included = CheckBox(this).apply { text = "Inclusa nel totale"; isChecked = item.included }
         val optional = CheckBox(this).apply { text = "Opzionale / fuori totale"; isChecked = item.optional }
         val confirmedMeasuredPrice = CheckBox(this).apply {
-            text = "Confermo di aver ricontrollato sul rilievo quantità, detrazioni " +
-                "e prezzo prima di includere questa voce nel totale."
+            text = "Confermo di aver ricontrollato quantità, detrazioni e prezzo " +
+                "prima di modificare l'importo o includere nel totale."
         }
-        if (measuredOrigin != null) {
+        val confirmationReason = EditText(this).apply {
+            hint = "Motivo della revisione economica (almeno 8 caratteri)"
+            minLines = 2
+        }
+        if (isMeasured) {
             // Preserve the immutable source reference: changing scope/quantity requires
             // removal and a new confirmation from the source floor plan.
             room.isEnabled = false
@@ -467,7 +506,17 @@ class EstimatesActivity : AppCompatActivity() {
         root.addView(internalNote, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(82)))
         root.addView(included, lp52())
         root.addView(optional, lp52())
-        if (measuredOrigin != null) root.addView(confirmedMeasuredPrice)
+        if (isMeasured) {
+            root.addView(confirmedMeasuredPrice)
+            root.addView(confirmationReason)
+            if (measuredOrigin?.trust != MetricProvenanceV2.TRUST_VERIFIED)
+                root.addView(TextView(this).apply {
+                    text = "PROVENIENZA LEGACY NON VERIFICATA: " +
+                        "non è consentito cambiare prezzo o includere la voce. " +
+                        "Occorre ripetere la selezione dal rilievo."
+                    textSize = 12f
+                })
+        }
 
         val isTechnical = item.priceListCode.startsWith(StandardWorkCatalog.PREFIX) ||
             item.priceListCode.startsWith(BathroomWorkCatalog.PREFIX) ||
@@ -481,29 +530,36 @@ class EstimatesActivity : AppCompatActivity() {
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (name.text.toString().isBlank()) { name.error = "Nome obbligatorio"; return@setOnClickListener }
-                if (measuredOrigin != null && included.isChecked && !optional.isChecked) {
-                    if (!confirmedMeasuredPrice.isChecked) {
-                        Toast.makeText(this,
-                            "Conferma le misure prima di attivare la voce nel totale",
-                            Toast.LENGTH_LONG).show()
+                val newPrice = parseAmount(price.text.toString())
+                val financialChanged = isMeasured && (
+                    included.isChecked != item.included ||
+                        kotlin.math.abs(newPrice - item.unitPrice) > 0.001
+                    )
+                if (financialChanged) {
+                    if (measuredOrigin?.trust != MetricProvenanceV2.TRUST_VERIFIED ||
+                        !confirmedMeasuredPrice.isChecked ||
+                        confirmationReason.text.toString().trim().length < 8) {
+                        toast("Serve una provenienza verificata e una conferma motivata")
                         return@setOnClickListener
                     }
-                    if (parseAmount(price.text.toString()) <= 0.0) {
-                        price.error = "Imposta e verifica un prezzo positivo prima di attivare"
+                    if (included.isChecked && !optional.isChecked && newPrice <= 0.0) {
+                        price.error = "Inserisci un prezzo positivo per includere nel totale"
                         return@setOnClickListener
                     }
-                }
+                    metricConfirmations[item.ge360Id] =
+                        confirmationReason.text.toString().trim()
+                } else metricConfirmations.remove(item.ge360Id)
                 item.name = name.text.toString().trim()
                 item.category = category.text.toString().trim().ifBlank { "Personalizzate" }
                 item.room = room.text.toString().trim()
-                if (measuredOrigin == null)
+                if (!isMeasured)
                     item.quantity = parseAmount(quantity.text.toString()).coerceAtLeast(0.0)
-                if (measuredOrigin == null) item.unit = unit.selectedItem.toString()
+                if (!isMeasured) item.unit = unit.selectedItem.toString()
                 item.unitPrice = parseAmount(price.text.toString()).coerceAtLeast(0.0)
                 item.priceMode = if (item.unit in listOf("corpo", "forfait")) "body" else "unit"
                 item.section = section.selectedItem.toString()
                 item.description = description.text.toString().trim()
-                if (measuredOrigin == null)
+                if (!isMeasured)
                     item.internalNote = internalNote.text.toString().trim()
                 item.included = included.isChecked
                 item.optional = optional.isChecked
