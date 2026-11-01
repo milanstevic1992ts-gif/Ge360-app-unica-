@@ -16,6 +16,7 @@ import androidx.fragment.app.Fragment
 import it.edilmilan.ge360.agenda.AgendaActivity
 import it.edilmilan.ge360.agenda.AgendaEntry
 import it.edilmilan.ge360.agenda.OperationalDayActivity
+import it.edilmilan.ge360.agenda.WeeklySitePlannerActivity
 import it.edilmilan.ge360.giornata.DailyWorkActivity
 import it.edilmilan.ge360.cantieri.JobsitesActivity
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
@@ -107,8 +108,8 @@ class SafeHomeFragment : Fragment() {
             actionCard("07", "La mia giornata", "Urgenze, impegni e attività") {
                 startActivity(Intent(context, OperationalDayActivity::class.java))
             },
-            actionCard("08", "Ore / squadra", "Timer e rapportini") {
-                startActivity(Intent(context, DailyWorkActivity::class.java))
+            actionCard("08", "Settimana cantieri", "Squadra, sopralluoghi, materiali") {
+                startActivity(Intent(context, WeeklySitePlannerActivity::class.java))
             }
         ))
 

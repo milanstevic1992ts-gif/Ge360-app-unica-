@@ -142,8 +142,12 @@ class JobsiteHubActivity : AppCompatActivity() {
         ))
 
         body.addView(actionRow(
-            ActionSpec("🗓", "Note e Agenda", "Scadenze del cantiere e note collegate") { openAgenda(null) },
-            ActionSpec("✍", "Nota veloce", "Salva una nota già collegata al cantiere") { openAgenda("NOTE") }
+            ActionSpec("📅", "Piano settimanale", "Squadra e materiali della settimana") { openWeeklyPlanner() },
+            ActionSpec("🗓", "Note e Agenda", "Scadenze del cantiere e note collegate") { openAgenda(null) }
+        ))
+        body.addView(actionRow(
+            ActionSpec("✍", "Nota veloce", "Salva una nota già collegata al cantiere") { openAgenda("NOTE") },
+            ActionSpec("✅", "Nuova attività", "Promemoria collegato al cantiere") { openAgenda("TASK") }
         ))
 
         body.addView(sectionTitle("DOCUMENTI E CLIENTE", "FIR, DDT, fatture, piante e appunti nello stesso archivio cantiere."))
@@ -164,6 +168,13 @@ class JobsiteHubActivity : AppCompatActivity() {
 
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
+    }
+
+    private fun openWeeklyPlanner() {
+        val target = Intent().setClassName(packageName, "it.edilmilan.ge360.agenda.WeeklySitePlannerActivity")
+            .putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, jobsite.ge360Id)
+        runCatching { startActivity(target) }
+            .onFailure { Toast.makeText(this, "Pianificatore non disponibile", Toast.LENGTH_LONG).show() }
     }
 
     private fun openAgenda(createKind: String?) {

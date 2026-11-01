@@ -98,3 +98,15 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 - Per un promemoria generale, il link apre la Home di origine; la modifica resta nel pannello promemoria.
 - Il nuovo schermo non sostituisce il registro ore e rapportini Giornata, che resta la fonte.
 - GitHub Actions, build, test, APK, merge e Debian non vengono eseguiti in questo incremento.
+
+
+## Fase 5 — Pianificatore settimanale cantieri (codice su ramo, non compilato)
+- Nuova schermata Settimana cantieri (lun–dom), navigazione settimane, accesso Home protetta, Altro, La mia giornata e Centro Cantiere.
+- Fonte unica della squadra: DailyStore.PersonnelAssignment. Inserimento e modifica dal calendario senza nuova tabella.
+- Controlli prima della scrittura: assegnazione duplicata per stessa persona, giorno e cantiere; avviso se oltre 8 ore o su più cantieri. Conferma esplicita in caso di sovrapposizione.
+- Appuntamenti e sopralluoghi Agenda compaiono nella settimana; nuova visita proposta alle 09:00 locali del giorno selezionato, modificabile prima di salvarla.
+- I dati materiali e lavorazioni sono letti da ToolsStore.summary e JobsiteWorkflowStore.tasks; mancanti e richieste non implicano una data di consegna.
+- La preparazione lavoro riceve ora l'UUID cantiere per preselezionarlo. Nessuna duplicazione o migrazione dei materiali.
+- I dati non vengono sincronizzati con il Data Hub dal nuovo modulo; i calendari esterni restano esclusi.
+- Necessari prima dell'uso: compilazione, verifica Android, casi limite date/DST, revisione del flusso persone e assegnazioni, controlli autorizzazioni.
+- Nessuna GitHub Action, test, APK, deploy, merge o modifica al backend eseguita in questa fase.

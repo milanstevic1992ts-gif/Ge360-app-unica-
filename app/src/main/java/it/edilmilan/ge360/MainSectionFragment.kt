@@ -16,6 +16,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.agenda.AgendaActivity
 import it.edilmilan.ge360.agenda.OperationalDayActivity
+import it.edilmilan.ge360.agenda.WeeklySitePlannerActivity
 import it.edilmilan.ge360.attrezzi.ToolsHubActivity
 import it.edilmilan.ge360.backup.BackupActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
@@ -210,6 +211,7 @@ class MainSectionFragment : Fragment() {
         sectionTitle("Lavoro e organizzazione")
         toolGrid(
             Tool("La mia giornata", "Priorità, appuntamenti e cose da fare", OperationalDayActivity::class.java),
+            Tool("Settimana cantieri", "Squadra, lavori e preparazione materiali", WeeklySitePlannerActivity::class.java),
             Tool("Note e Agenda", "Taccuino, scadenze e appuntamenti", AgendaActivity::class.java),
             Tool("Clienti", "Contatti e follow-up", ClientsActivity::class.java),
             Tool("Giornata", "Ore e rapportino", DailyWorkActivity::class.java),

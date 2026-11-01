@@ -105,6 +105,9 @@ class OperationalDayActivity : AppCompatActivity() {
             "Apri Agenda" to { startActivity(Intent(this, AgendaActivity::class.java)) }
         )))
         root.addView(buttonRow(listOf(
+            "Settimana cantieri" to { startActivity(Intent(this, WeeklySitePlannerActivity::class.java)) }
+        )))
+        root.addView(buttonRow(listOf(
             "Oggi" to { mode = "Oggi"; render() },
             "7 giorni" to { mode = "7 giorni"; render() },
             "Tutto" to { mode = "Tutto"; render() }
