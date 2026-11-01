@@ -193,8 +193,22 @@ internal object JobsiteControlV12 {
                 }
                 val invoices = entries.count { it.documentKind == "FATTURA" }
                 val deliveries = entries.count { it.documentKind == "DDT" }
+                val lineMap = entries.associateBy { it.ge360Id }
+                val matched = ledger.matches().filter { it.active &&
+                    lineMap[it.invoiceLineGe360Id]?.documentKind == "FATTURA" &&
+                    lineMap[it.ddtLineGe360Id]?.documentKind == "DDT" }
+                val invoicedMatchedIds = matched.map { it.invoiceLineGe360Id }.toSet()
+                val ddtMatchedIds = matched.map { it.ddtLineGe360Id }.toSet()
+                val invoicesWithoutMatch = entries.count {
+                    it.documentKind == "FATTURA" && it.ge360Id !in invoicedMatchedIds
+                }
+                val ddtWithoutMatch = entries.count {
+                    it.documentKind == "DDT" && it.ge360Id !in ddtMatchedIds
+                }
                 Signal("Fatture / DDT materiali", "${entries.size} righe confermate",
                     "$invoices da fatture · $deliveries da DDT (mai sommati)" +
+                        " · ${matched.size} abbinamenti V14" +
+                        " · $invoicesWithoutMatch fatture / $ddtWithoutMatch DDT senza abbinamento" +
                         " · $missingProof PDF/record da verificare" +
                         " · $mismatch materiali/unità da controllare",
                     if (missingProof > 0 || mismatch > 0) Level.ATTENZIONE
