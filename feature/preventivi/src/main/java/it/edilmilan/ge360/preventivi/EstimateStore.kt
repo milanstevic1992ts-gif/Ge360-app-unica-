@@ -2,6 +2,7 @@ package it.edilmilan.ge360.preventivi
 
 import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
@@ -125,6 +126,7 @@ private fun adjust(base: Double, type: String, value: Double): Double = when (ty
 private fun round2(value: Double) = round(value * 100.0) / 100.0
 
 class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+    private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE estimates(
             id INTEGER PRIMARY KEY AUTOINCREMENT, ge360_id TEXT NOT NULL UNIQUE, legacy_id TEXT NOT NULL DEFAULT '', number TEXT NOT NULL DEFAULT '',
@@ -150,6 +152,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         createMetricTables(db)
         createMetricVariantTables(db)
         createMetricEconomicsTables(db)
+        createAgreementTables(db)
         seedPriceList(db)
     }
 
@@ -161,6 +164,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         }
         if (oldVersion < 3) createMetricVariantTables(db)
         if (oldVersion < 4) createMetricEconomicsTables(db)
+        if (oldVersion < 5) createAgreementTables(db)
     }
 
     private fun createMetricTables(db: SQLiteDatabase) {
@@ -268,6 +272,65 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             put("economics_ge360_id", event.economicsGe360Id)
             put("event_json", event.toJson().toString())
             put("occurred_at", event.occurredAt)
+        }
+
+    private fun createAgreementTables(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_agreement_attachments(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            economics_ge360_id TEXT NOT NULL,
+            correction_ge360_id TEXT NOT NULL DEFAULT '',
+            data_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_agreement_files ON estimate_agreement_attachments(estimate_id,economics_ge360_id)")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_agreement_corrections(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            economics_ge360_id TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(estimate_id,economics_ge360_id),
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_agreement_correction_events(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            correction_ge360_id TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            occurred_at INTEGER NOT NULL,
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_agreement_corrections ON estimate_agreement_corrections(estimate_id,created_at)")
+    }
+
+    private fun attachmentValues(id: Long, a: MetricAgreementAttachmentV5) =
+        ContentValues().apply {
+            put("ge360_id", a.ge360Id)
+            put("estimate_id", id)
+            put("economics_ge360_id", a.economicsGe360Id)
+            put("correction_ge360_id", a.correctionGe360Id)
+            put("data_json", a.toJson().toString())
+            put("created_at", a.capturedAt)
+        }
+    private fun correctionValues(id: Long, c: MetricAgreementCorrectionV5) =
+        ContentValues().apply {
+            put("ge360_id", c.ge360Id)
+            put("estimate_id", id)
+            put("economics_ge360_id", c.economicsGe360Id)
+            put("data_json", c.toJson().toString())
+            put("status", c.status)
+            put("created_at", c.proposedAt)
+        }
+    private fun correctionEventValues(id: Long, e: MetricAgreementCorrectionEventV5) =
+        ContentValues().apply {
+            put("ge360_id", e.ge360Id)
+            put("estimate_id", id)
+            put("correction_ge360_id", e.correctionGe360Id)
+            put("data_json", e.toJson().toString())
+            put("occurred_at", e.occurredAt)
         }
 
     private fun metricSourceValues(estimateId: Long, data: MetricProvenanceV2) =
@@ -1346,6 +1409,6 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         val UNITS=listOf("corpo","m²","ml","cad.","ora","giornata","forfait")
         val SECTIONS=listOf("Bagno","Resto della casa","Esterni","Opere extra")
         private const val DB_NAME="ge360_preventivi.db"
-        private const val DB_VERSION=4
+        private const val DB_VERSION=5
     }
 }
