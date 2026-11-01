@@ -11,6 +11,7 @@ import android.text.InputType
 import java.math.BigDecimal
 import it.edilmilan.ge360.preventivi.MeasuredEstimateDraftV1
 import it.edilmilan.ge360.preventivi.EstimateStatuses
+import it.edilmilan.ge360.preventivi.EstimatesActivity
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
@@ -345,10 +346,17 @@ class FloorPlansActivity : AppCompatActivity() {
                 }.onSuccess {
                     dialog.dismiss()
                     renderList()
-                    Toast.makeText(this,
-                        "Voce misurata aggiunta fuori totale, prezzo 0 €. " +
-                            "Apri Preventivi per verificarla e prezzarla.",
-                        Toast.LENGTH_LONG).show()
+                    AlertDialog.Builder(this)
+                        .setTitle("Voce di revisione aggiunta")
+                        .setMessage("Quantità trasferita nel preventivo ${estimate.number}. " +
+                            "La nuova voce è fuori totale con prezzo 0 €. " +
+                            "Le altre voci e i totali restano invariati.")
+                        .setPositiveButton("APRI PREVENTIVO") { _, _ ->
+                            startActivity(Intent(this, EstimatesActivity::class.java)
+                                .putExtra(EstimatesActivity.EXTRA_ESTIMATE_ID, estimate.ge360Id))
+                        }
+                        .setNegativeButton("RESTA NEI RILIEVI", null)
+                        .show()
                 }.onFailure {
                     Toast.makeText(this,
                         it.message ?: "Trasferimento non eseguito", Toast.LENGTH_LONG).show()
