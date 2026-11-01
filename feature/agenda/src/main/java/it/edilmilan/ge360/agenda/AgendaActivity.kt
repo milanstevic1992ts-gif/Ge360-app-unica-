@@ -58,6 +58,7 @@ class AgendaActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::list.isInitialized) refresh()
+        runCatching { AgendaReminderScheduler.reschedule(applicationContext) }
     }
 
     private fun buildScreen(): View {
@@ -336,9 +337,9 @@ class AgendaActivity : AppCompatActivity() {
             setOnClickListener { dueAt = 0; dateButton.text = "＋ Imposta data e ora" }
         })
         val high = CheckBox(this).apply { text = "Priorita' alta"; isChecked = entry.priority == AgendaEntry.HIGH }
-        val private = CheckBox(this).apply { text = "Privato (non inviare al Data Hub)"; isChecked = entry.scope == AgendaEntry.PRIVATE }
+        val privateScope = CheckBox(this).apply { text = "Privato (non inviare al Data Hub)"; isChecked = entry.scope == AgendaEntry.PRIVATE }
         form.addView(high)
-        form.addView(private)
+        form.addView(privateScope)
         val notifyMe = CheckBox(this).apply {
             text = "Notifica sul telefono"
             isChecked = entry.reminderEnabled ||
@@ -437,7 +438,7 @@ class AgendaActivity : AppCompatActivity() {
                     store.save(entry.copy(
                         title = textTitle, body = body.text.toString().trim(),
                         dueAt = dueAt, priority = if (high.isChecked) AgendaEntry.HIGH else AgendaEntry.NORMAL,
-                        scope = if (private.isChecked) AgendaEntry.PRIVATE else AgendaEntry.WORK,
+                        scope = if (privateScope.isChecked) AgendaEntry.PRIVATE else AgendaEntry.WORK,
                         clientGe360Id = clientId, jobsiteGe360Id = jobsiteId,
                         repeat = repeatRule, repeatAnchorDay = day,
                         reminderEnabled = entry.kind != AgendaEntry.NOTE && notifyMe.isChecked,

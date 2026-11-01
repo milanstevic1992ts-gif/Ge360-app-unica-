@@ -72,6 +72,21 @@ object AgendaReminderScheduler {
                 .build()
             manager.notify(item.id.hashCode(), notification)
         }
+        if (due.size > 10) {
+            val more = due.size - 10
+            val click = PendingIntent.getActivity(context, REQUEST + 1,
+                Intent(context, AgendaActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            manager.notify(REQUEST + 1, Notification.Builder(context, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setContentTitle("GE360 · Altri promemoria")
+                .setContentText("Hai altri " + more + " promemoria da consultare.")
+                .setContentIntent(click)
+                .setAutoCancel(true)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
+                .build())
+        }
         reschedule(context)
     }
 }
