@@ -175,6 +175,76 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         out
     }
 
+    /**
+     * Explicit operator-confirmed measured draft import. Inserts only one disabled
+     * zero-price row, atomically, without rebuilding historical estimate items.
+     * This is NOT an accepted estimate modification or a priced quote line.
+     */
+    fun insertMeasuredReviewLine(
+        estimateGe360Id: String,
+        expectedEstimateUpdatedAt: Long,
+        source: MeasuredEstimateDraftV1
+    ): EstimateItem {
+        require(source.valid()) { "Controllare quantità, detrazioni e dati della selezione" }
+        val catalog = StandardWorkCatalog.byCode(source.workCode)
+            ?: error("Lavorazione del catalogo non trovata")
+        require(catalog.unit == "m²") { "La lavorazione deve essere misurata a m²" }
+        val item = source.toReviewItem(catalog)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val estimate = getByGe360Id(estimateGe360Id)
+                ?: error("Preventivo UUID non trovato")
+            require(estimate.status in setOf(EstimateStatuses.DRAFT, EstimateStatuses.REVIEW)) {
+                "Solo le bozze o i preventivi da controllare possono ricevere quantità"
+            }
+            require(estimate.updatedAt == expectedEstimateUpdatedAt) {
+                "Preventivo aggiornato da un'altra schermata: riaprire la revisione"
+            }
+            val lines = estimate.items
+            require(lines.none { it.ge360Id == item.ge360Id }) {
+                "Questa selezione è già presente nel preventivo"
+            }
+            lines.forEach { previous ->
+                val origin = MeasuredEstimateDraftV1.sourceOf(previous)
+                if (origin != null && previous.priceListCode == source.workCode &&
+                    origin.optString("plan") == source.planGe360Id &&
+                    origin.optString("room") == source.roomGe360Id) {
+                    require(origin.optString("binding") != source.sourceBindingGe360Id) {
+                        "Questo collegamento è già stato importato"
+                    }
+                    val previousSurface = origin.optString("surface")
+                    val previousWall = origin.optString("wall").ifBlank { null }
+                    require(!MeasuredEstimateDraftV1.surfacesOverlap(
+                        previousSurface, previousWall, source.surface, source.wallGe360Id
+                    )) {
+                        "Stessa lavorazione già presente su una superficie sovrapposta. " +
+                            "Controllare e risolvere la voce precedente prima di importare."
+                    }
+                } else if (origin == null && previous.priceListCode == source.workCode &&
+                    previous.room.trim().equals(source.roomLabel.trim(), ignoreCase = true)) {
+                    require(source.manualOverlapAcknowledged &&
+                        source.manualOverlapReason.trim().length >= 8) {
+                        "Esiste una voce manuale simile per la stanza. " +
+                            "Confermare l'assenza di doppio conteggio e motivare."
+                    }
+                }
+            }
+            // The review item has included=false and unitPrice=0, so totals never increase.
+            item.estimateId = estimate.id
+            db.insertOrThrow("estimate_items", null, itemValues(item))
+            val now = maxOf(System.currentTimeMillis(), estimate.updatedAt + 1)
+            val touched = db.update("estimates", ContentValues().apply {
+                put("updated_at", now)
+            }, "id=? AND updated_at=?", arrayOf(
+                estimate.id.toString(), estimate.updatedAt.toString()
+            ))
+            check(touched == 1) { "Il preventivo è cambiato durante il salvataggio" }
+            db.setTransactionSuccessful()
+            return item
+        } finally { db.endTransaction() }
+    }
+
     fun save(record: EstimateRecord): Long {
         val now = System.currentTimeMillis()
         if (record.ge360Id.isBlank()) record.ge360Id = UUID.randomUUID().toString()
