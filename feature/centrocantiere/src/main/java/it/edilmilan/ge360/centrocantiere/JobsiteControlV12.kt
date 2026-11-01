@@ -8,6 +8,7 @@ import it.edilmilan.ge360.attrezzi.MaterialVarianceRulesV1
 import it.edilmilan.ge360.attrezzi.MaterialComparisonStatusV1
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
+import it.edilmilan.ge360.cantieri.JobsiteMilestone
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.CompensationAccrualStatus
 import it.edilmilan.ge360.giornata.CompensationStore
@@ -128,7 +129,7 @@ internal object JobsiteControlV12 {
                 val summary = workflow.summary(id)
                 val progress = jobs.progressSummary(id)
                 val pending = jobs.milestones(id).count {
-                    it.status == it.edilmilan.ge360.cantieri.JobsiteMilestone.STATUS_TO_REQUEST
+                    it.status == JobsiteMilestone.STATUS_TO_REQUEST
                 }
                 val level = when {
                     summary.blocked > 0 -> Level.CRITICO
