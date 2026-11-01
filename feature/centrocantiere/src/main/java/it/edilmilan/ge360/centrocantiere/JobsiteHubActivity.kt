@@ -141,6 +141,11 @@ class JobsiteHubActivity : AppCompatActivity() {
             ActionSpec("📸", "Foto", "Prima, durante e dopo") { openContext(GalleryActivity::class.java) }
         ))
 
+        body.addView(actionRow(
+            ActionSpec("🗓", "Note e Agenda", "Scadenze del cantiere e note collegate") { openAgenda(null) },
+            ActionSpec("✍", "Nota veloce", "Salva una nota già collegata al cantiere") { openAgenda("NOTE") }
+        ))
+
         body.addView(sectionTitle("DOCUMENTI E CLIENTE", "FIR, DDT, fatture, piante e appunti nello stesso archivio cantiere."))
         body.addView(actionRow(
             ActionSpec("📄", "Documenti / FIR", "PDF, fatture, DDT e formulari rifiuti") { openContext(ScannerActivity::class.java) },
@@ -159,6 +164,16 @@ class JobsiteHubActivity : AppCompatActivity() {
 
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         return root
+    }
+
+    private fun openAgenda(createKind: String?) {
+        val target = Intent().setClassName(packageName, "it.edilmilan.ge360.agenda.AgendaActivity")
+            .putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, jobsite.ge360Id)
+            .putExtra(Ge360Contracts.EXTRA_CLIENT_ID, jobsite.clientGe360Id)
+            .putExtra(Ge360Contracts.EXTRA_AGENDA_CONTEXT_LABEL, jobsite.displayTitle())
+        if (createKind != null) target.putExtra(Ge360Contracts.EXTRA_AGENDA_CREATE_KIND, createKind)
+        runCatching { startActivity(target) }
+            .onFailure { Toast.makeText(this, "Agenda non disponibile in questa build", Toast.LENGTH_LONG).show() }
     }
 
     private fun loadControlPulse() {

@@ -30,6 +30,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.core.common.Ge360Contracts
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
@@ -51,6 +52,10 @@ class ClientsActivity : AppCompatActivity() {
         ClientBackupManager.schedule(this)
         setContentView(buildScreen())
         loadClients()
+        if (savedInstanceState == null) {
+            val uuid = intent.getStringExtra(Ge360Contracts.EXTRA_CLIENT_ID).orEmpty()
+            if (uuid.isNotBlank()) store.getByGe360Id(uuid)?.let { showClientDetail(it.id) }
+        }
     }
 
     override fun onResume() {
@@ -361,6 +366,14 @@ class ClientsActivity : AppCompatActivity() {
             })
         }
         actions.addView(MaterialButton(this).apply {
+            text = "Note e Agenda cliente"
+            setOnClickListener { openClientAgenda(client, null) }
+        })
+        actions.addView(MaterialButton(this).apply {
+            text = "+ Nuova nota collegata"
+            setOnClickListener { openClientAgenda(client, "NOTE") }
+        })
+        actions.addView(MaterialButton(this).apply {
             text = "Elimina cliente"
             setOnClickListener { confirmDelete(clientId, client.fullName()) }
         })
@@ -370,6 +383,19 @@ class ClientsActivity : AppCompatActivity() {
             .setView(ScrollView(this).apply { addView(body) })
             .setPositiveButton("Chiudi") { _, _ -> loadClients() }
             .show()
+    }
+
+    private fun openClientAgenda(client: ClientRecord, createKind: String?) {
+        if (client.ge360Id.isBlank()) {
+            Toast.makeText(this, "Il cliente deve essere salvato prima del collegamento", Toast.LENGTH_LONG).show()
+            return
+        }
+        val target = Intent().setClassName(packageName, "it.edilmilan.ge360.agenda.AgendaActivity")
+            .putExtra(Ge360Contracts.EXTRA_CLIENT_ID, client.ge360Id)
+            .putExtra(Ge360Contracts.EXTRA_AGENDA_CONTEXT_LABEL, client.fullName())
+        if (createKind != null) target.putExtra(Ge360Contracts.EXTRA_AGENDA_CREATE_KIND, createKind)
+        runCatching { startActivity(target) }
+            .onFailure { Toast.makeText(this, "Agenda non disponibile in questa build", Toast.LENGTH_LONG).show() }
     }
 
     private fun showFactualEventDialog(client: ClientRecord) {
