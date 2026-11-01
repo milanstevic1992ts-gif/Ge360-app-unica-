@@ -17,12 +17,21 @@ data class PlanWorkBindingV1(
     val surface: String,
     val quantityM2: Double,
     val roomRevisionAt: Long,
-    val createdAt: Long
+    val createdAt: Long,
+    // Blank on legacy V1 bindings: always requires renewed operator confirmation.
+    val geometryFingerprint: String = "",
+    val wallGe360Id: String? = null
 ) {
     fun valid(): Boolean =
         listOf(ge360Id, planGe360Id, roomGe360Id, estimateGe360Id, workCode).all { it.isNotBlank() } &&
         surface in SURFACES && quantityM2.isFinite() && quantityM2 > 0.0 &&
-        roomRevisionAt > 0 && createdAt > 0
+        roomRevisionAt > 0 && createdAt > 0 &&
+        (geometryFingerprint.isBlank() ||
+            (geometryFingerprint.length == 64 && geometryFingerprint.all {
+                it in '0'..'9' || it in 'a'..'f'
+            })) &&
+        ((surface == SINGLE_WALL_GROSS || surface == SINGLE_WALL_NET) ==
+            !wallGe360Id.isNullOrBlank() || geometryFingerprint.isBlank())
 
     fun toJson() = JSONObject()
         .put("ge360Id", ge360Id)
@@ -34,18 +43,24 @@ data class PlanWorkBindingV1(
         .put("quantityM2", quantityM2)
         .put("roomRevisionAt", roomRevisionAt)
         .put("createdAt", createdAt)
+        .put("geometryFingerprint", geometryFingerprint)
+        .put("wallGe360Id", wallGe360Id.orEmpty())
 
     companion object {
         const val FLOOR = "PAVIMENTO"
         const val CEILING = "SOFFITTO"
         const val WALLS = "PARETI"
-        val SURFACES = listOf(FLOOR, CEILING, WALLS)
+        const val WALLS_NET = "PARETI_NETTE"
+        const val SINGLE_WALL_GROSS = "PARETE_SINGOLA_LORDA"
+        const val SINGLE_WALL_NET = "PARETE_SINGOLA_NETTA"
+        val SURFACES = listOf(FLOOR, CEILING, WALLS, WALLS_NET,
+            SINGLE_WALL_GROSS, SINGLE_WALL_NET)
 
         fun quantity(room: FloorPlanRoom, surface: String): Double = when (surface) {
             FLOOR -> room.floorArea()
             CEILING -> room.ceilingArea()
             WALLS -> room.wallArea()
-            else -> error("Superficie sconosciuta")
+            else -> error("Usare il motore geometrico V2 per superfici nette o pareti singole")
         }
 
         fun fromRoom(room: FloorPlanRoom, estimateId: String, workCode: String,
@@ -61,6 +76,25 @@ data class PlanWorkBindingV1(
             createdAt = System.currentTimeMillis()
         )
 
+        fun fromMeasured(
+            room: FloorPlanRoom,
+            estimateId: String,
+            workCode: String,
+            measured: PlanGeometryQuantitiesV2.Measured
+        ): PlanWorkBindingV1 = PlanWorkBindingV1(
+            ge360Id = UUID.randomUUID().toString(),
+            planGe360Id = room.floorPlanId,
+            roomGe360Id = room.ge360Id,
+            estimateGe360Id = estimateId,
+            workCode = workCode,
+            surface = measured.surface,
+            quantityM2 = measured.quantityM2,
+            roomRevisionAt = room.updatedAt,
+            createdAt = System.currentTimeMillis(),
+            geometryFingerprint = measured.fingerprint,
+            wallGe360Id = measured.wallGe360Id
+        )
+
         fun fromJson(o: JSONObject) = PlanWorkBindingV1(
             ge360Id = o.getString("ge360Id"),
             planGe360Id = o.getString("planGe360Id"),
@@ -70,7 +104,9 @@ data class PlanWorkBindingV1(
             surface = o.getString("surface"),
             quantityM2 = o.getDouble("quantityM2"),
             roomRevisionAt = o.getLong("roomRevisionAt"),
-            createdAt = o.getLong("createdAt")
+            createdAt = o.getLong("createdAt"),
+            geometryFingerprint = o.optString("geometryFingerprint", ""),
+            wallGe360Id = o.optString("wallGe360Id", "").ifBlank { null }
         )
     }
 }
