@@ -248,10 +248,10 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 val legacy = MetricProvenanceV2.fromLegacyNote(
                     estimateUuid, item, parsed, System.currentTimeMillis()
                 ) ?: continue
-                if (metricProvenance(item.ge360Id) == null) {
-                    db.insertWithOnConflict("estimate_metric_sources", null,
-                        metricSourceValues(estimateId, legacy), SQLiteDatabase.CONFLICT_IGNORE)
-                }
+                // onUpgrade runs while the helper is opening; never recurse through
+                // readableDatabase/metricProvenance from here.
+                db.insertWithOnConflict("estimate_metric_sources", null,
+                    metricSourceValues(estimateId, legacy), SQLiteDatabase.CONFLICT_IGNORE)
             }
         }
     }
