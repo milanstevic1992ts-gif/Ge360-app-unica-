@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.attrezzi.ToolsStore
+import it.edilmilan.ge360.attrezzi.MaterialsActivity
 import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -25,6 +26,7 @@ import it.edilmilan.ge360.core.common.ui.ge360Badge
 import it.edilmilan.ge360.galleria.GalleryActivity
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.DailyStore
+import it.edilmilan.ge360.giornata.CompensationActivity
 import it.edilmilan.ge360.giornata.JobsiteLaborActivity
 import it.edilmilan.ge360.giornata.laborDayCostForJobsite
 import it.edilmilan.ge360.giornata.laborDayHoursForJobsite
@@ -310,9 +312,10 @@ class JobsiteHubActivity : AppCompatActivity() {
     private fun openControlAction(action: JobsiteControlV12.Action) {
         when (action) {
             JobsiteControlV12.Action.WORK -> openContext(JobsiteCenterActivity::class.java)
-            JobsiteControlV12.Action.MATERIALS -> openContext(WorkPreparationActivity::class.java)
+            JobsiteControlV12.Action.MATERIALS -> openContext(MaterialsActivity::class.java)
             JobsiteControlV12.Action.DOCUMENTS -> openContext(ScannerActivity::class.java)
             JobsiteControlV12.Action.LABOR -> openContext(JobsiteLaborActivity::class.java)
+            JobsiteControlV12.Action.COMPENSATIONS -> openContext(CompensationActivity::class.java)
             JobsiteControlV12.Action.COSTS -> openContext(JobsiteCostAnalyticsActivity::class.java)
             JobsiteControlV12.Action.ESTIMATES -> openContext(EstimatesActivity::class.java)
             JobsiteControlV12.Action.NONE -> Unit
