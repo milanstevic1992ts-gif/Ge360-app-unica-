@@ -368,7 +368,8 @@ class FloorPlansActivity : AppCompatActivity() {
 
     private fun chooseWorkBinding(plan: FloorPlanRecord) {
         val rooms = store.rooms(plan.ge360Id)
-        val estimates = estimateStore.list().filter { it.ge360Id.isNotBlank() }
+        val estimates = estimateStore.list().filter { it.ge360Id.isNotBlank() &&
+            it.status in setOf(EstimateStatuses.DRAFT, EstimateStatuses.REVIEW) }
             .filter { plan.jobsiteId.isBlank() || it.jobsiteId.isBlank() ||
                 it.jobsiteId == plan.jobsiteId }
         val works = StandardWorkCatalog.search().filter { it.unit == "m²" }
