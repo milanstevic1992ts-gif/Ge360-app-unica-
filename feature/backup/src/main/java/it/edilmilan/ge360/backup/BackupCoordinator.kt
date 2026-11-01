@@ -490,6 +490,82 @@ class BackupCoordinator(private val context: Context) {
         ) { id -> "files/jobsite-archive/${safe(id)}.pdf" }
     }
 
+    /**
+     * Fail before any destructive restore: every V13 attribution must refer to
+     * a real Scanner FATTURA/DDT, stock material and optional jobsite, with the
+     * source document kind and material unit unchanged. OCR text is NEVER proof.
+     */
+    private fun preflightMaterialEvidenceV13(file: File, replaceAll: Boolean) {
+        val json = runCatching {
+            archive.readText(file, "modules/material-evidence-v13.json")
+        }.getOrNull() ?: return // historical backups did not contain V13
+        val stockJson = archive.readText(file, "modules/material-inventory-v2.json")
+        val planJson = archive.readText(file, "modules/material-plans-v1.json")
+        require(JSONObject(stockJson).optString("schema") == "ge360.materials.v2" &&
+            JSONObject(planJson).optString("schema") == "ge360.material-plans.v1") {
+            "Backup V13 senza magazzino/piani materiali coerenti"
+        }
+        val evidence = JSONObject(json)
+        require(evidence.optString("schema") ==
+            MaterialDocumentEvidenceStoreV13.SCHEMA) { "Modulo V13 non riconosciuto" }
+        val source = evidence.getJSONArray("lines")
+        val lines = (0 until source.length()).map {
+            MaterialDocumentEvidenceStoreV13.parse(source.getJSONObject(it))
+        }
+        require(lines.map { it.ge360Id }.distinct().size == lines.size) {
+            "Righe V13 duplicate nel backup"
+        }
+        val scannerRows = JSONObject(archive.readText(file, "modules/scanner.json"))
+            .getJSONArray("documents")
+        val documents = (0 until scannerRows.length()).associate { i ->
+            val row = scannerRows.getJSONObject(i)
+            row.getString("ge360_id") to (
+                row.optString("type").uppercase(java.util.Locale.ROOT) to
+                    row.optString("jobsite_id"))
+        }.toMutableMap()
+        val materialRows = JSONObject(stockJson).getJSONArray("materials")
+        val materials = (0 until materialRows.length()).associate { i ->
+            val item = materialRows.getJSONObject(i)
+            item.getString("ge360Id") to item.optString("unit")
+        }.toMutableMap()
+        val jobRows = JSONObject(archive.readText(file, "modules/cantieri.json"))
+            .getJSONArray("jobsites")
+        val jobIds = (0 until jobRows.length()).map {
+            jobRows.getJSONObject(it).getString("ge360Id")
+        }.toMutableSet()
+        if (!replaceAll) {
+            val ds = DocumentStore(context)
+            val ms = MaterialInventoryStore(context)
+            val js = JobsiteStore(context)
+            try {
+                ds.list().forEach {
+                    documents.putIfAbsent(it.ge360Id,
+                        it.type.uppercase(java.util.Locale.ROOT) to it.jobsiteId)
+                }
+                ms.list().forEach { materials.putIfAbsent(it.ge360Id, it.unit) }
+                jobIds += js.list().map { it.ge360Id }
+            } finally { closeAll(ds, ms, js) }
+        }
+        lines.forEach { row ->
+            val doc = documents[row.documentGe360Id]
+                ?: error("Backup V13: fattura/DDT senza documento Scanner")
+            require(doc.first == row.documentKind) {
+                "Backup V13: tipologia documento diversa dalla riga confermata"
+            }
+            require(doc.second.isBlank() || doc.second == row.jobsiteGe360Id) {
+                "Backup V13: cantiere diverso da quello sul documento Scanner"
+            }
+            val unit = materials[row.materialGe360Id]
+                ?: error("Backup V13: materiale non presente")
+            require(unit.trim().equals(row.unit.trim(), ignoreCase = true)) {
+                "Backup V13: unità materiale diversa dalla riga attribuita"
+            }
+            require(row.jobsiteGe360Id.isBlank() || row.jobsiteGe360Id in jobIds) {
+                "Backup V13: cantiere associato non presente"
+            }
+        }
+    }
+
     private fun preflightCrossModuleLinks(
         file: File, replaceAll: Boolean
     ): RestoreLinksV10.Report {
