@@ -973,6 +973,16 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 metricVariantEvents(estimate.ge360Id).forEach { put(it.toJson()) }
             }
         })
+        put("metricVariantEconomics", JSONArray().apply {
+            estimates.forEach { estimate ->
+                metricVariantEconomics(estimate.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
+        put("metricVariantEconomicsEvents", JSONArray().apply {
+            estimates.forEach { estimate ->
+                metricVariantEconomicEvents(estimate.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
     }.toString(2)
 
     /**
@@ -1017,6 +1027,40 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         require(variantEventRows.all { it.valid() } &&
             variantEventRows.distinctBy { it.ge360Id }.size == variantEventRows.size) {
             "Eventi varianti duplicati o non validi"
+        }
+        val economicsRows = if (!native) emptyList() else root.optJSONArray("metricVariantEconomics")
+            ?.let { a ->
+                (0 until a.length()).map { MetricVariantEconomicsV4.fromJson(a.getJSONObject(it)) }
+            } ?: emptyList()
+        val economicsEvents = if (!native) emptyList()
+            else root.optJSONArray("metricVariantEconomicsEvents")?.let { a ->
+                (0 until a.length()).map {
+                    MetricVariantEconomicsEventV4.fromJson(a.getJSONObject(it))
+                }
+            } ?: emptyList()
+        require(economicsRows.all { it.valid() } &&
+            economicsRows.distinctBy { it.ge360Id }.size == economicsRows.size &&
+            economicsRows.distinctBy {
+                it.estimateGe360Id to it.variantGe360Id
+            }.size == economicsRows.size) {
+            "Proposte economiche duplicate o non valide"
+        }
+        require(economicsEvents.all { it.valid() } &&
+            economicsEvents.distinctBy { it.ge360Id }.size == economicsEvents.size) {
+            "Eventi accordi economici duplicati o non validi"
+        }
+        economicsRows.forEach { record ->
+            val events = economicsEvents.filter {
+                it.economicsGe360Id == record.ge360Id &&
+                    it.estimateGe360Id == record.estimateGe360Id &&
+                    kotlin.math.abs(it.signedAmountEuro - record.proposedSignedAmountEuro) < 0.001
+            }
+            require(events.count { it.action == "ECONOMIC_PROPOSAL" } == 1 &&
+                (record.status != MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED ||
+                    events.count {
+                        it.action == "AGREEMENT_ATTESTED" &&
+                            it.evidenceReference == record.externalAgreementReference
+                    } == 1)) { "Proposta o annotazione senza evento di audit coerente" }
         }
         val db = writableDatabase
         db.beginTransaction()
@@ -1106,6 +1150,50 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 if (current == null) db.insertOrThrow("estimate_metric_variant_events",
                     null, variantEventValues(quote.id, event))
                 else require(current == event) { "Conflitto UUID evento variante" }
+            }
+            economicsRows.forEach { economics ->
+                val quote = getByGe360Id(economics.estimateGe360Id)
+                    ?: error("Accordo economico senza preventivo")
+                val technical = metricVariants(quote.ge360Id).singleOrNull {
+                    it.ge360Id == economics.variantGe360Id
+                } ?: error("Accordo economico senza variante tecnica")
+                require(technical.status == MetricVariantV3.STATUS_TECH_REVIEWED &&
+                    technical.previousItemGe360Id == economics.sourceItemGe360Id &&
+                    kotlin.math.abs(technical.deltaQuantityM2() - economics.deltaM2) < 0.001) {
+                    "Accordo economico incoerente con la variante tecnica"
+                }
+                val original = quote.items.singleOrNull {
+                    it.ge360Id == economics.sourceItemGe360Id
+                } ?: error("Voce economica originale non disponibile")
+                require(kotlin.math.abs(original.quantity - technical.previousQuantityM2) < 0.001 &&
+                    kotlin.math.abs(original.unitPrice - technical.priorUnitPrice) < 0.001) {
+                    "Importo originale differente dal backup dell'accordo"
+                }
+                val existing = metricVariantEconomics(quote.ge360Id).singleOrNull {
+                    it.ge360Id == economics.ge360Id
+                }
+                if (existing == null) db.insertOrThrow("estimate_metric_economics",
+                    null, economicValues(quote.id, economics))
+                else require(existing == economics) {
+                    "Accordo economico già esistente con valori differenti"
+                }
+            }
+            economicsEvents.forEach { event ->
+                val quote = getByGe360Id(event.estimateGe360Id)
+                    ?: error("Audit economico senza preventivo")
+                require(metricVariantEconomics(quote.ge360Id).any {
+                    it.ge360Id == event.economicsGe360Id &&
+                        kotlin.math.abs(it.proposedSignedAmountEuro - event.signedAmountEuro) < 0.001
+                }) { "Evento economico senza proposta coerente" }
+                val existing = db.query("estimate_metric_economics_events",
+                    arrayOf("event_json"), "ge360_id=?",
+                    arrayOf(event.ge360Id), null, null, null, "1").use { c ->
+                    if (c.moveToFirst()) MetricVariantEconomicsEventV4.fromJson(
+                        JSONObject(c.getString(0))) else null
+                }
+                if (existing == null) db.insertOrThrow("estimate_metric_economics_events",
+                    null, economicEventValues(quote.id, event))
+                else require(existing == event) { "Evento economico già esistente ma diverso" }
             }
             // Recreate missing historical note-only sources as *unverified*.
             backfillLegacyMetricNotes(db)
