@@ -1324,7 +1324,11 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
      * Old backups with no sidecar metadata are accepted but note-only lineage is
      * rebuilt as LEGACY_NOTE_ONLY, never silently promoted to verified.
      */
-    fun importJson(json: String, replaceAll: Boolean): Int {
+    fun importJson(
+        json: String,
+        replaceAll: Boolean,
+        allowEvidenceBytesFromZip: Boolean = false
+    ): Int {
         val root = JSONObject(json)
         val native = root.optString("schema") == "ge360.preventivi.v1"
         val provenanceRows = if (!native) emptyList() else root.optJSONArray("metricProvenance")
@@ -1436,6 +1440,11 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             correctionEvents.all { it.valid() } &&
             correctionEvents.distinctBy { it.ge360Id }.size == correctionEvents.size) {
             "Allegati e rettifiche del backup non validi o duplicati"
+        }
+        if (!allowEvidenceBytesFromZip) require(attachmentRows.all {
+            MetricAgreementFilesV5.existsAndMatches(appContext, it)
+        }) {
+            "Il JSON non trasporta i documenti. Usa il backup GE360 ZIP con allegati."
         }
         correctionRows.forEach { correction ->
             val related = correctionEvents.filter {
