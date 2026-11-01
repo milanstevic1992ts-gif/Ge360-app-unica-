@@ -2,6 +2,7 @@ package it.edilmilan.ge360.agenda
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.widget.HorizontalScrollView
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.Editable
@@ -37,6 +38,8 @@ class AgendaActivity : AppCompatActivity() {
     private lateinit var list: LinearLayout
     private lateinit var search: EditText
     private var filter = "Oggi"
+    private var periodAnchor = System.currentTimeMillis()
+    private var selectedDay: Long? = null
     private val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,15 +100,18 @@ class AgendaActivity : AppCompatActivity() {
         root.addView(creation)
 
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Oggi", "Attivita'", "Note", "Agenda").forEach { mode ->
+        listOf("Oggi", "Settimana", "Mese", "Attivita'", "Note", "Agenda").forEach { mode ->
             tabs.addView(MaterialButton(this).apply {
                 text = mode
                 textSize = 11f
                 isAllCaps = false
-                setOnClickListener { filter = mode; refresh() }
-            }, LinearLayout.LayoutParams(0, dp(46), 1f))
+                setOnClickListener { filter = mode; selectedDay = null; refresh() }
+            }, LinearLayout.LayoutParams(dp(99), dp(46)).apply { marginEnd = dp(3) })
         }
-        root.addView(tabs)
+        root.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(tabs)
+        })
 
         search = EditText(this).apply {
             hint = "Cerca appunti, materiali, clienti..."
@@ -133,54 +139,71 @@ class AgendaActivity : AppCompatActivity() {
         if (!::list.isInitialized || !::search.isInitialized) return
         list.removeAllViews()
         val now = System.currentTimeMillis()
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        calendar.add(Calendar.DAY_OF_YEAR, 1)
-        val endOfToday = calendar.timeInMillis
         val query = search.text.toString().trim()
-        val items = runCatching { store.list() }.getOrElse {
-            message("Archivio non leggibile. Nessun dato e' stato cancellato.")
+        val entries = runCatching { store.list() }.getOrElse {
+            message("Archivio non leggibile. Nessun dato è stato cancellato.")
             return
-        }.filter { entry ->
-            (query.isEmpty() || listOf(entry.title, entry.body).any { it.contains(query, true) }) &&
+        }
+        val calendarMode = filter == "Settimana" || filter == "Mese"
+        if (calendarMode) {
+            list.addView(AgendaCalendar.panel(
+                context = this, mode = filter, anchor = periodAnchor, selected = selectedDay,
+                items = entries,
+                onMove = { offset ->
+                    periodAnchor = AgendaCalendar.moved(filter, periodAnchor, offset)
+                    selectedDay = null
+                    refresh()
+                },
+                onSelect = { day -> selectedDay = day; refresh() }
+            ))
+        }
+        val rows: List<AgendaOccurrence> = if (calendarMode) {
+            val (begin, end) = AgendaCalendar.bounds(filter, periodAnchor)
+            entries.flatMap { AgendaCalendar.occurrences(it, begin, end) }
+                .filter { selectedDay == null || AgendaCalendar.midnight(it.at) == selectedDay }
+        } else entries.map { AgendaOccurrence(it, it.dueAt) }
+        val filtered = rows.filter { (entry, at) ->
+            (query.isBlank() || listOf(entry.title, entry.body).any { it.contains(query, true) }) &&
                 when (filter) {
                     "Note" -> entry.kind == AgendaEntry.NOTE
                     "Attivita'" -> entry.kind == AgendaEntry.TASK
                     "Agenda" -> entry.kind == AgendaEntry.EVENT
-                    else -> !entry.completed && entry.dueAt > 0 && entry.dueAt < endOfToday
+                    "Settimana", "Mese" -> entry.kind != AgendaEntry.NOTE
+                    else -> entry.kind != AgendaEntry.NOTE && !entry.completed &&
+                        at > 0 && at < AgendaCalendar.nextDay(now)
                 }
+        }.sortedWith(compareBy<AgendaOccurrence> { if (it.at > 0) it.at else Long.MAX_VALUE }
+            .thenByDescending { it.entry.priority == AgendaEntry.HIGH })
+        val header = when (filter) {
+            "Oggi" -> "SCADENZE E IMPEGNI"
+            "Settimana" -> "PROGRAMMA SETTIMANALE"
+            "Mese" -> "PROGRAMMA MENSILE"
+            "Attivita'" -> "ATTIVITÀ"
+            "Note" -> "APPUNTI"
+            else -> "APPUNTAMENTI"
         }
         list.addView(TextView(this).apply {
-            text = when (filter) {
-                "Oggi" -> "IN SCADENZA · " + items.size
-                "Attivita'" -> "ATTIVITA' · " + items.size
-                "Note" -> "APPUNTI · " + items.size
-                else -> "APPUNTAMENTI · " + items.size
-            }
+            text = header + " · " + filtered.size
             textSize = 11f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Ge360Brand.PrimaryDark)
-            setPadding(0, 0, 0, dp(8))
+            setPadding(0, dp(10), 0, dp(8))
         })
-        if (items.isEmpty()) {
-            list.addView(TextView(this).apply {
-                text = if (filter == "Oggi") "Nessuna scadenza oggi. Gli appunti senza data restano nella scheda Note."
-                       else "Ancora nessun elemento. Usa uno dei pulsanti + in alto."
-                textSize = 14f
-                setTextColor(Ge360Brand.TextSecondary)
-                setPadding(dp(13), dp(18), dp(13), dp(18))
-            })
-        }
-        items.forEach { entry ->
-            list.addView(entryCard(entry, now), LinearLayout.LayoutParams(
+        if (filtered.isEmpty()) list.addView(TextView(this).apply {
+            text = if (filter == "Oggi") "Nessuna scadenza oggi. Gli appunti liberi sono nella scheda Note."
+                else "Nessun elemento per questa selezione."
+            textSize = 14f
+            setTextColor(Ge360Brand.TextSecondary)
+            setPadding(dp(13), dp(18), dp(13), dp(18))
+        })
+        filtered.forEach { occurrence ->
+            list.addView(entryCard(occurrence.entry, now, occurrence.at), LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(9) })
         }
     }
 
-    private fun entryCard(entry: AgendaEntry, now: Long): View = MaterialCardView(this).apply {
+    private fun entryCard(entry: AgendaEntry, now: Long, shownAt: Long = entry.dueAt): View = MaterialCardView(this).apply {
         radius = dp(18).toFloat()
         setCardBackgroundColor(Ge360Brand.Surface)
         strokeColor = Ge360Brand.Border
@@ -212,8 +235,10 @@ class AgendaActivity : AppCompatActivity() {
                 else -> "Appuntamento"
             }
         )
-        if (entry.dueAt > 0) meta.add(formatter.format(Date(entry.dueAt)))
-        if (entry.dueAt in 1 until now && !entry.completed) meta.add("IN RITARDO")
+        if (shownAt > 0) meta.add(formatter.format(Date(shownAt)))
+        if (entry.repeat != AgendaEntry.REPEAT_NONE) meta.add("Ricorrente")
+        if (entry.reminderEnabled) meta.add("Avviso attivo")
+        if (shownAt in 1 until now && !entry.completed) meta.add("IN RITARDO")
         if (entry.priority == AgendaEntry.HIGH) meta.add("Priorita' alta")
         if (entry.scope == AgendaEntry.PRIVATE) meta.add("Privato")
         if (entry.clientGe360Id.isNotEmpty()) meta.add("Cliente collegato")
@@ -228,7 +253,7 @@ class AgendaActivity : AppCompatActivity() {
 
     private fun actions(entry: AgendaEntry) {
         val options = mutableListOf("Modifica")
-        if (entry.kind != AgendaEntry.NOTE) options += if (entry.completed) "Riapri" else "Completa"
+        if (entry.kind != AgendaEntry.NOTE) options += if (entry.completed) "Riapri" else if (entry.repeat != AgendaEntry.REPEAT_NONE) "Completa la prossima occorrenza" else "Completa"
         if (entry.kind == AgendaEntry.NOTE) options += "Trasforma in attivita'"
         options += "Elimina"
         AlertDialog.Builder(this)
@@ -236,7 +261,7 @@ class AgendaActivity : AppCompatActivity() {
             .setItems(options.toTypedArray()) { _, index ->
                 when (options[index]) {
                     "Modifica" -> edit(entry)
-                    "Completa" -> runAction { store.setCompleted(entry.id, true) }
+                    "Completa", "Completa la prossima occorrenza" -> runAction { store.setCompleted(entry.id, true) }
                     "Riapri" -> runAction { store.setCompleted(entry.id, false) }
                     "Trasforma in attivita'" -> runAction {
                         store.promoteNote(entry.id)
