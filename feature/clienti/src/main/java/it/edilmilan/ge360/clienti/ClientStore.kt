@@ -111,6 +111,24 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
         db.execSQL("CREATE INDEX idx_clients_name ON clients(last_name, first_name)")
         db.execSQL("CREATE INDEX idx_clients_ge360 ON clients(ge360_id)")
         db.execSQL("CREATE INDEX idx_interactions_client ON relationship_interactions(client_id, created_at DESC)")
+        createFactualTimeline(db)
+    }
+
+    private fun createFactualTimeline(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS factual_client_timeline(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            client_ge360_id TEXT NOT NULL,
+            jobsite_ge360_id TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL,
+            description TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'Manuale',
+            operator_label TEXT NOT NULL DEFAULT 'Operatore (manuale)',
+            occurred_at INTEGER NOT NULL,
+            next_action_date TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_factual_client_timeline_client ON factual_client_timeline(client_ge360_id, occurred_at DESC)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_factual_client_timeline_followup ON factual_client_timeline(next_action_date)")
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -119,7 +137,8 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Prima versione del database unificato. Le migrazioni future saranno incrementali.
+        if (oldVersion < 2) createFactualTimeline(db)
+        require(newVersion == DB_VERSION) { "Migrazione Clienti non supportata" }
     }
 
     fun search(query: String = ""): List<ClientRecord> {
@@ -170,7 +189,14 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
     }
 
     fun delete(id: Long) {
-        writableDatabase.delete("clients", "id=?", arrayOf(id.toString()))
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val uuid = get(id)?.ge360Id.orEmpty()
+            if (uuid.isNotBlank()) db.delete("factual_client_timeline", "client_ge360_id=?", arrayOf(uuid))
+            db.delete("clients", "id=?", arrayOf(id.toString()))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
 
     fun findDuplicate(phone: String, email: String): ClientRecord? {
@@ -242,6 +268,51 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
         return rows
     }
 
+    /** A factual, append-only history. It does not change temperature, pulse or AI profiling. */
+    fun factualTimeline(clientGe360Id: String, limit: Int = 50): List<ClientFactualEventV1> {
+        if (clientGe360Id.isBlank()) return emptyList()
+        val out = mutableListOf<ClientFactualEventV1>()
+        readableDatabase.query("factual_client_timeline", null,
+            "client_ge360_id=?", arrayOf(clientGe360Id), null, null,
+            "occurred_at DESC, created_at DESC, ge360_id DESC",
+            limit.coerceIn(1, 200).toString()).use { c ->
+            while (c.moveToNext()) {
+                out += ClientFactualEventV1(
+                    ge360Id = c.getString(c.getColumnIndexOrThrow("ge360_id")),
+                    clientGe360Id = c.getString(c.getColumnIndexOrThrow("client_ge360_id")),
+                    jobsiteGe360Id = c.getString(c.getColumnIndexOrThrow("jobsite_ge360_id")).ifBlank { null },
+                    kind = c.getString(c.getColumnIndexOrThrow("kind")),
+                    description = c.getString(c.getColumnIndexOrThrow("description")),
+                    source = c.getString(c.getColumnIndexOrThrow("source")),
+                    operatorLabel = c.getString(c.getColumnIndexOrThrow("operator_label")),
+                    occurredAt = c.getLong(c.getColumnIndexOrThrow("occurred_at")),
+                    nextActionDate = c.getString(c.getColumnIndexOrThrow("next_action_date")),
+                    createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"))
+                )
+            }
+        }
+        return out
+    }
+
+    fun addFactualEvent(event: ClientFactualEventV1) {
+        require(event.isValid()) { "Evento cliente incompleto o non valido" }
+        require(getByGe360Id(event.clientGe360Id) != null) { "Cliente UUID non presente" }
+        writableDatabase.insertOrThrow("factual_client_timeline", null, factualEventValues(event))
+    }
+
+    private fun factualEventValues(x: ClientFactualEventV1) = ContentValues().apply {
+        put("ge360_id", x.ge360Id)
+        put("client_ge360_id", x.clientGe360Id)
+        put("jobsite_ge360_id", x.jobsiteGe360Id.orEmpty())
+        put("kind", x.kind)
+        put("description", x.description)
+        put("source", x.source)
+        put("operator_label", x.operatorLabel)
+        put("occurred_at", x.occurredAt)
+        put("next_action_date", x.nextActionDate)
+        put("created_at", x.createdAt)
+    }
+
     fun exportJson(): String {
         val root = JSONObject()
             .put("app", "GE360 Clienti")
@@ -266,6 +337,26 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
             }
         }
         root.put("relationshipInteractions", history)
+        val timeline = JSONArray()
+        readableDatabase.query("factual_client_timeline", null, null, null, null, null,
+            "occurred_at ASC, created_at ASC").use { c ->
+            while (c.moveToNext()) {
+                val event = ClientFactualEventV1(
+                    ge360Id = c.getString(c.getColumnIndexOrThrow("ge360_id")),
+                    clientGe360Id = c.getString(c.getColumnIndexOrThrow("client_ge360_id")),
+                    jobsiteGe360Id = c.getString(c.getColumnIndexOrThrow("jobsite_ge360_id")).ifBlank { null },
+                    kind = c.getString(c.getColumnIndexOrThrow("kind")),
+                    description = c.getString(c.getColumnIndexOrThrow("description")),
+                    source = c.getString(c.getColumnIndexOrThrow("source")),
+                    operatorLabel = c.getString(c.getColumnIndexOrThrow("operator_label")),
+                    occurredAt = c.getLong(c.getColumnIndexOrThrow("occurred_at")),
+                    nextActionDate = c.getString(c.getColumnIndexOrThrow("next_action_date")),
+                    createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"))
+                )
+                timeline.put(event.toJson())
+            }
+        }
+        root.put("factualTimeline", timeline)
         return root.toString(2)
     }
 
@@ -273,12 +364,24 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
         val root = JSONObject(json)
         val rows = root.getJSONArray("clients")
         val history = root.optJSONArray("relationshipInteractions")
+        val factualArray = root.optJSONArray("factualTimeline")
+        val factualEvents = if (factualArray == null) null else {
+            (0 until factualArray.length()).map {
+                ClientFactualEventV1.fromJson(factualArray.getJSONObject(it))
+            }.also { events ->
+                require(events.all { it.isValid() }) { "Evento cronologia cliente invalido nel backup" }
+                require(events.distinctBy { it.ge360Id }.size == events.size) {
+                    "UUID evento cliente duplicato nel backup"
+                }
+            }
+        }
         val db = writableDatabase
         val idMap = mutableMapOf<Long, Long>()
         var imported = 0
         db.beginTransaction()
         try {
             if (replaceAll) {
+                if (factualEvents != null) db.delete("factual_client_timeline", null, null)
                 db.delete("relationship_interactions", null, null)
                 db.delete("clients", null, null)
             }
@@ -316,6 +419,31 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
                         db.insert("relationship_interactions", null, values)
                     }
                 }
+            }
+            factualEvents?.forEach { event ->
+                // Never attach a timeline event by name or legacy numeric SQLite ID.
+                require(getByGe360Id(event.clientGe360Id) != null) {
+                    "Evento cronologia con cliente UUID non presente nel backup"
+                }
+                val existing = readableDatabase.query("factual_client_timeline", null,
+                    "ge360_id=?", arrayOf(event.ge360Id), null, null, null, "1").use { c ->
+                    if (!c.moveToFirst()) null else JSONObject()
+                        .put("ge360Id", c.getString(c.getColumnIndexOrThrow("ge360_id")))
+                        .put("clientGe360Id", c.getString(c.getColumnIndexOrThrow("client_ge360_id")))
+                        .put("jobsiteGe360Id", c.getString(c.getColumnIndexOrThrow("jobsite_ge360_id")))
+                        .put("kind", c.getString(c.getColumnIndexOrThrow("kind")))
+                        .put("description", c.getString(c.getColumnIndexOrThrow("description")))
+                        .put("source", c.getString(c.getColumnIndexOrThrow("source")))
+                        .put("operatorLabel", c.getString(c.getColumnIndexOrThrow("operator_label")))
+                        .put("occurredAt", c.getLong(c.getColumnIndexOrThrow("occurred_at")))
+                        .put("nextActionDate", c.getString(c.getColumnIndexOrThrow("next_action_date")))
+                        .put("createdAt", c.getLong(c.getColumnIndexOrThrow("created_at")))
+                }
+                if (existing != null) {
+                    require(existing.toString() == event.toJson().toString()) {
+                        "Evento cronologia già presente ma divergente: merge interrotto"
+                    }
+                } else db.insertOrThrow("factual_client_timeline", null, factualEventValues(event))
             }
             db.setTransactionSuccessful()
         } finally {
@@ -423,7 +551,7 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
 
     companion object {
         private const val DB_NAME = "ge360_clienti.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
 
         fun normalizePhone(phone: String): String {
             var value = PhoneNumberUtils.normalizeNumber(phone.trim()) ?: ""
