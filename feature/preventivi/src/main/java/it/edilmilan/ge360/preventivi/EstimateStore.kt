@@ -1066,18 +1066,30 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             economicsEvents.distinctBy { it.ge360Id }.size == economicsEvents.size) {
             "Eventi accordi economici duplicati o non validi"
         }
+        require(economicsEvents.all { event -> economicsRows.any {
+            it.ge360Id == event.economicsGe360Id &&
+                it.estimateGe360Id == event.estimateGe360Id &&
+                kotlin.math.abs(it.proposedSignedAmountEuro - event.signedAmountEuro) < 0.001
+        } }) { "Evento economico senza proposta coerente nel backup" }
         economicsRows.forEach { record ->
             val events = economicsEvents.filter {
                 it.economicsGe360Id == record.ge360Id &&
-                    it.estimateGe360Id == record.estimateGe360Id &&
-                    kotlin.math.abs(it.signedAmountEuro - record.proposedSignedAmountEuro) < 0.001
+                    it.estimateGe360Id == record.estimateGe360Id
             }
-            require(events.count { it.action == "ECONOMIC_PROPOSAL" } == 1 &&
-                (record.status != MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED ||
-                    events.count {
-                        it.action == "AGREEMENT_ATTESTED" &&
-                            it.evidenceReference == record.externalAgreementReference
-                    } == 1)) { "Proposta o annotazione senza evento di audit coerente" }
+            val agreements = events.filter { it.action == "AGREEMENT_ATTESTED" }
+            require(events.count {
+                it.action == "ECONOMIC_PROPOSAL" &&
+                    it.evidenceReference.isBlank() &&
+                    kotlin.math.abs(it.signedAmountEuro - record.proposedSignedAmountEuro) < 0.001
+            } == 1 && (if (record.status ==
+                MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED)
+                    agreements.size == 1 &&
+                        agreements.single().evidenceReference ==
+                        record.externalAgreementReference &&
+                        kotlin.math.abs(agreements.single().signedAmountEuro -
+                            record.proposedSignedAmountEuro) < 0.001
+                else agreements.isEmpty())
+            ) { "Proposta o annotazione senza cronologia economica corrispondente" }
         }
         val db = writableDatabase
         db.beginTransaction()
