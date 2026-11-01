@@ -60,6 +60,65 @@ class MetricAgreementV5ContractTest {
         assertFalse(a.copy(sizeBytes = MetricAgreementFilesV5.MAX_BYTES + 1).valid())
     }
 
+    private fun agreedEconomic() = MetricVariantEconomicsV4(
+        estimateGe360Id = "quote-01",
+        variantGe360Id = "variant-01",
+        sourceItemGe360Id = "item-01",
+        deltaM2 = 1.0,
+        kind = MetricVariantEconomicsV4.KIND_EXTRA,
+        pricingMode = MetricVariantEconomicsV4.MODE_LUMP_SUM,
+        proposedUnitRateEuro = 0.0,
+        proposedLumpSumEuro = 120.0,
+        proposedSignedAmountEuro = 120.0,
+        proposalReason = "Accordo esterno per lavorazione aggiuntiva",
+        proposedAt = 100,
+        status = MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED,
+        externalAgreementReference = "mail-cliente-originale",
+        externalAgreementDate = "2026-10-31",
+        evidenceNote = "Accordo verificato nella corrispondenza",
+        attestedAt = 101
+    )
+
+    @Test fun v6ChainedAttestationsReplaceRatherThanSum() {
+        val initial = correction(105.0).copy(proposedAt = 200)
+        val first = initial.copy(
+            status = MetricAgreementCorrectionV5.STATUS_ATTESTED,
+            agreementReference = "mail-prima-rettifica",
+            agreementDateIso = "2026-10-31",
+            evidenceNote = "Prima modifica economica documentata",
+            attestedAt = 201
+        )
+        val second = first.copy(
+            ge360Id = java.util.UUID.randomUUID().toString(),
+            priorSignedAmountEuro = 105.0,
+            correctedSignedAmountEuro = 95.0,
+            proposedAt = 202,
+            attestedAt = 203,
+            agreementReference = "mail-seconda-rettifica",
+            evidenceNote = "Seconda modifica economica documentata"
+        )
+        val econ = agreedEconomic()
+        assertEquals(95.0, MetricAgreementRevisionChainV6.effectiveSignedAmount(
+            econ, listOf(second, first)), 0.001)
+        assertEquals(120.0, MetricAgreementRevisionChainV6.effectiveSignedAmount(
+            econ, listOf(first.copy(status = MetricAgreementCorrectionV5.STATUS_PROPOSED,
+                attestedAt = 0, agreementReference = "",
+                agreementDateIso = "", evidenceNote = ""))), 0.001)
+    }
+
+    @Test fun v6RejectsGapsAndMultiplePendingProposals() {
+        val econ = agreedEconomic()
+        val first = correction(105.0).copy(proposedAt = 200)
+        val second = correction(95.0).copy(
+            ge360Id = java.util.UUID.randomUUID().toString(), proposedAt = 202)
+        assertTrue(runCatching {
+            MetricAgreementRevisionChainV6.ordered(econ, listOf(first, second))
+        }.isFailure)
+        assertTrue(runCatching {
+            MetricAgreementRevisionChainV6.ordered(econ, listOf(second))
+        }.isFailure)
+    }
+
     @Test fun auditMustBeTraceableAndNeverClaimPayment() {
         val e = MetricAgreementCorrectionEventV5(
             estimateGe360Id = "quote-01",

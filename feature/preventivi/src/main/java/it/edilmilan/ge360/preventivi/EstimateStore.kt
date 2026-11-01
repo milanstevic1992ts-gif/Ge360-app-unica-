@@ -165,6 +165,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         if (oldVersion < 3) createMetricVariantTables(db)
         if (oldVersion < 4) createMetricEconomicsTables(db)
         if (oldVersion < 5) createAgreementTables(db)
+        else if (oldVersion < 6) migrateAgreementCorrectionsV6(db)
     }
 
     private fun createMetricTables(db: SQLiteDatabase) {
@@ -292,7 +293,6 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             data_json TEXT NOT NULL,
             status TEXT NOT NULL,
             created_at INTEGER NOT NULL,
-            UNIQUE(estimate_id,economics_ge360_id),
             FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
         )""")
         db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_agreement_correction_events(
@@ -304,6 +304,37 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
         )""")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_agreement_corrections ON estimate_agreement_corrections(estimate_id,created_at)")
+        db.execSQL("""CREATE UNIQUE INDEX IF NOT EXISTS idx_agreement_one_pending_v6
+            ON estimate_agreement_corrections(estimate_id,economics_ge360_id)
+            WHERE status='RETTIFICA_PROPOSTA'""")
+    }
+
+    /**
+     * V5 had UNIQUE(estimate_id,economics_ge360_id), forbidding a second revision.
+     * SQLite cannot DROP that constraint: rebuild inside SQLiteOpenHelper's upgrade
+     * transaction, preserving UUIDs, JSON snapshots, timestamps and attachments.
+     * Nothing is migrated into quote totals or accounting tables.
+     */
+    private fun migrateAgreementCorrectionsV6(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE estimate_agreement_corrections RENAME TO estimate_agreement_corrections_v5")
+        db.execSQL("""CREATE TABLE estimate_agreement_corrections(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            economics_ge360_id TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("""INSERT INTO estimate_agreement_corrections
+            (ge360_id,estimate_id,economics_ge360_id,data_json,status,created_at)
+            SELECT ge360_id,estimate_id,economics_ge360_id,data_json,status,created_at
+            FROM estimate_agreement_corrections_v5""")
+        db.execSQL("DROP TABLE estimate_agreement_corrections_v5")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_agreement_corrections ON estimate_agreement_corrections(estimate_id,created_at)")
+        db.execSQL("""CREATE UNIQUE INDEX IF NOT EXISTS idx_agreement_one_pending_v6
+            ON estimate_agreement_corrections(estimate_id,economics_ge360_id)
+            WHERE status='RETTIFICA_PROPOSTA'""")
     }
 
     private fun attachmentValues(id: Long, a: MetricAgreementAttachmentV5) =
@@ -855,15 +886,26 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 original.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
                 "Rettifica possibile solo dopo annotazione di un accordo esterno"
             }
-            require(agreementCorrections(quote.ge360Id).none {
-                it.economicsGe360Id == economicsGe360Id
-            }) { "Rettifica già proposta: non generare doppie revisioni" }
+            val revisions = MetricAgreementRevisionChainV6.ordered(
+                original, agreementCorrections(quote.ge360Id).filter {
+                    it.economicsGe360Id == economicsGe360Id
+                }
+            )
+            require(revisions.lastOrNull()?.status != MetricAgreementCorrectionV5.STATUS_PROPOSED) {
+                "C'è già una rettifica proposta: annotarla prima di crearne un'altra"
+            }
+            val currentAmount = MetricAgreementRevisionChainV6.effectiveSignedAmount(
+                original, revisions
+            )
+            val proposedAt = maxOf(System.currentTimeMillis(),
+                (revisions.lastOrNull()?.attestedAt ?: 0L) + 1L)
             val correction = MetricAgreementCorrectionV5(
                 estimateGe360Id = quote.ge360Id,
                 economicsGe360Id = original.ge360Id,
-                priorSignedAmountEuro = original.proposedSignedAmountEuro,
+                priorSignedAmountEuro = currentAmount,
                 correctedSignedAmountEuro = correctedSignedAmount,
-                reason = reason.trim()
+                reason = reason.trim(),
+                proposedAt = proposedAt
             )
             require(correction.valid()) {
                 "Importo diverso, stesso segno (extra/riduzione) e motivo obbligatorio"
@@ -908,10 +950,16 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             val economic = metricVariantEconomics(quote.ge360Id)
                 .singleOrNull { it.ge360Id == correction.economicsGe360Id }
                 ?: error("Origine economica mancante")
-            require(economic.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED &&
-                kotlin.math.abs(economic.proposedSignedAmountEuro -
-                    correction.priorSignedAmountEuro) < 0.001) {
-                "L'accordo originale non corrisponde alla rettifica"
+            require(economic.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
+                "Accordo originale non annotato"
+            }
+            val chain = MetricAgreementRevisionChainV6.ordered(
+                economic, agreementCorrections(quote.ge360Id).filter {
+                    it.economicsGe360Id == economic.ge360Id
+                }
+            )
+            require(chain.lastOrNull()?.ge360Id == correction.ge360Id) {
+                "La rettifica non è l'ultima revisione in attesa"
             }
             require(verifiedEvidence(quote.ge360Id, economic.ge360Id, correction.ge360Id)) {
                 "Allegare un PDF, JPG o PNG verificabile alla rettifica prima di annotarla"
@@ -949,13 +997,14 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
     /** Display only. Supersede earlier amount exactly once, never add both. */
     fun effectiveAgreedVariantsEuro(estimateGe360Id: String): Double {
         val corrections = agreementCorrections(estimateGe360Id)
-            .filter { it.status == MetricAgreementCorrectionV5.STATUS_ATTESTED }
-            .associateBy { it.economicsGe360Id }
         return metricVariantEconomics(estimateGe360Id)
             .filter { it.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED }
             .sumOf { economics ->
-                corrections[economics.ge360Id]?.correctedSignedAmountEuro
-                    ?: economics.proposedSignedAmountEuro
+                MetricAgreementRevisionChainV6.effectiveSignedAmount(
+                    economics, corrections.filter {
+                        it.economicsGe360Id == economics.ge360Id
+                    }
+                )
             }
     }
 
@@ -1434,9 +1483,6 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             attachmentRows.distinctBy { it.ge360Id }.size == attachmentRows.size &&
             correctionRows.all { it.valid() } &&
             correctionRows.distinctBy { it.ge360Id }.size == correctionRows.size &&
-            correctionRows.distinctBy {
-                it.estimateGe360Id to it.economicsGe360Id
-            }.size == correctionRows.size &&
             correctionEvents.all { it.valid() } &&
             correctionEvents.distinctBy { it.ge360Id }.size == correctionEvents.size) {
             "Allegati e rettifiche del backup non validi o duplicati"
@@ -1608,10 +1654,8 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 val prior = metricVariantEconomics(q.ge360Id).singleOrNull {
                     it.ge360Id == correction.economicsGe360Id
                 } ?: error("Rettifica senza accordo originale")
-                require(prior.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED &&
-                    kotlin.math.abs(prior.proposedSignedAmountEuro -
-                        correction.priorSignedAmountEuro) < 0.001) {
-                    "Rettifica diversa dall'importo originale"
+                require(prior.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
+                    "Rettifica senza accordo originale annotato"
                 }
                 val current = agreementCorrections(q.ge360Id).singleOrNull {
                     it.ge360Id == correction.ge360Id
@@ -1654,6 +1698,20 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                     null, correctionEventValues(q.id, event))
                 else require(current == event) { "Evento rettifica divergente" }
             }
+            // Validate the FULL merged local+imported chain before committing.
+            // Reject missing predecessors, multiple pending revisions, or mismatched
+            // prior amounts (including maliciously re-ordered backup snapshots).
+            correctionRows.map { it.estimateGe360Id to it.economicsGe360Id }
+                .distinct().forEach { (quoteId, economicId) ->
+                    val economic = metricVariantEconomics(quoteId).singleOrNull {
+                        it.ge360Id == economicId
+                    } ?: error("Accordo della catena non trovato")
+                    MetricAgreementRevisionChainV6.ordered(
+                        economic, agreementCorrections(quoteId).filter {
+                            it.economicsGe360Id == economicId
+                        }
+                    )
+                }
             // Recreate missing historical note-only sources as *unverified*.
             backfillLegacyMetricNotes(db)
             db.setTransactionSuccessful()
@@ -1759,6 +1817,6 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         val UNITS=listOf("corpo","m²","ml","cad.","ora","giornata","forfait")
         val SECTIONS=listOf("Bagno","Resto della casa","Esterni","Opere extra")
         private const val DB_NAME="ge360_preventivi.db"
-        private const val DB_VERSION=5
+        private const val DB_VERSION=6
     }
 }

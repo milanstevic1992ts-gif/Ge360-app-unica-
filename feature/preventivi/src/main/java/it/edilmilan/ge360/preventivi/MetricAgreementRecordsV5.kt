@@ -155,3 +155,48 @@ data class MetricAgreementCorrectionEventV5(
         )
     }
 }
+
+/**
+ * V6: one effective signed amount per economic proposal. Earlier agreements and
+ * corrections remain immutable history, never additive charges or invoices.
+ * A pending proposal can only be the last entry; an attested revision is needed
+ * before a subsequent proposal. Equal timestamps do not define a valid sequence.
+ */
+object MetricAgreementRevisionChainV6 {
+    fun ordered(
+        economic: MetricVariantEconomicsV4,
+        corrections: List<MetricAgreementCorrectionV5>
+    ): List<MetricAgreementCorrectionV5> {
+        require(economic.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED &&
+            economic.proposedSignedAmountEuro.isFinite()) { "Accordo origine non valido" }
+        val sorted = corrections.sortedWith(
+            compareBy<MetricAgreementCorrectionV5> { it.proposedAt }.thenBy { it.ge360Id }
+        )
+        var effective = economic.proposedSignedAmountEuro
+        var previousAttestation = 0L
+        sorted.forEachIndexed { index, row ->
+            require(row.valid() && row.estimateGe360Id == economic.estimateGe360Id &&
+                row.economicsGe360Id == economic.ge360Id &&
+                row.proposedAt > previousAttestation &&
+                kotlin.math.abs(row.priorSignedAmountEuro - effective) < 0.001) {
+                "Storico rettifiche incompleto o importo precedente incoerente"
+            }
+            if (row.status == MetricAgreementCorrectionV5.STATUS_PROPOSED) {
+                require(index == sorted.lastIndex) {
+                    "Una proposta in attesa impedisce ulteriori rettifiche"
+                }
+            } else {
+                effective = row.correctedSignedAmountEuro
+                previousAttestation = row.attestedAt
+            }
+        }
+        return sorted
+    }
+
+    fun effectiveSignedAmount(
+        economic: MetricVariantEconomicsV4,
+        corrections: List<MetricAgreementCorrectionV5>
+    ): Double = ordered(economic, corrections)
+        .lastOrNull { it.status == MetricAgreementCorrectionV5.STATUS_ATTESTED }
+        ?.correctedSignedAmountEuro ?: economic.proposedSignedAmountEuro
+}

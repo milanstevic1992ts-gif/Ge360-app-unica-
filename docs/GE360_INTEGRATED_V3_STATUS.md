@@ -247,3 +247,18 @@ Una variante di metratura su un preventivo già inviato/accettato NON riscrive l
 - Allegare una prova NON prova che il cliente abbia firmato o approvato un importo. Non c'è analisi legale della firma, timbro elettronico, PEC, verifica email o marca temporale.
 - Il riferimento esterno è un'annotazione manuale; nessun invio al cliente.
 - Il checksum e il backup non sostituiscono cifratura end-to-end, retention/privacy o audit antifrode.
+
+
+## V6 — Catena di rettifiche economiche successive (1 novembre 2026)
+
+**Stato: codice su branch soltanto, nessuna build/test/Actions/APK/merge/deploy.**
+
+- Identificata la limitazione V5: UNIQUE per accordo economico e riepilogo basato su una sola rettifica.
+- Migrazione SQLite Preventivi 5→6 conservativa: ricostruzione transazionale della tabella rettifiche con UUID, JSON e tempi originari invariati; indice SQL parziale per vietare due proposte contemporanee sul medesimo accordo.
+- Le rettifiche successive usano l'ultimo importo *annotato* come importo precedente, non l'originale; una proposta non cambia il totale effettivo. Catena validata per ordine, importi, UUID e singola proposta aperta.
+- Importazione/merge backup: verifica della catena risultante dentro la transazione SQLite; incongruenze bloccano il ripristino della parte Preventivi anziché creare doppi conteggi.
+- La UI mostra l'importo attuale e lo storico, apre la proposta eventualmente pendente e consente una nuova rettifica solo dopo annotazione della precedente, lasciando allegati individuali e audit V5 intatti.
+- Non cambia importi di preventivo, SAL, fatture, crediti o pagamenti. Nessuna modifica backend o Debian.
+- Contratti JUnit aggiornati per catene multiple, proposte pendenti e rigetto di predecessori mancanti. **Scritti, non eseguiti.**
+
+**Gate futuri:** test migrazione V5→V6 con backup reale (anche prove allegate), test merge/replaceAll, cattura errori in UI, ordine cronologico nei fusi/orologi diversi, compilazione e controllo privacy file solo dietro autorizzazione.

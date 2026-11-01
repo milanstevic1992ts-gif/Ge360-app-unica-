@@ -209,14 +209,13 @@ class EstimatesActivity : AppCompatActivity() {
         }
         val economicsRows = store.metricVariantEconomics(estimateGe360Id)
         val economics = economicsRows.associateBy { it.variantGe360Id }
-        val corrected = store.agreementCorrections(estimateGe360Id)
-            .filter { it.status == MetricAgreementCorrectionV5.STATUS_ATTESTED }
-            .associateBy { it.economicsGe360Id }
+        val allCorrections = store.agreementCorrections(estimateGe360Id)
         val recorded = economicsRows.filter {
             it.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED
         }.map { econ ->
-            corrected[econ.ge360Id]?.correctedSignedAmountEuro
-                ?: econ.proposedSignedAmountEuro
+            MetricAgreementRevisionChainV6.effectiveSignedAmount(
+                econ, allCorrections.filter { it.economicsGe360Id == econ.ge360Id }
+            )
         }
         val proposed = economicsRows.filter {
             it.status == MetricVariantEconomicsV4.STATUS_PROPOSED
@@ -508,17 +507,35 @@ class EstimatesActivity : AppCompatActivity() {
         })
         addAgreementFiles(box, estimateGe360Id, economics.ge360Id, "")
         if (economics.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
-            val correction = store.agreementCorrections(estimateGe360Id)
-                .singleOrNull { it.economicsGe360Id == economics.ge360Id }
+            val corrections = MetricAgreementRevisionChainV6.ordered(
+                economics, store.agreementCorrections(estimateGe360Id).filter {
+                    it.economicsGe360Id == economics.ge360Id
+                }
+            )
+            val latest = corrections.lastOrNull()
+            val effective = MetricAgreementRevisionChainV6.effectiveSignedAmount(
+                economics, corrections
+            )
+            box.addView(TextView(this).apply {
+                text = "\nImporto annotato attuale: " +
+                    String.format(Locale.ITALY, "%+.2f €", effective) +
+                    "\nRettifiche precedenti: ${corrections.size}\n" +
+                    corrections.mapIndexed { index, row ->
+                        "${index + 1}. ${row.status}: " +
+                            String.format(Locale.ITALY, "%+.2f → %+.2f €",
+                                row.priorSignedAmountEuro, row.correctedSignedAmountEuro)
+                    }.joinToString("\n")
+                textSize = 14f
+            })
             AlertDialog.Builder(this).setTitle("Accordo esterno annotato")
                 .setView(ScrollView(this).apply { addView(box) })
-                .setPositiveButton(if (correction == null)
-                    "RETTIFICA" else "APRI RETTIFICA") { _, _ ->
-                    if (correction == null) proposeAgreementCorrection(
-                        estimateGe360Id, economics
-                    ) else showAgreementCorrection(
-                        estimateGe360Id, economics, correction
-                    )
+                .setPositiveButton(if (latest?.status == MetricAgreementCorrectionV5.STATUS_PROPOSED)
+                    "APRI PROPOSTA" else "NUOVA RETTIFICA") { _, _ ->
+                    if (latest?.status == MetricAgreementCorrectionV5.STATUS_PROPOSED) {
+                        showAgreementCorrection(estimateGe360Id, economics, latest)
+                    } else {
+                        proposeAgreementCorrection(estimateGe360Id, economics)
+                    }
                 }
                 .setNegativeButton("Chiudi", null).show()
             return
@@ -580,14 +597,23 @@ class EstimatesActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "Accordo precedente: " +
                 String.format(Locale.ITALY, "%+.2f €",
-                    economics.proposedSignedAmountEuro) +
+                    MetricAgreementRevisionChainV6.effectiveSignedAmount(
+                        economics, store.agreementCorrections(quoteId).filter {
+                            it.economicsGe360Id == economics.ge360Id
+                        }
+                    )) +
                 "\nLa nuova cifra deve mantenere il segno: un extra resta extra, " +
                 "una riduzione resta riduzione. Se devi cambiare tipologia " +
                 "occorre un nuovo iter contrattuale, non una rettifica."
             textSize = 14f
         })
-        val amount = amountField(economics.proposedSignedAmountEuro,
-            "Nuovo importo complessivo con segno €", signed = true)
+        val amount = amountField(
+            MetricAgreementRevisionChainV6.effectiveSignedAmount(
+                economics, store.agreementCorrections(quoteId).filter {
+                    it.economicsGe360Id == economics.ge360Id
+                }
+            ), "Nuovo importo complessivo con segno €", signed = true
+        )
         val reason = EditText(this).apply {
             hint = "Motivo della rettifica (obbligatorio)"
             minLines = 2
@@ -654,7 +680,10 @@ class EstimatesActivity : AppCompatActivity() {
         if (correction.status == MetricAgreementCorrectionV5.STATUS_ATTESTED) {
             AlertDialog.Builder(this).setTitle("Rettifica annotata")
                 .setView(ScrollView(this).apply { addView(root) })
-                .setPositiveButton("Chiudi", null).show()
+                .setPositiveButton("NUOVA RETTIFICA") { _, _ ->
+                    proposeAgreementCorrection(quoteId, economic)
+                }
+                .setNegativeButton("Chiudi", null).show()
             return
         }
         val reference = EditText(this).apply {
