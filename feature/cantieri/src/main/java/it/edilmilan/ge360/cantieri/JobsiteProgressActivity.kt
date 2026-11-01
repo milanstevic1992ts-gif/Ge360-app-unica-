@@ -20,6 +20,7 @@ import com.google.android.material.card.MaterialCardView
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.time.temporal.ChronoUnit
 import org.json.JSONArray
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -79,6 +80,7 @@ class JobsiteProgressActivity : AppCompatActivity() {
 
         root.addView(sectionTitle("Avanzamento reale", "Le fasi hanno un peso: GE360 calcola il completamento reale del cantiere.", 24))
         root.addView(progressSummaryCard(summary))
+        root.addView(finishScenarioCard())
         root.addView(progressHistoryCard(summary))
 
         root.addView(LinearLayout(this).apply {
@@ -166,6 +168,76 @@ class JobsiteProgressActivity : AppCompatActivity() {
      * Measurements are recorded ONLY after the operator confirms.
      * Changing a percentage never silently generates historical dates.
      */
+    /** Explicit scenario assumptions, no probabilistic claims or auto-updated deadlines. */
+    private fun finishScenarioCard(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(sectionTitle(
+            "Scenari di completamento",
+            "Tre ipotesi dal ritmo storico reale, solo con misurazioni confrontabili",
+            18
+        ))
+        val result = runCatching { store.progressForecast(job.ge360Id) }.getOrNull()
+        addView(whiteCard().apply {
+            addView(LinearLayout(this@JobsiteProgressActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(15), dp(14), dp(15), dp(14))
+                if (result == null) {
+                    addView(text(
+                        "Simulazione non disponibile. Consulta lo storico e le fasi del cantiere.",
+                        12f, "#A85A00"
+                    ))
+                } else {
+                    addView(text(
+                        result.quality, 14f, "#17191C", bold = true
+                    ))
+                    if (!result.canShowDates) {
+                        result.reasons.forEach { reason ->
+                            addView(text(reason, 12f, "#A85A00").apply {
+                                setPadding(0, dp(8), 0, 0)
+                            })
+                        }
+                        addView(text(
+                            "Non vengono mostrate date senza evidenza sufficiente.",
+                            11f, "#62686E"
+                        ).apply { setPadding(0, dp(8), 0, 0) })
+                    } else {
+                        addView(text(
+                            result.reasons.joinToString("\n"), 12f, "#62686E"
+                        ).apply { setPadding(0, dp(7), 0, dp(11)) })
+                        result.scenarios.forEach { scenario ->
+                            val difference = result.targetEnd?.let { target ->
+                                val days = ChronoUnit.DAYS.between(target, scenario.date)
+                                when {
+                                    days > 0 -> " · " + days + " gg oltre la fine prevista"
+                                    days < 0 -> " · " + (-days) + " gg prima della fine prevista"
+                                    else -> " · coincide con la fine prevista"
+                                }
+                            }.orEmpty()
+                            addView(text(
+                                scenario.label + " · " + scenario.date + difference,
+                                13f, if (scenario.label.startsWith("Lento")) "#A85A00" else "#17191C",
+                                bold = true
+                            ).apply { setPadding(0, dp(6), 0, dp(6)) })
+                        }
+                        addView(text(
+                            "Scenari ipotetici dal ritmo osservato, non date di consegna garantite.",
+                            11f, "#62686E"
+                        ).apply { setPadding(0, dp(9), 0, 0) })
+                    }
+                    addView(actionText("IPOTESI E LIMITI  ⓘ") {
+                        AlertDialog.Builder(this@JobsiteProgressActivity)
+                            .setTitle("Come leggere gli scenari")
+                            .setMessage(result.assumptions.joinToString("\n\n") +
+                                "\n\nIl pannello Avanzamento non verifica da solo ordini, meteo e lavorazioni bloccate. " +
+                                "Consulta anche i segnali della Settimana cantieri.")
+                            .setPositiveButton("Chiudi", null)
+                            .show()
+                    })
+                }
+            })
+        })
+    }
+
     private fun progressHistoryCard(summary: JobsiteProgressSummary?): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
