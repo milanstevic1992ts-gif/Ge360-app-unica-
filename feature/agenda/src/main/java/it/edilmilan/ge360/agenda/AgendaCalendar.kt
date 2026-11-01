@@ -68,11 +68,13 @@ object AgendaCalendar {
         anchor: Long,
         selected: Long?,
         items: List<AgendaEntry>,
+        sourceDates: List<Long> = emptyList(),
         onMove: (Int) -> Unit,
         onSelect: (Long?) -> Unit
     ): View {
         val (from, until) = bounds(mode, anchor)
-        val marked = items.flatMap { occurrences(it, from, until) }.map { midnight(it.at) }.toSet()
+        val marked = (items.flatMap { occurrences(it, from, until) }.map { midnight(it.at) } +
+            sourceDates.filter { it in from until until }.map(::midnight)).toSet()
         val density = context.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
         val container = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
