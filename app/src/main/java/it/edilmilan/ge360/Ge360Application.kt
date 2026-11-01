@@ -5,12 +5,16 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import it.edilmilan.ge360.jarvis.JarvisProactiveScheduler
+import it.edilmilan.ge360.core.backup.BackupScratchV9
 import java.io.PrintWriter
 import java.io.StringWriter
 
 class Ge360Application : Application() {
     override fun onCreate() {
         super.onCreate()
+        // A newly started process has no active GE360 backup/restore workers:
+        // reclaim private plaintext scratch remnants BEFORE scheduling any work.
+        runCatching { BackupScratchV9.reclaimOnColdStart(this) }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching {

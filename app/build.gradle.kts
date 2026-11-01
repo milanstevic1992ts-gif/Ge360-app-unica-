@@ -40,6 +40,7 @@ android {
 dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:bridge"))
+    implementation(project(":core:backup"))
     implementation(project(":feature:home"))
     implementation(project(":feature:clienti"))
     implementation(project(":feature:cantieri"))
