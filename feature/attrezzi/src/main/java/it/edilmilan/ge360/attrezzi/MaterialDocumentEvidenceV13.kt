@@ -88,10 +88,31 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         db.execSQL("""CREATE UNIQUE INDEX idx_doc_line_active_unique
             ON material_document_lines(document_id,material_id,jobsite_id)
             WHERE voided_at=0""")
+        createMatchTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion == newVersion) { "Migrazione V13 non prevista: preservare i dati" }
+        require(oldVersion in 1..VERSION && newVersion == VERSION) {
+            "Migrazione registro materiali non prevista: preservare i dati"
+        }
+        if (oldVersion < 2) createMatchTable(db)
+    }
+
+    private fun createMatchTable(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE invoice_ddt_matches(
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            invoice_line_id TEXT NOT NULL,
+            ddt_line_id TEXT NOT NULL,
+            quantity REAL NOT NULL CHECK(quantity > 0),
+            unit TEXT NOT NULL,
+            confirmed_at INTEGER NOT NULL,
+            voided_at INTEGER NOT NULL DEFAULT 0
+        )""")
+        db.execSQL("CREATE INDEX idx_match_invoice ON invoice_ddt_matches(invoice_line_id)")
+        db.execSQL("CREATE INDEX idx_match_ddt ON invoice_ddt_matches(ddt_line_id)")
+        db.execSQL("""CREATE UNIQUE INDEX idx_match_pair_active
+            ON invoice_ddt_matches(invoice_line_id,ddt_line_id)
+            WHERE voided_at=0""")
     }
 
     fun all(): List<MaterialDocumentLineV13> {
@@ -115,6 +136,88 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
 
     fun forJobsite(jobsiteId: String): List<MaterialDocumentLineV13> =
         all().filter { it.jobsiteGe360Id == jobsiteId && it.active }
+
+    fun matches(): List<MaterialInvoiceDdtMatchV14> {
+        val result = mutableListOf<MaterialInvoiceDdtMatchV14>()
+        readableDatabase.query("invoice_ddt_matches", null, null, null,
+            null, null, "confirmed_at DESC, ge360_id").use { c ->
+            while (c.moveToNext()) result += MaterialInvoiceDdtMatchV14(
+                ge360Id = c.getString(c.getColumnIndexOrThrow("ge360_id")),
+                invoiceLineGe360Id = c.getString(c.getColumnIndexOrThrow("invoice_line_id")),
+                ddtLineGe360Id = c.getString(c.getColumnIndexOrThrow("ddt_line_id")),
+                quantity = c.getDouble(c.getColumnIndexOrThrow("quantity")),
+                unit = c.getString(c.getColumnIndexOrThrow("unit")),
+                confirmedAt = c.getLong(c.getColumnIndexOrThrow("confirmed_at")),
+                voidedAt = c.getLong(c.getColumnIndexOrThrow("voided_at"))
+            )
+        }
+        return result
+    }
+
+    private fun matchValues(x: MaterialInvoiceDdtMatchV14) = ContentValues().apply {
+        put("ge360_id", x.ge360Id)
+        put("invoice_line_id", x.invoiceLineGe360Id)
+        put("ddt_line_id", x.ddtLineGe360Id)
+        put("quantity", x.quantity)
+        put("unit", x.unit)
+        put("confirmed_at", x.confirmedAt)
+        put("voided_at", x.voidedAt)
+    }
+
+    /** Confirm manually; both canonical Scanner PDFs must still be present. */
+    fun confirmMatch(invoiceLineId: String, ddtLineId: String,
+                     quantity: Double): MaterialInvoiceDdtMatchV14 {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val lines = all()
+            val invoice = lines.singleOrNull { it.ge360Id == invoiceLineId }
+                ?: error("Riga fattura non trovata")
+            val ddt = lines.singleOrNull { it.ge360Id == ddtLineId }
+                ?: error("Riga DDT non trovata")
+            val docStore = DocumentStore(app)
+            try {
+                for (line in listOf(invoice, ddt)) {
+                    val doc = docStore.getByGe360Id(line.documentGe360Id)
+                        ?: error("Documento Scanner non più presente")
+                    require(doc.type.trim().uppercase(java.util.Locale.ROOT) == line.documentKind &&
+                        (doc.jobsiteId.isBlank() || doc.jobsiteId == line.jobsiteGe360Id) &&
+                        doc.pdfPath.isNotBlank() && java.io.File(doc.pdfPath).isFile) {
+                        "PDF o collegamento Scanner non più verificabile"
+                    }
+                }
+            } finally { docStore.close() }
+            val item = MaterialInventoryStore(app)
+            try {
+                require(item.list().any { it.ge360Id == invoice.materialGe360Id &&
+                    it.unit.trim().equals(invoice.unit.trim(), ignoreCase = true) }) {
+                    "Materiale o unità non più validi"
+                }
+            } finally { item.close() }
+            val claim = MaterialInvoiceDdtMatchV14(
+                ge360Id = UUID.randomUUID().toString(),
+                invoiceLineGe360Id = invoiceLineId,
+                ddtLineGe360Id = ddtLineId,
+                quantity = quantity,
+                unit = invoice.unit,
+                confirmedAt = System.currentTimeMillis()
+            )
+            MaterialReconciliationRulesV14.validate(lines, matches(), claim)
+            db.insertOrThrow("invoice_ddt_matches", null, matchValues(claim))
+            db.setTransactionSuccessful()
+            return claim
+        } finally { db.endTransaction() }
+    }
+
+    /** Preserve the previous matching decision as a voided audit record. */
+    fun voidMatch(ge360Id: String): Boolean {
+        val existing = matches().singleOrNull { it.ge360Id == ge360Id && it.active }
+            ?: return false
+        return writableDatabase.update("invoice_ddt_matches",
+            ContentValues().apply {
+                put("voided_at", System.currentTimeMillis().coerceAtLeast(existing.confirmedAt))
+            }, "ge360_id=? AND voided_at=0", arrayOf(ge360Id)) == 1
+    }
 
     fun confirm(
         doc: ScannerDocument,
@@ -171,6 +274,10 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
     /** No physical deletion; historical confirmed entry remains traceable. */
     fun void(ge360Id: String): Boolean {
         val current = all().singleOrNull { it.ge360Id == ge360Id && it.active } ?: return false
+        require(matches().none { it.active &&
+            (it.invoiceLineGe360Id == ge360Id || it.ddtLineGe360Id == ge360Id) }) {
+            "Annullare prima le riconciliazioni attive di questa riga"
+        }
         val count = writableDatabase.update("material_document_lines",
             ContentValues().apply { put("voided_at", System.currentTimeMillis().coerceAtLeast(current.confirmedAt)) },
             "ge360_id=? AND voided_at=0", arrayOf(ge360Id))
@@ -181,6 +288,7 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         .put("schema", SCHEMA)
         .put("exportedAt", System.currentTimeMillis())
         .put("lines", JSONArray().apply { all().forEach { put(toJson(it)) } })
+        .put("reconciliations", JSONArray().apply { matches().forEach { put(matchToJson(it)) } })
         .toString(2)
 
     /**
@@ -192,6 +300,13 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         require(root.optString("schema") == SCHEMA) { "Formato righe documentali V13 non riconosciuto" }
         val arr = root.getJSONArray("lines")
         val incoming = (0 until arr.length()).map { parse(arr.getJSONObject(it)) }
+        val matchRows = root.optJSONArray("reconciliations") ?: JSONArray()
+        val incomingMatches = (0 until matchRows.length()).map {
+            matchFromJson(matchRows.getJSONObject(it))
+        }
+        require(incomingMatches.map { it.ge360Id }.distinct().size == incomingMatches.size) {
+            "Backup V14: UUID riconciliazione duplicati"
+        }
         require(incoming.map { it.ge360Id }.distinct().size == incoming.size) {
             "Backup V13: righe UUID duplicate"
         }
@@ -202,6 +317,20 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         }
         val existing = if (replaceAll) emptyMap()
             else all().associateBy { it.ge360Id }
+        val existingMatches = if (replaceAll) emptyMap()
+            else matches().associateBy { it.ge360Id }
+        val effectiveLines = (existing.values + incoming).associateBy { it.ge360Id }.values.toList()
+        val seenMatches = existingMatches.values.toMutableList()
+        incomingMatches.forEach { match ->
+            val prior = existingMatches[match.ge360Id]
+            if (prior != null) {
+                require(prior == match) { "Backup V14: UUID già presente ma diverso" }
+            } else {
+                if (match.active)
+                    MaterialReconciliationRulesV14.validate(effectiveLines, seenMatches, match)
+                seenMatches += match
+            }
+        }
         if (!replaceAll) incoming.forEach { line ->
             existing[line.ge360Id]?.let { prior ->
                 require(prior == line) { "Backup V13: stesso UUID con contenuto diverso" }
@@ -210,11 +339,20 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         val db = writableDatabase
         db.beginTransaction()
         try {
-            if (replaceAll) db.delete("material_document_lines", null, null)
+            if (replaceAll) {
+                db.delete("invoice_ddt_matches", null, null)
+                db.delete("material_document_lines", null, null)
+            }
             var imported = 0
             incoming.forEach { line ->
                 if (line.ge360Id !in existing) {
                     db.insertOrThrow("material_document_lines", null, values(line))
+                    imported++
+                }
+            }
+            incomingMatches.forEach { match ->
+                if (match.ge360Id !in existingMatches) {
+                    db.insertOrThrow("invoice_ddt_matches", null, matchValues(match))
                     imported++
                 }
             }
@@ -238,7 +376,7 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
     companion object {
         const val SCHEMA = "ge360.material-document-evidence.v13"
         private const val DATABASE = "ge360_material_document_evidence_v13.db"
-        private const val VERSION = 1
+        private const val VERSION = 2
 
         fun toJson(x: MaterialDocumentLineV13): JSONObject = JSONObject()
             .put("ge360Id", x.ge360Id)
@@ -250,6 +388,25 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
             .put("unit", x.unit)
             .put("confirmedAt", x.confirmedAt)
             .put("voidedAt", x.voidedAt)
+
+        fun matchToJson(x: MaterialInvoiceDdtMatchV14): JSONObject = JSONObject()
+            .put("ge360Id", x.ge360Id)
+            .put("invoiceLineGe360Id", x.invoiceLineGe360Id)
+            .put("ddtLineGe360Id", x.ddtLineGe360Id)
+            .put("quantity", x.quantity)
+            .put("unit", x.unit)
+            .put("confirmedAt", x.confirmedAt)
+            .put("voidedAt", x.voidedAt)
+
+        fun matchFromJson(x: JSONObject) = MaterialInvoiceDdtMatchV14(
+            ge360Id = x.getString("ge360Id"),
+            invoiceLineGe360Id = x.getString("invoiceLineGe360Id"),
+            ddtLineGe360Id = x.getString("ddtLineGe360Id"),
+            quantity = x.getDouble("quantity"),
+            unit = x.getString("unit"),
+            confirmedAt = x.getLong("confirmedAt"),
+            voidedAt = x.optLong("voidedAt", 0L)
+        )
 
         fun parse(o: JSONObject) = MaterialDocumentLineV13(
             ge360Id = o.getString("ge360Id"),
