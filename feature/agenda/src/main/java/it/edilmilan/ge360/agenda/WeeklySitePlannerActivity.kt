@@ -161,7 +161,7 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         items.addView(header("SEGNALI DI RITARDO · STATO ATTUALE"))
         val critical = assessed.count { it.second.level == JobsiteDelayAssessment.Level.OVERDUE }
         val high = assessed.count { it.second.level == JobsiteDelayAssessment.Level.HIGH }
-        val incomplete = assessed.count { it.second.level == JobsiteDelayAssessment.Level.UNKNOWN }
+        val incomplete = assessed.count { it.second.missingEvidence.size > 1 }
         items.addView(info(
             critical.toString() + " fini previste superate · " + high +
                 " attenzioni alte · " + incomplete + " con dati da completare",
@@ -269,7 +269,9 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
             items.addView(rowCard(
                 state.job.displayTitle(),
                 details,
-                if (state.needsReview) 0xFFFFF2E9.toInt() else Ge360Brand.Surface,
+                if (risk?.level == JobsiteDelayAssessment.Level.OVERDUE) 0xFFFFE7DD.toInt()
+                else if (risk?.isActionable == true) 0xFFFFF2E9.toInt()
+                else Ge360Brand.Surface,
                 onOpen = { openJobsite(state.job) },
                 secondaryLabel = "Prepara materiali",
                 onSecondary = { openMaterials(state.job) },
