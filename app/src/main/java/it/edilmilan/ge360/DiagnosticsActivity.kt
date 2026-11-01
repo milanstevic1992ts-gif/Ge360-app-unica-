@@ -17,18 +17,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
-import it.edilmilan.ge360.attrezzi.ToolsStore
-import it.edilmilan.ge360.cantieri.JobsiteStore
-import it.edilmilan.ge360.clienti.ClientStore
-import it.edilmilan.ge360.galleria.GalleryStore
-import it.edilmilan.ge360.giornata.DailyStore
-import it.edilmilan.ge360.preventivi.EstimateStore
-import it.edilmilan.ge360.scanner.DocumentStore
-import it.edilmilan.ge360.spese.FinanceStore
+import it.edilmilan.ge360.backup.DiagnosticsInspectorV11
 import it.edilmilan.ge360.sync.DataHubSyncCoordinator
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.thread
 
 /**
  * Diagnostica manuale, mai eseguita nel bootstrap dell'app.
@@ -37,11 +31,14 @@ import java.util.Locale
 class DiagnosticsActivity : AppCompatActivity() {
     private lateinit var body: LinearLayout
     private var lastReport: String = ""
+    private var lastScan: DiagnosticsInspectorV11.Report? = null
+    private var scanning = false
+    private lateinit var scanButton: MaterialButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildScreen())
-        renderStatus(runDeepChecks = false)
+        renderStatus()
     }
 
     private fun buildScreen(): View {
@@ -78,7 +75,8 @@ class DiagnosticsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             addView(MaterialButton(this@DiagnosticsActivity).apply {
                 text = "CONTROLLA DATI"
-                setOnClickListener { renderStatus(runDeepChecks = true) }
+                scanButton = this
+                setOnClickListener { startDiagnosticScan() }
             }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(5) })
             addView(MaterialButton(this@DiagnosticsActivity).apply {
                 text = "CONDIVIDI"
@@ -97,7 +95,39 @@ class DiagnosticsActivity : AppCompatActivity() {
         return root
     }
 
-    private fun renderStatus(runDeepChecks: Boolean) {
+    private fun startDiagnosticScan() {
+        if (scanning) return
+        scanning = true
+        scanButton.isEnabled = false
+        scanButton.text = "ANALISI…"
+        body.removeAllViews()
+        addSection("CONTROLLO IN CORSO", "Lettura degli archivi e verifica allegati; nessuna modifica ai dati.")
+        thread(name = "ge360-diagnostics-v11") {
+            val scan = runCatching {
+                DiagnosticsInspectorV11.inspect(applicationContext)
+            }.getOrElse {
+                DiagnosticsInspectorV11.Report(
+                    System.currentTimeMillis(),
+                    listOf(DiagnosticsInspectorV11.Finding(
+                        "Sistema", "Diagnostica V11",
+                        DiagnosticsInspectorV11.Level.ERRORE,
+                        "Controllo non completato",
+                        "Riapri la diagnostica e riprova, senza cancellare dati"
+                    ))
+                )
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                lastScan = scan
+                scanning = false
+                scanButton.isEnabled = true
+                scanButton.text = "RICONTROLLA"
+                renderStatus()
+            }
+        }
+    }
+
+    private fun renderStatus() {
         body.removeAllViews()
         val app = application
         val identity = appIdentity()
@@ -120,18 +150,24 @@ class DiagnosticsActivity : AppCompatActivity() {
         rows += "Stato Data Hub" to syncStatus.ifBlank { "Nessun tentativo registrato" }
         rows += "Ultimo crash" to if (crash.isBlank()) "Nessun crash registrato" else "Registrato ${if (crashAt > 0) formatDate(crashAt) else ""}".trim()
 
+        val result = lastScan
+        addSection("QUADRO DI SALUTE", "Controllo manuale: nessun dato viene corretto o cancellato.")
+        if (result == null) {
+            addStatusRow("Ancora da controllare", "Premi CONTROLLA DATI per verificare collegamenti, documenti e backup.")
+        } else {
+            addStatusRow(result.headline,
+                "${result.successful} controlli OK · ${result.warnings} attenzioni · ${result.errors} errori" +
+                    " · ${formatDate(result.checkedAt)}")
+            result.findings.groupBy { it.section }.forEach { (name, findings) ->
+                addSection(name.uppercase(Locale.ITALY), "Risultato della verifica manuale, non del funzionamento in tempo reale.")
+                findings.forEach(::addFindingRow)
+            }
+        }
+
         addSection("SISTEMA", "Informazioni utili prima di installazioni, restore o debug.")
         rows.forEach { (label, value) -> addStatusRow(label, value) }
 
-        if (persistedUris.isNotEmpty()) {
-            addSection("CARTELLE AUTORIZZATE", "Permessi persistenti Android SAF attualmente disponibili.")
-            persistedUris.take(8).forEach { permission ->
-                addStatusRow(
-                    if (permission.isWritePermission) "Lettura + scrittura" else "Sola lettura",
-                    permission.uri.toString()
-                )
-            }
-        }
+        // Do not display SAF URLs, which may expose names/accounts in screenshots.
 
         if (crash.isNotBlank()) {
             addSection("ULTIMO CRASH", "Estratto del crash recorder locale. Non viene inviato automaticamente.")
@@ -146,79 +182,51 @@ class DiagnosticsActivity : AppCompatActivity() {
                 setOnClickListener {
                     Ge360Application.clearLastCrash(application)
                     Toast.makeText(this@DiagnosticsActivity, "Crash registrato cancellato", Toast.LENGTH_SHORT).show()
-                    renderStatus(runDeepChecks = false)
+                    renderStatus()
                 }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(8) })
         }
 
-        val checks = if (runDeepChecks) performDataChecks() else emptyList()
-        if (runDeepChecks) {
-            addSection("CONTROLLO ARCHIVI", "Apertura in sola lettura dei principali store GE360.")
-            checks.forEach { result -> addStatusRow(result.first, result.second) }
-        } else {
-            addSection("CONTROLLO ARCHIVI", "Premi CONTROLLA DATI per aprire e leggere i principali database locali.")
-        }
-
         lastReport = buildString {
-            appendLine("GE360 DIAGNOSTICA")
-            appendLine("Generato: ${formatDate(System.currentTimeMillis())}")
-            rows.forEach { appendLine("${it.first}: ${it.second}") }
-            if (persistedUris.isNotEmpty()) {
-                appendLine("Cartelle SAF:")
-                persistedUris.forEach { appendLine("- ${it.uri} · read=${it.isReadPermission} write=${it.isWritePermission}") }
-            }
-            if (checks.isNotEmpty()) {
-                appendLine("Controllo archivi:")
-                checks.forEach { appendLine("- ${it.first}: ${it.second}") }
-            }
-            if (crash.isNotBlank()) {
-                appendLine("Ultimo crash:")
-                appendLine(crash.take(8000))
-            }
+            appendLine("GE360 · Centro diagnostico V11")
+            appendLine("Controllo: ${result?.let { formatDate(it.checkedAt) } ?: "non eseguito"}")
+            appendLine("Versione: ${identity.versionName} / ${identity.versionCode}")
+            appendLine("Storage interno disponibile: ${formatBytes(internal.availableBytes)}")
+            if (result != null) append(result.publicSummary())
+            else appendLine("Nessuna verifica approfondita eseguita.")
+            // No crash stacks, SAF URIs, filesystem paths or credentials.
         }
     }
 
-    private fun performDataChecks(): List<Pair<String, String>> {
-        val app = applicationContext
-        val out = mutableListOf<Pair<String, String>>()
-        fun check(name: String, action: () -> Int) {
-            out += runCatching { name to "OK · ${action()} record" }
-                .getOrElse { name to "ERRORE · ${it.message ?: it.javaClass.simpleName}" }
+    private fun addFindingRow(item: DiagnosticsInspectorV11.Finding) {
+        val color = when (item.level) {
+            DiagnosticsInspectorV11.Level.OK -> Color.parseColor("#137F6D")
+            DiagnosticsInspectorV11.Level.ATTENZIONE -> Color.parseColor("#AB6819")
+            DiagnosticsInspectorV11.Level.ERRORE -> Color.parseColor("#B63242")
+            DiagnosticsInspectorV11.Level.INFO -> Color.parseColor("#3766A0")
         }
-
-        check("Clienti") {
-            val store = ClientStore(app)
-            try { store.search().size } finally { store.close() }
-        }
-        check("Cantieri") {
-            val store = JobsiteStore(app)
-            try { store.list().size } finally { store.close() }
-        }
-        check("Giornata") {
-            val store = DailyStore(app)
-            try { store.reports(1000).size + store.sessions().size } finally { store.close() }
-        }
-        check("Preventivi") {
-            val store = EstimateStore(app)
-            try { store.list().size } finally { store.close() }
-        }
-        check("Spese") {
-            val store = FinanceStore(app)
-            try { store.all().size } finally { store.close() }
-        }
-        check("Scanner / documenti") {
-            val store = DocumentStore(app)
-            try { store.list().size } finally { store.close() }
-        }
-        check("Attrezzi / materiali") {
-            val store = ToolsStore(app)
-            try { if (store.exportJson().isBlank()) 0 else 1 } finally { store.close() }
-        }
-        check("Galleria") {
-            val store = GalleryStore(app)
-            try { store.list().size } finally { store.close() }
-        }
-        return out
+        body.addView(card(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            addView(TextView(this@DiagnosticsActivity).apply {
+                text = "${item.level.name} · ${item.title}"
+                textSize = 13f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(color)
+            })
+            addView(TextView(this@DiagnosticsActivity).apply {
+                text = item.detail
+                textSize = 12f
+                setTextColor(Color.parseColor("#394451"))
+                setPadding(0, dp(5), 0, 0)
+            })
+            if (item.nextStep.isNotBlank()) addView(TextView(this@DiagnosticsActivity).apply {
+                text = "Da fare: ${item.nextStep}"
+                textSize = 11f
+                setTextColor(Color.parseColor("#536273"))
+                setPadding(0, dp(6), 0, 0)
+            })
+        }))
     }
 
     private fun addSection(title: String, subtitle: String) {
@@ -269,7 +277,10 @@ class DiagnosticsActivity : AppCompatActivity() {
     }
 
     private fun shareReport() {
-        if (lastReport.isBlank()) renderStatus(runDeepChecks = true)
+        if (scanning || lastScan == null) {
+            Toast.makeText(this, "Esegui prima CONTROLLA DATI.", Toast.LENGTH_LONG).show()
+            return
+        }
         val identity = appIdentity()
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
