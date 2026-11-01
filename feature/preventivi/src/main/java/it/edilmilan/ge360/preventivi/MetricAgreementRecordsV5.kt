@@ -117,3 +117,37 @@ data class MetricAgreementCorrectionV5(
         )
     }
 }
+
+/** Separate append-only events documenting both proposal and later operator attestation. */
+data class MetricAgreementCorrectionEventV5(
+    val ge360Id: String = UUID.randomUUID().toString(),
+    val estimateGe360Id: String,
+    val correctionGe360Id: String,
+    val action: String,
+    val signedAmountEuro: Double,
+    val reason: String,
+    val occurredAt: Long = System.currentTimeMillis()
+) {
+    fun valid(): Boolean = ge360Id.isNotBlank() && estimateGe360Id.isNotBlank() &&
+        correctionGe360Id.isNotBlank() &&
+        action in setOf("CORRECTION_PROPOSED", "CORRECTION_ATTESTED") &&
+        signedAmountEuro.isFinite() && signedAmountEuro != 0.0 &&
+        reason.trim().length >= 8 && occurredAt > 0
+
+    fun toJson() = JSONObject().put("ge360Id", ge360Id)
+        .put("estimateGe360Id", estimateGe360Id)
+        .put("correctionGe360Id", correctionGe360Id)
+        .put("action", action).put("signedAmountEuro", signedAmountEuro)
+        .put("reason", reason).put("occurredAt", occurredAt)
+    companion object {
+        fun fromJson(o: JSONObject) = MetricAgreementCorrectionEventV5(
+            ge360Id = o.getString("ge360Id"),
+            estimateGe360Id = o.getString("estimateGe360Id"),
+            correctionGe360Id = o.getString("correctionGe360Id"),
+            action = o.getString("action"),
+            signedAmountEuro = o.getDouble("signedAmountEuro"),
+            reason = o.getString("reason"),
+            occurredAt = o.getLong("occurredAt")
+        )
+    }
+}
