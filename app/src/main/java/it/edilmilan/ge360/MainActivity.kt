@@ -308,7 +308,7 @@ class MainActivity : AppCompatActivity() {
             "Spesa / entrata",
             "Scansiona documento",
             "Nota veloce",
-            "Attivita\u0027",
+            "Attività",
             "Appuntamento"
         )
         runCatching {

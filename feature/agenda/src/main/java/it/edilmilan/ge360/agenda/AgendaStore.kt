@@ -156,7 +156,7 @@ class AgendaStore(context: Context) {
         .toString()
 
     private fun read(): List<AgendaEntry> {
-        if (!atomic.baseFile.exists()) return emptyList()
+        if (!atomic.baseFile.exists() && !File(atomic.baseFile.path + ".bak").exists()) return emptyList()
         val root = JSONObject(String(atomic.openRead().use { it.readBytes() }, Charsets.UTF_8))
         require(root.optString("schema") == SCHEMA) { "Archivio agenda da migrare" }
         val array = root.getJSONArray("records")

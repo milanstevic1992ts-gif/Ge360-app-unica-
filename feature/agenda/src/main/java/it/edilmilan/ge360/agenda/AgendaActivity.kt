@@ -2,7 +2,6 @@ package it.edilmilan.ge360.agenda
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.Editable
@@ -138,7 +137,8 @@ class AgendaActivity : AppCompatActivity() {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
-        val endOfToday = calendar.timeInMillis + 24 * 60 * 60 * 1000L
+        calendar.add(Calendar.DAY_OF_YEAR, 1)
+        val endOfToday = calendar.timeInMillis
         val query = search.text.toString().trim()
         val items = runCatching { store.list() }.getOrElse {
             message("Archivio non leggibile. Nessun dato e' stato cancellato.")
@@ -360,7 +360,15 @@ class AgendaActivity : AppCompatActivity() {
                         scope = if (private.isChecked) AgendaEntry.PRIVATE else AgendaEntry.WORK,
                         clientGe360Id = clientId, jobsiteGe360Id = jobsiteId
                     ))
-                }.onSuccess { dialog.dismiss(); refresh() }
+                }.onSuccess {
+                        filter = when (entry.kind) {
+                            AgendaEntry.NOTE -> "Note"
+                            AgendaEntry.TASK -> "Attivita'"
+                            else -> "Agenda"
+                        }
+                        dialog.dismiss()
+                        refresh()
+                    }
                     .onFailure { message(it.message ?: "Salvataggio non riuscito") }
             }
         }
