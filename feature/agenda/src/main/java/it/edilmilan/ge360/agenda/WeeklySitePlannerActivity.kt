@@ -220,9 +220,11 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 state.job.displayTitle(),
                 details,
                 if (state.needsReview) 0xFFFFF2E9.toInt() else Ge360Brand.Surface,
-                onOpen = { openMaterials(state.job) },
-                secondaryLabel = "Confronta materiali",
-                onSecondary = { openMaterialEvidence(state.job) }
+                onOpen = { openJobsite(state.job) },
+                secondaryLabel = "Prepara materiali",
+                onSecondary = { openMaterials(state.job) },
+                tertiaryLabel = "Confronta materiali",
+                onTertiary = { openMaterialEvidence(state.job) }
             ))
         }
         items.addView(hint(
@@ -423,6 +425,15 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         })
     }
 
+    private fun openJobsite(job: JobsiteRecord) {
+        val intent = Intent(Ge360Contracts.ACTION_OPEN_JOBSITE).apply {
+            setPackage(packageName)
+            putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, job.ge360Id)
+        }
+        if (intent.resolveActivity(packageManager) != null) startActivity(intent)
+        else toast("Centro Cantiere non disponibile")
+    }
+
     private fun openMaterialEvidence(job: JobsiteRecord) {
         startActivity(Intent(this, MaterialEvidenceActivityV13::class.java)
             .putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, job.ge360Id))
@@ -451,7 +462,8 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
 
     private fun rowCard(
         title: String, detail: String, background: Int, onOpen: () -> Unit,
-        secondaryLabel: String? = null, onSecondary: (() -> Unit)? = null
+        secondaryLabel: String? = null, onSecondary: (() -> Unit)? = null,
+        tertiaryLabel: String? = null, onTertiary: (() -> Unit)? = null
     ): View {
         val card = MaterialCardView(this).apply {
             radius = dp(16).toFloat()
@@ -483,6 +495,14 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                     isAllCaps = false
                     textSize = 11f
                     setOnClickListener { onSecondary() }
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+            }
+            if (tertiaryLabel != null && onTertiary != null) {
+                addView(MaterialButton(this@WeeklySitePlannerActivity).apply {
+                    text = tertiaryLabel
+                    isAllCaps = false
+                    textSize = 11f
+                    setOnClickListener { onTertiary() }
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
             }
         })
