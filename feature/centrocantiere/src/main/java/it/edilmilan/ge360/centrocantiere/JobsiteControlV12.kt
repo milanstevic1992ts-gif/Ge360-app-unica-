@@ -68,7 +68,8 @@ internal object JobsiteControlV12 {
     fun materialPulse(
         jobsiteId: String,
         plans: List<it.edilmilan.ge360.attrezzi.MaterialPlanRevisionV1>,
-        movementHistory: List<MaterialStockMovement>
+        movementHistory: List<MaterialStockMovement>,
+        completeHistory: Boolean = true
     ): MaterialPulse {
         require(jobsiteId.isNotBlank())
         val scoped = plans.filter { it.jobsiteGe360Id == jobsiteId }
@@ -96,7 +97,7 @@ internal object JobsiteControlV12 {
                 plan = plan?.toQuantity(),
                 movements = moves,
                 jobsiteGe360Id = jobsiteId,
-                completeHistory = true
+                completeHistory = completeHistory
             )
             when (result.status) {
                 MaterialComparisonStatusV1.COMPARABLE -> {
@@ -155,7 +156,9 @@ internal object JobsiteControlV12 {
             val plans = MaterialPlanStore(context)
             val inventory = MaterialInventoryStore(context)
             try {
-                val pulse = materialPulse(id, plans.all(), inventory.allMovementHistory(jobsiteGe360Id = id))
+                val complete = inventory.hasCompleteMovementHistory()
+                val pulse = materialPulse(id, plans.all(),
+                    inventory.allMovementHistory(jobsiteGe360Id = id), completeHistory = complete)
                 val level = when {
                     pulse.overPlan > 0 || pulse.unitMismatch > 0 -> Level.ATTENZIONE
                     pulse.planned > 0 && pulse.comparable > 0 -> Level.OK
@@ -164,7 +167,8 @@ internal object JobsiteControlV12 {
                 Signal("Materiali", "${pulse.planned} piani confermati",
                     "${pulse.comparable} confrontabili · ${pulse.overPlan} consumi sopra piano" +
                         " · ${pulse.unitMismatch} unità incompatibili · ${pulse.withoutPlan} senza piano" +
-                        " · ${pulse.movements} movimenti registrati",
+                        " · ${pulse.movements} movimenti registrati" +
+                        (if (complete) "" else " · storico non certificato completo"),
                     level, Action.MATERIALS)
             } finally { plans.close(); inventory.close() }
         }

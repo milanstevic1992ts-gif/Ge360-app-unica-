@@ -94,6 +94,7 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
         val docs = scanner.list().associateBy { it.ge360Id }
         val jobs = sites.list().associateBy { it.ge360Id }
         val plansByMaterial = plans.all()
+        val fullHistory = inventory.hasCompleteMovementHistory()
         val movements = inventory.allMovementHistory(
             jobsiteGe360Id = jobFilter.takeIf { it.isNotBlank() })
         body.addView(label("RIEPILOGO MATERIALE · " + active.size +
@@ -115,8 +116,9 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                     it.unit.trim().equals(unit.trim(), ignoreCase = true)
             }.sumOf { kotlin.math.abs(it.quantity) }
             val forecast = plan?.quantity?.let(::fmt) ?: "non registrato"
-            val remaining = plan?.let { fmt(it.quantity - consumed) + " " + unit }
-                ?: "non calcolabile"
+            val remaining = if (fullHistory) plan?.let {
+                fmt(it.quantity - consumed) + " " + unit
+            } ?: "non calcolabile" else "non calcolabile (storico incompleto)"
             val site = if (key.second.isBlank()) "Senza cantiere"
                 else jobs[key.second]?.displayTitle() ?: "Cantiere mancante"
             addCard(mat?.name ?: "Materiale mancante", site + " · " + unit,
