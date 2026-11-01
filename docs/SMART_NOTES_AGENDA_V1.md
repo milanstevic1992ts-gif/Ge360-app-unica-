@@ -48,3 +48,25 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 5. Indurre archivio JSON corrotto: nessuna cancellazione silenziosa.
 6. Definire e verificare il contratto Data Hub e la revoca dei record passati a PRIVATE, prima di attivare il push.
 7. Verify che push su branch non attivi CI; niente build, test, APK o merge finche' non autorizzati.
+
+
+## Fase 3 — collegamenti clienti e cantieri (codice su questo ramo)
+- I record propri di Agenda mantengono un UUID autonomo, con clientGe360Id e jobsiteGe360Id facoltativi.
+- Dalla scheda Clienti: "Note e Agenda cliente" e "+ Nuova nota collegata" aprono Agenda con UUID già predisposto.
+- Dal Centro Cantiere: "Note e Agenda" e "Nota veloce" aprono Agenda con contesto cantiere.
+- Se il contesto è un cantiere, la vista mostra solo note collegate a quel cantiere, non quelle di altri cantieri dello stesso cliente.
+- Clienti: gli eventi fattuali con nextActionDate ISO sono mostrati in sola lettura; ora vengono recuperati tutti quelli datati, non solo le ultime 200 interazioni.
+- Cantieri: fine prevista e SAL/acconti aperti con dueDate ISO sono mostrati in sola lettura; chiusi/cancellati e cantieri archiviati non appaiono.
+- Ogni elemento esterno usa il suo ID canonico e rimanda alla schermata che possiede il record; non viene copiato o conteggiato come nuova attività GE360.
+- Le date senza ora rimangono date senza ora, non attivano notifiche Agenda e non sono trasformate automaticamente in appuntamenti.
+- Il campo Cliente.followUp libero non viene interpretato come data, per evitare false scadenze.
+- I dati Agenda non sono inviati al Data Hub: privacy e revoche ancora da progettare.
+- Aggiunta la proiezione nel calendario Settimana/Mese: i giorni con date esterne sono evidenziati senza creare copie.
+- Non modifica i punteggi del termometro cliente, i SAL, la contabilità o le fonti originali.
+
+### Da verificare prima del collaudo
+- Compilazione e risoluzione dei link Android Cliente ↔ Agenda e Cantiere ↔ Agenda.
+- Clienti con due cantieri e scadenze simili: nessuna contaminazione dei contesti.
+- Dati storici, date invalide, cambio fuso e date ISO.
+- Backend/sync non coinvolti, FIR/Scanner non modificati.
+- Nessuna compilazione, CI, test, APK, deploy o merge eseguiti in questa fase.

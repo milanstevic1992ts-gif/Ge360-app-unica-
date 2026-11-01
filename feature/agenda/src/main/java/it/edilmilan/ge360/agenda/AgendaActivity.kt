@@ -83,9 +83,12 @@ class AgendaActivity : AppCompatActivity() {
         kind = kind, clientGe360Id = clientContext, jobsiteGe360Id = jobsiteContext
     )
 
-    private fun relevant(entry: AgendaEntry) = !hasContext ||
-        (clientContext.isNotBlank() && entry.clientGe360Id == clientContext) ||
-        (jobsiteContext.isNotBlank() && entry.jobsiteGe360Id == jobsiteContext)
+    // A client may own multiple jobsites: a jobsite view must not leak their other notes.
+    private fun relevant(entry: AgendaEntry): Boolean = when {
+        jobsiteContext.isNotBlank() -> entry.jobsiteGe360Id == jobsiteContext
+        clientContext.isNotBlank() -> entry.clientGe360Id == clientContext
+        else -> true
+    }
 
     private fun reloadSources() {
         val generation = ++sourceGeneration

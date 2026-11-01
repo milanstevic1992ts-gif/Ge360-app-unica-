@@ -294,6 +294,36 @@ class ClientStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, D
         return out
     }
 
+    /**
+     * All dated factual follow-ups, without the "last 200 interactions" cutoff.
+     * The timeline remains authoritative; Agenda only presents these read-only.
+     */
+    fun datedFactualActions(clientGe360Id: String = ""): List<ClientFactualEventV1> {
+        val where = if (clientGe360Id.isNotBlank()) {
+            "next_action_date<>'' AND client_ge360_id=?"
+        } else "next_action_date<>''"
+        val args = if (clientGe360Id.isNotBlank()) arrayOf(clientGe360Id) else null
+        val rows = mutableListOf<ClientFactualEventV1>()
+        readableDatabase.query(
+            "factual_client_timeline", null, where, args, null, null,
+            "next_action_date ASC, ge360_id ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) rows += ClientFactualEventV1(
+                ge360Id = cursor.getString(cursor.getColumnIndexOrThrow("ge360_id")),
+                clientGe360Id = cursor.getString(cursor.getColumnIndexOrThrow("client_ge360_id")),
+                jobsiteGe360Id = cursor.getString(cursor.getColumnIndexOrThrow("jobsite_ge360_id")).ifBlank { null },
+                kind = cursor.getString(cursor.getColumnIndexOrThrow("kind")),
+                description = cursor.getString(cursor.getColumnIndexOrThrow("description")),
+                source = cursor.getString(cursor.getColumnIndexOrThrow("source")),
+                operatorLabel = cursor.getString(cursor.getColumnIndexOrThrow("operator_label")),
+                occurredAt = cursor.getLong(cursor.getColumnIndexOrThrow("occurred_at")),
+                nextActionDate = cursor.getString(cursor.getColumnIndexOrThrow("next_action_date")),
+                createdAt = cursor.getLong(cursor.getColumnIndexOrThrow("created_at"))
+            )
+        }
+        return rows
+    }
+
     fun addFactualEvent(event: ClientFactualEventV1) {
         require(event.isValid()) { "Evento cliente incompleto o non valido" }
         require(getByGe360Id(event.clientGe360Id) != null) { "Cliente UUID non presente" }

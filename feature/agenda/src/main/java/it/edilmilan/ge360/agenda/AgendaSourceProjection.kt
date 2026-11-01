@@ -43,21 +43,20 @@ object AgendaSourceProjection {
                 val records = if (clientUuid.isNotBlank()) {
                     listOfNotNull(clients.getByGe360Id(clientUuid))
                 } else clients.search()
-                records.forEach { client ->
-                    // ClientStore currently caps timeline lookup to latest 200 factual events per client.
-                    clients.factualTimeline(client.ge360Id, 200).forEach eventLoop@{ event ->
-                        if (jobsiteUuid.isNotBlank() && event.jobsiteGe360Id != jobsiteUuid) return@eventLoop
-                        val at = day(event.nextActionDate) ?: return@eventLoop
-                        rows += AgendaSourceDeadline(
-                            key = "client-fact:" + event.ge360Id,
-                            sourceType = AgendaSourceDeadline.CLIENT_FACT,
-                            title = event.kind + " · " + client.fullName(),
-                            subtitle = "Cronologia cliente · " + event.description.take(110) + " · data senza ora",
-                            dateAt = at,
-                            clientGe360Id = client.ge360Id,
-                            jobsiteGe360Id = event.jobsiteGe360Id.orEmpty()
-                        )
-                    }
+                val names = records.associateBy { it.ge360Id }
+                clients.datedFactualActions(clientUuid).forEach eventLoop@{ event ->
+                    if (jobsiteUuid.isNotBlank() && event.jobsiteGe360Id != jobsiteUuid) return@eventLoop
+                    val client = names[event.clientGe360Id] ?: return@eventLoop
+                    val at = day(event.nextActionDate) ?: return@eventLoop
+                    rows += AgendaSourceDeadline(
+                        key = "client-fact:" + event.ge360Id,
+                        sourceType = AgendaSourceDeadline.CLIENT_FACT,
+                        title = event.kind + " · " + client.fullName(),
+                        subtitle = "Cronologia cliente · " + event.description.take(110) + " · data senza ora",
+                        dateAt = at,
+                        clientGe360Id = client.ge360Id,
+                        jobsiteGe360Id = event.jobsiteGe360Id.orEmpty()
+                    )
                 }
             } finally { clients.close() }
         }.onFailure { errors += "Cronologia clienti non disponibile" }
