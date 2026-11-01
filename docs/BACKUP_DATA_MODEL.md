@@ -149,3 +149,14 @@ altrimenti il restore fallisce con transazione rollback. Non si ricostruiscono d
 retroattive dal valore di avanzamento attuale.
 Il payload di sincronizzazione GE360 Data Hub resta volutamente al formato Cantieri 2,
 non include progressSnapshots e richiede un contratto server separato per l'eventuale futura sync.
+
+
+## Piani lavorazioni Centro Cantiere (schema v2 nel backup ZIP)
+La voce già presente modules/centro-cantiere.json contiene taskPlans: durata residua/prevista
+in giornate lun–ven, lista UUID dei predecessori, nota e identificazione canonica
+della lavorazione. Nessuna checklist duplicata.
+Lo schema ge360.centro-cantiere.v1 dei backup vecchi continua a essere accettato;
+lo schema v2 include taskPlans. Nel merge, piani con medesimo task UUID e contenuto
+divergente vengono bloccati anziché sovrascritti.
+Data Hub continua esplicitamente a ricevere Centro Cantiere v1, senza taskPlans;
+la nuova struttura non ha ancora un contratto di sincronizzazione server.

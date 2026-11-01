@@ -213,3 +213,32 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 10. Riapertura del planner su settimane passate: non applicare ore storiche come ritmo della settimana corrente.
 
 - Gate aggiuntivi: non simulare date quando il cantiere è solo in sopralluogo/preventivo; confrontare anche le percentuali delle singole fasi con l'ultimo snapshot (un totale uguale non basta se le fasi cambiano).
+
+
+## Fase 10 — Piano lavorazioni con durate e dipendenze (codice sul ramo, NON compilato)
+- Il piano collega soltanto metadati a WorkflowTask originali del Centro Cantiere, identificati da UUID. Non crea una seconda checklist e non modifica gli stati "Da fare", "In corso", "Fatto", "Bloccato", "Non necessario".
+- Motore TaskScheduleEngine: ogni operatore può definire durata in giornate lavorative (1..260) e più predecessori. Durata 0 significa "non definita"; da sola non consente salvare un piano. È possibile cancellare esplicitamente la pianificazione senza rimuovere la lavorazione.
+- Validazioni: niente predecessore uguale alla lavorazione, UUID duplicati, predecessori di altri cantieri o inesistenti, dipendenze circolari. La cancellazione di un'attività non riconnette automaticamente i suoi successori: gli UUID referenziati diventano dipendenze da correggere.
+- Proiezione conservativa finish-to-start: una lavorazione può iniziare il primo giorno lavorativo dopo la fine teorica di tutti i predecessori. Le attività senza precedenti possono partire in parallelo, ma NON sono allocate squadre o risorse; tutto viene ricalcolato a partire dalla data corrente.
+- Calendario lun–ven, senza festività, ferie, meteo, approvvigionamenti o capacità effettiva. Le durate delle attività già "In corso" sono giorni **residui** inseriti dall'operatore; non si deducono giorni già lavorati.
+- Attività "Fatto" e "Non necessario" non richiedono una data storica dedotta; "Bloccato" blocca il proprio calcolo e quello dei successori. "In corso" con predecessori non conclusi richiede revisione, non assume automaticamente la congruità del programma.
+- Se una sola lavorazione residua è priva di durata o dipende da nodi irrisolti, la fine teorica COMPLESSIVA del cantiere resta NON CALCOLABILE. Se tutte sono programmate, il motore visualizza il giorno teorico di fine (massima data), senza aggiornare automaticamente la fine contrattuale.
+- Nel planner settimanale l'eventuale data del piano è un SECONDO tipo di simulazione rispetto agli scenari lento/base/veloce derivati dalle rilevazioni storiche. Non vengono mescolate le due formule né interpretate come garanzie di consegna.
+- JobsiteDelaySignals segnala come attenzione un piano interamente configurato con fine teorica oltre la data prevista, ma evidenzia che la capacità squadra non è modellata.
+- Nuova schermata JobsiteTaskPlanActivity, accessibile dalla scheda Centro Cantiere, dalla checklist e dal pianificatore settimanale: UI mobile con selezione di più dipendenze, durata e nota.
+- Persistenza nel database Centro Cantiere aggiornato a versione 2, tabella workflow_task_plans, con migrazione non distruttiva da v1. Nessun nuovo database app.
+- Backup completo Centro Cantiere schema ge360.centro-cantiere.v2: include taskPlans, restore dei vecchi backup v1 accettato. Unisci: lo stesso UUID di piano con contenuti divergenti viene respinto; il backup non sostituisce silenziosamente i metadati locali.
+- Il Data Hub continua a ricevere soltanto Centro Cantiere v1 tramite workflow.exportJson(forSync=true), senza taskPlans. Non è stato predisposto alcun nuovo endpoint Debian o automatismo di sincronizzazione.
+- Restano in pausa marketing, compilazione, test, APK, CI, merge, deploy e modifiche a main/Debian.
+
+### Casi da validare in fase di collaudo futuro
+1. Due attività A → B da 2 e 3 giorni, lun–ven: B inizia il primo giorno lavorativo dopo la fine teorica di A.
+2. Due attività indipendenti: sovrapposizione teorica dichiarata, non assegnazione automatica di due squadre.
+3. Attività C dipendente da A e B: C inizia dopo la più tarda delle due date teoriche.
+4. Dipendenza A → B → A: rifiuto alla scrittura e nessuna persistenza parziale.
+5. Dipendenza verso altro cantiere/UUID cancellato: errore/avviso, senza data inventata.
+6. Lavorazione Bloccato o predecessore non programmato: niente fine generale.
+7. Attività In corso con predecessore non concluso: richiesta di riconciliazione della checklist.
+8. Backup ZIP v2, restore vecchio v1, unione/replace e conflitto sullo stesso UUID di piano.
+9. Data Hub Centro Cantiere v1 senza campi nuovi, senza alterare Debian.
+10. Dispositivo Android: visualizzazione smartphone, accesso da Hub/checklist, apertura singola attività e ripresa offline.
