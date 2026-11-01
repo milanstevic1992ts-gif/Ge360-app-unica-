@@ -26,6 +26,10 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.clienti.ClientStore
+import it.edilmilan.ge360.clienti.ClientsActivity
+import it.edilmilan.ge360.core.common.Ge360Contracts
+import android.content.Intent
+import kotlin.concurrent.thread
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -40,25 +44,63 @@ class AgendaActivity : AppCompatActivity() {
     private val store by lazy { AgendaStore(applicationContext) }
     private lateinit var list: LinearLayout
     private lateinit var search: EditText
+    private val clientContext by lazy { intent.getStringExtra(Ge360Contracts.EXTRA_CLIENT_ID).orEmpty() }
+    private val jobsiteContext by lazy { intent.getStringExtra(Ge360Contracts.EXTRA_JOBSITE_ID).orEmpty() }
+    private val contextLabel by lazy { intent.getStringExtra(Ge360Contracts.EXTRA_AGENDA_CONTEXT_LABEL).orEmpty() }
+    private val hasContext get() = clientContext.isNotBlank() || jobsiteContext.isNotBlank()
     private var filter = "Oggi"
+    private var sourceSnapshot = AgendaSourceResult(emptyList(), emptyList())
+    private var sourceLoading = false
+    private var sourceGeneration = 0
     private var periodAnchor = System.currentTimeMillis()
     private var selectedDay: Long? = null
     private val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (hasContext) filter = "Collegati"
         setContentView(buildScreen())
         refresh()
         if (savedInstanceState == null && intent.getStringExtra(EXTRA_CREATE_KIND) in
             setOf(AgendaEntry.NOTE, AgendaEntry.TASK, AgendaEntry.EVENT)) {
-            edit(AgendaEntry(kind = intent.getStringExtra(EXTRA_CREATE_KIND)!!))
+            edit(newEntry(intent.getStringExtra(EXTRA_CREATE_KIND)!!))
         }
     }
 
     override fun onResume() {
         super.onResume()
         if (::list.isInitialized) refresh()
+        reloadSources()
         runCatching { AgendaReminderScheduler.reschedule(applicationContext) }
+    }
+
+    override fun onDestroy() {
+        sourceGeneration++
+        super.onDestroy()
+    }
+
+    private fun newEntry(kind: String) = AgendaEntry(
+        kind = kind, clientGe360Id = clientContext, jobsiteGe360Id = jobsiteContext
+    )
+
+    private fun relevant(entry: AgendaEntry) = !hasContext ||
+        (clientContext.isNotBlank() && entry.clientGe360Id == clientContext) ||
+        (jobsiteContext.isNotBlank() && entry.jobsiteGe360Id == jobsiteContext)
+
+    private fun reloadSources() {
+        val generation = ++sourceGeneration
+        val client = clientContext
+        val jobsite = jobsiteContext
+        sourceLoading = true
+        thread(name = "ge360-agenda-source-projection", isDaemon = true) {
+            val result = AgendaSourceProjection.read(applicationContext, client, jobsite)
+            runOnUiThread {
+                if (isFinishing || isDestroyed || generation != sourceGeneration) return@runOnUiThread
+                sourceSnapshot = result
+                sourceLoading = false
+                refresh()
+            }
+        }
     }
 
     private fun buildScreen(): View {
@@ -82,7 +124,7 @@ class AgendaActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         root.addView(TextView(this).apply {
-            text = "Appunti liberi, cose da fare e appuntamenti, anche offline."
+            text = if (hasContext) "Collegati a " + contextLabel.ifBlank { "questa scheda" } else "Appunti liberi, cose da fare e appuntamenti, anche offline."
             textSize = 13f
             setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(4), 0, dp(13))
@@ -98,13 +140,14 @@ class AgendaActivity : AppCompatActivity() {
                 text = title
                 textSize = 11f
                 isAllCaps = false
-                setOnClickListener { edit(AgendaEntry(kind = kind)) }
+                setOnClickListener { edit(newEntry(kind)) }
             }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(3) })
         }
         root.addView(creation)
 
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Oggi", "Settimana", "Mese", "Attivita'", "Note", "Agenda").forEach { mode ->
+        (if (hasContext) listOf("Collegati") else emptyList())
+            .plus(listOf("Oggi", "Settimana", "Mese", "Attivita'", "Note", "Agenda")).forEach { mode ->
             tabs.addView(MaterialButton(this).apply {
                 text = mode
                 textSize = 11f
@@ -152,7 +195,8 @@ class AgendaActivity : AppCompatActivity() {
         if (calendarMode) {
             list.addView(AgendaCalendar.panel(
                 context = this, mode = filter, anchor = periodAnchor, selected = selectedDay,
-                items = entries,
+                items = entries.filter(::relevant),
+                sourceDates = sourceSnapshot.deadlines.map { it.dateAt },
                 onMove = { offset ->
                     periodAnchor = AgendaCalendar.moved(filter, periodAnchor, offset)
                     selectedDay = null
@@ -167,12 +211,13 @@ class AgendaActivity : AppCompatActivity() {
                 .filter { selectedDay == null || AgendaCalendar.midnight(it.at) == selectedDay }
         } else entries.map { AgendaOccurrence(it, it.dueAt) }
         val filtered = rows.filter { (entry, at) ->
-            (query.isBlank() || listOf(entry.title, entry.body).any { it.contains(query, true) }) &&
+            relevant(entry) && (query.isBlank() || listOf(entry.title, entry.body).any { it.contains(query, true) }) &&
                 when (filter) {
                     "Note" -> entry.kind == AgendaEntry.NOTE
                     "Attivita'" -> entry.kind == AgendaEntry.TASK
                     "Agenda" -> entry.kind == AgendaEntry.EVENT
                     "Settimana", "Mese" -> entry.kind != AgendaEntry.NOTE
+                    "Collegati" -> true
                     else -> entry.kind != AgendaEntry.NOTE && !entry.completed &&
                         at > 0 && at < AgendaCalendar.nextDay(now)
                 }
@@ -180,6 +225,7 @@ class AgendaActivity : AppCompatActivity() {
             .thenByDescending { it.entry.priority == AgendaEntry.HIGH })
         val header = when (filter) {
             "Oggi" -> "SCADENZE E IMPEGNI"
+            "Collegati" -> "APPUNTI E ATTIVITÀ COLLEGATE"
             "Settimana" -> "PROGRAMMA SETTIMANALE"
             "Mese" -> "PROGRAMMA MENSILE"
             "Attivita'" -> "ATTIVITÀ"
@@ -205,9 +251,88 @@ class AgendaActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(9) })
         }
+        renderSources(query, now)
+    }
+
+    private fun renderSources(query: String, now: Long) {
+        if (sourceLoading) list.addView(TextView(this).apply {
+            text = "Aggiornamento scadenze da Clienti e Cantieri…"
+            textSize = 12f
+        })
+        sourceSnapshot.warnings.forEach { warning ->
+            list.addView(TextView(this).apply {
+                text = warning + " · i dati locali non sono stati modificati"
+                textSize = 12f
+                setTextColor(Ge360Brand.PrimaryDark)
+            })
+        }
+        if (filter == "Note") return
+        val sources = sourceSnapshot.deadlines.filter { source ->
+            (query.isBlank() || listOf(source.title, source.subtitle).any { it.contains(query, true) }) &&
+                when (filter) {
+                    "Settimana", "Mese" -> {
+                        val (first, last) = AgendaCalendar.bounds(filter, periodAnchor)
+                        source.dateAt >= first && source.dateAt < last &&
+                            (selectedDay == null || AgendaCalendar.midnight(source.dateAt) == selectedDay)
+                    }
+                    "Oggi" -> source.dateAt < AgendaCalendar.nextDay(now)
+                    else -> true
+                }
+        }
+        if (sources.isEmpty()) return
+        list.addView(TextView(this).apply {
+            text = "SCADENZE GIÀ REGISTRATE · " + sources.size
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Ge360Brand.PrimaryDark)
+            setPadding(0, dp(16), 0, dp(7))
+        })
+        sources.forEach { source ->
+            list.addView(MaterialCardView(this).apply {
+                radius = dp(16).toFloat()
+                setCardBackgroundColor(Ge360Brand.Surface)
+                strokeColor = Ge360Brand.Border
+                strokeWidth = dp(1)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { openOriginal(source) }
+                addView(LinearLayout(this@AgendaActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    addView(TextView(this@AgendaActivity).apply {
+                        text = source.title
+                        setTypeface(typeface, Typeface.BOLD)
+                        textSize = 15f
+                        setTextColor(Ge360Brand.ForestDark)
+                    })
+                    addView(TextView(this@AgendaActivity).apply {
+                        text = SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).format(Date(source.dateAt)) +
+                            " · " + source.subtitle + "\nApri scheda originale ›"
+                        textSize = 12f
+                        setTextColor(Ge360Brand.TextSecondary)
+                    })
+                })
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = dp(9) })
+        }
+    }
+
+    private fun openOriginal(source: AgendaSourceDeadline) {
+        val destination = if (source.sourceType == AgendaSourceDeadline.CLIENT_FACT) {
+            Intent(this, ClientsActivity::class.java)
+                .putExtra(Ge360Contracts.EXTRA_CLIENT_ID, source.clientGe360Id)
+        } else {
+            Intent(Ge360Contracts.ACTION_OPEN_JOBSITE).apply {
+                setPackage(packageName)
+                putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, source.jobsiteGe360Id)
+            }
+        }
+        if (destination.resolveActivity(packageManager) != null) startActivity(destination)
+        else message("Scheda originale non disponibile in questa versione")
     }
 
     private fun entryCard(entry: AgendaEntry, now: Long, shownAt: Long = entry.dueAt): View = MaterialCardView(this).apply {
+
         radius = dp(18).toFloat()
         setCardBackgroundColor(Ge360Brand.Surface)
         strokeColor = Ge360Brand.Border
@@ -480,7 +605,7 @@ class AgendaActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val EXTRA_CREATE_KIND = "ge360.agenda.create_kind"
+        const val EXTRA_CREATE_KIND = Ge360Contracts.EXTRA_AGENDA_CREATE_KIND
         private const val REQUEST_NOTIFICATIONS = 7004
     }
 }
