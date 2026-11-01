@@ -18,8 +18,10 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * On-demand, read-only diagnostics. Runs from a background thread, never as
- * part of the shell bootstrap or a backup job. No exports leave the device.
+ * On-demand diagnostics with NO explicit database or file writes. Runs from
+ * a background thread, never as part of shell bootstrap or a backup job.
+ * Opening an older SQLiteOpenHelper may itself run an existing schema migration.
+ * No exports leave the device.
  *
  * Results deliberately exclude client identifiers, names, paths, ZIP contents,
  * encryption secrets, document filenames and raw exception messages.
@@ -42,7 +44,7 @@ object DiagnosticsInspectorV11 {
         val headline: String get() = when {
             errors > 0 -> "Problemi da verificare"
             warnings > 0 -> "Richiede attenzione"
-            else -> "Nessun problema nei controlli eseguiti"
+            else -> "Nessuna anomalia nei controlli completati"
         }
 
         fun publicSummary(): String = buildString {
@@ -110,13 +112,14 @@ object DiagnosticsInspectorV11 {
                     ), replaceAll = true
                 )
             }.onSuccess { result ->
-                val level = if (result.historicalLinksSkipped > 0) Level.ATTENZIONE else Level.OK
+                val level = if (result.historicalLinksSkipped > 0 ||
+                    plans == null || archives == null) Level.ATTENZIONE else Level.OK
                 add("Collegamenti", "Clienti · cantieri · preventivi", level,
                     "${result.checkedLinks} relazioni UUID controllate" +
                         if (result.historicalLinksSkipped > 0)
                             " · ${result.historicalLinksSkipped} riferimenti storici non verificati" else "",
                     if (level == Level.ATTENZIONE)
-                        "Verifica i collegamenti storici nei moduli interessati" else "")
+                        "Verifica i collegamenti storici e gli eventuali moduli non leggibili" else "")
             }.onFailure {
                 add("Collegamenti", "Clienti · cantieri · preventivi", Level.ERRORE,
                     "Almeno un collegamento UUID è incoerente oppure il formato non è valido",
@@ -139,7 +142,11 @@ object DiagnosticsInspectorV11 {
                     }
                 }
                 add("Documenti", title,
-                    if (missing > 0) Level.ATTENZIONE else Level.OK,
+                    when {
+                        missing > 0 -> Level.ATTENZIONE
+                        linked == 0 -> Level.INFO
+                        else -> Level.OK
+                    },
                     "${linked} file locali referenziati · ${missing} non trovati",
                     if (missing > 0) "Rivedi il documento originale e il backup, senza eliminare i metadati" else "")
             }.onFailure {
@@ -161,7 +168,11 @@ object DiagnosticsInspectorV11 {
                     }
                 }
                 add("Documenti", "Accordi economici",
-                    if (invalid > 0) Level.ERRORE else Level.OK,
+                    when {
+                        invalid > 0 -> Level.ERRORE
+                        files == 0 -> Level.INFO
+                        else -> Level.OK
+                    },
                     "${files} allegati con verifica SHA-256 · ${invalid} mancanti o alterati",
                     if (invalid > 0) "Non confermare accordi: recupera una copia integra" else "")
             } finally { s.close() }
@@ -182,7 +193,11 @@ object DiagnosticsInspectorV11 {
                 }
             }
             add("Documenti", "Foto Galleria",
-                if (unreadable > 0) Level.ATTENZIONE else Level.OK,
+                when {
+                    unreadable > 0 -> Level.ATTENZIONE
+                    checked == 0 -> Level.INFO
+                    else -> Level.OK
+                },
                 "${checked} originali locali controllati · ${unreadable} non leggibili",
                 if (unreadable > 0) "Controlla i permessi della cartella foto e le copie" else "")
         }.onFailure {
@@ -197,8 +212,9 @@ object DiagnosticsInspectorV11 {
                 add("Backup", "Copia locale", Level.ATTENZIONE, "Nessuna copia GE360 trovata",
                     "Crea un backup e conserva una copia esterna al telefono")
             } else if (latest.name.endsWith(".ge360.enc")) {
-                add("Backup", "Ultima copia", if (EncryptedBackupV8.isEncrypted(latest)) Level.INFO else Level.ERRORE,
-                    if (EncryptedBackupV8.isEncrypted(latest))
+                val headerOk = EncryptedBackupV8.isEncrypted(latest)
+                add("Backup", "Ultima copia", if (headerOk) Level.INFO else Level.ERRORE,
+                    if (headerOk)
                         "Formato cifrato rilevato; autenticità e recuperabilità NON verificate"
                     else "Header cifrato assente o non leggibile",
                     "Per una verifica completa serve un ripristino di prova autorizzato")
@@ -228,6 +244,16 @@ object DiagnosticsInspectorV11 {
             add("Backup", "Cifratura", Level.ATTENZIONE,
                 "Non attiva: i nuovi ZIP rimangono leggibili in chiaro",
                 "Attiva la cifratura in Backup e custodisci la password")
+        }
+
+        val freeBytes = android.os.StatFs(app.filesDir.absolutePath).availableBytes
+        if (freeBytes < 256L * 1024 * 1024) {
+            add("Sistema", "Spazio disponibile", Level.ATTENZIONE,
+                "Meno di 256 MB liberi nel dispositivo",
+                "Liberare spazio prima di creare o ripristinare backup")
+        } else {
+            add("Sistema", "Spazio disponibile", Level.OK,
+                "Oltre 256 MB liberi (soglia indicativa, non sufficienza garantita)")
         }
 
         val cleanup = BackupScratchV9.lastSummary(app)

@@ -226,7 +226,7 @@ class MainSectionFragment : Fragment() {
             Tool("Marketing", "Lead, KPI e SEO", MarketingActivity::class.java),
             Tool("Jarvis / IA", "Assistente GE360", JarvisActivity::class.java),
             Tool("Backup", "Backup e ripristino", BackupActivity::class.java),
-            Tool("Stato GE360", "Storage, sync e crash", DiagnosticsActivity::class.java)
+            Tool("Centro diagnostico", "Integrità dati, documenti e backup", DiagnosticsActivity::class.java)
         )
         secondaryButton("Sincronizza Data Hub ora") {
             DataHubSyncCoordinator.syncAsync(requireContext().applicationContext, force = true) { result ->

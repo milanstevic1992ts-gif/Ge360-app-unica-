@@ -58,13 +58,13 @@ class DiagnosticsActivity : AppCompatActivity() {
             addView(LinearLayout(this@DiagnosticsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@DiagnosticsActivity).apply {
-                    text = "Stato GE360"
+                    text = "Centro diagnostico"
                     textSize = 25f
                     setTypeface(typeface, Typeface.BOLD)
                     setTextColor(Color.parseColor("#17191C"))
                 })
                 addView(TextView(this@DiagnosticsActivity).apply {
-                    text = "Diagnostica locale · nessuna modifica ai dati"
+                    text = "Verifica manuale · senza correzioni automatiche"
                     textSize = 12f
                     setTextColor(Color.parseColor("#6C7278"))
                 })
@@ -101,7 +101,7 @@ class DiagnosticsActivity : AppCompatActivity() {
         scanButton.isEnabled = false
         scanButton.text = "ANALISI…"
         body.removeAllViews()
-        addSection("CONTROLLO IN CORSO", "Lettura degli archivi e verifica allegati; nessuna modifica ai dati.")
+        addSection("CONTROLLO IN CORSO", "Lettura degli archivi e verifica allegati, senza correzioni automatiche.")
         thread(name = "ge360-diagnostics-v11") {
             val scan = runCatching {
                 DiagnosticsInspectorV11.inspect(applicationContext)
@@ -151,7 +151,7 @@ class DiagnosticsActivity : AppCompatActivity() {
         rows += "Ultimo crash" to if (crash.isBlank()) "Nessun crash registrato" else "Registrato ${if (crashAt > 0) formatDate(crashAt) else ""}".trim()
 
         val result = lastScan
-        addSection("QUADRO DI SALUTE", "Controllo manuale: nessun dato viene corretto o cancellato.")
+        addSection("QUADRO DI SALUTE", "I controlli non correggono i dati e non sostituiscono un collaudo.")
         if (result == null) {
             addStatusRow("Ancora da controllare", "Premi CONTROLLA DATI per verificare collegamenti, documenti e backup.")
         } else {
