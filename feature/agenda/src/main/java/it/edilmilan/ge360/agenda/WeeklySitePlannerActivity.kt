@@ -21,6 +21,9 @@ import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
 import it.edilmilan.ge360.attrezzi.MaterialEvidenceActivityV13
 import it.edilmilan.ge360.cantieri.JobsiteRecord
+import it.edilmilan.ge360.cantieri.JobsiteProgressActivity
+import it.edilmilan.ge360.cantieri.ProgressFinishAssessment
+import java.time.temporal.ChronoUnit
 import it.edilmilan.ge360.core.common.Ge360Contracts
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.giornata.DailyStore
@@ -248,6 +251,27 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 append(state.openWork).append(" lavorazioni aperte")
                 append(" · ").append(state.doneWork).append(" completate (stato attuale)")
                 state.progressPercent?.let { append(" · avanzamento attuale ").append(it).append("%") }
+                state.finishScenarios?.let { forecast ->
+                    append("\nScenari completamento: ").append(forecast.quality)
+                    if (!forecast.canShowDates) {
+                        append("\n").append(forecast.reasons.firstOrNull().orEmpty())
+                    } else {
+                        forecast.scenarios.forEach { scenario ->
+                            val targetGap = forecast.targetEnd?.let { due ->
+                                val days = ChronoUnit.DAYS.between(due, scenario.date)
+                                if (days > 0L) " (+" + days + " gg rispetto al previsto)"
+                                else if (days < 0L) " (" + (-days) + " gg prima del previsto)"
+                                else " (come data prevista)"
+                            }.orEmpty()
+                            append("\n").append(scenario.label).append(": ")
+                                .append(scenario.date).append(targetGap)
+                        }
+                        if (forecast.state == ProgressFinishAssessment.State.READY_WITH_BLOCKERS) {
+                            append("\n⚠ Scenari condizionati allo sblocco di materiali/lavorazioni.")
+                        }
+                        append("\nDate teoriche del 100% fisico, non date di consegna.")
+                    }
+                }
                 state.progressHistory?.let { trend ->
                     append("\nStorico: ").append(trend.observations).append(" rilevazioni · ")
                         .append(trend.observedDays).append(" giorni osservati")
@@ -280,10 +304,10 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 else if (risk?.isActionable == true) 0xFFFFF2E9.toInt()
                 else Ge360Brand.Surface,
                 onOpen = { openJobsite(state.job) },
-                secondaryLabel = "Prepara materiali",
-                onSecondary = { openMaterials(state.job) },
-                tertiaryLabel = "Confronta materiali",
-                onTertiary = { openMaterialEvidence(state.job) }
+                secondaryLabel = "Fasi e scenari",
+                onSecondary = { openProgress(state.job) },
+                tertiaryLabel = "Materiali",
+                onTertiary = { chooseMaterials(state.job) }
             ))
         }
         items.addView(hint(
@@ -491,6 +515,21 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         }
         if (intent.resolveActivity(packageManager) != null) startActivity(intent)
         else toast("Centro Cantiere non disponibile")
+    }
+
+    private fun openProgress(job: JobsiteRecord) {
+        startActivity(Intent(this, JobsiteProgressActivity::class.java)
+            .putExtra(JobsiteProgressActivity.EXTRA_JOB_ID, job.ge360Id))
+    }
+
+    private fun chooseMaterials(job: JobsiteRecord) {
+        AlertDialog.Builder(this)
+            .setTitle("Materiali · " + job.displayTitle())
+            .setItems(arrayOf("Prepara materiali", "Confronta previsti / consumati")) { _, choice ->
+                if (choice == 0) openMaterials(job) else openMaterialEvidence(job)
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
     }
 
     private fun openMaterialEvidence(job: JobsiteRecord) {

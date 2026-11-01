@@ -60,7 +60,11 @@ object JobsiteDelaySignals {
         }
         if (materialDataMissing) missing += "Riepilogo materiali non disponibile"
         if (!state.workflowAvailable) missing += "Checklist cantiere non disponibile"
-        missing += "Durate e dipendenze delle lavorazioni non pianificate: impossibile stimare una nuova fine"
+        if (state.finishScenarios?.canShowDates == true) {
+            missing += "Scenari fisici disponibili, ma mancano durate e dipendenze per verificare una data di consegna"
+        } else {
+            missing += "Durate e dipendenze delle lavorazioni non pianificate: impossibile stimare una nuova fine"
+        }
 
         val reasons = mutableListOf<String>()
         if (daysLeft != null) reasons += when {
@@ -75,6 +79,12 @@ object JobsiteDelaySignals {
         if (job.status == JobsiteStore.STATUS_PAUSED) reasons += "Cantiere attualmente sospeso"
         if (state.progressPercent != null) reasons += "Avanzamento registrato: " + state.progressPercent + "% (dato attuale)"
         if (state.openWork > 0) reasons += state.openWork.toString() + " lavorazioni attualmente aperte"
+        state.finishScenarios?.takeIf { it.canShowDates }?.let { forecast ->
+            forecast.scenarios.firstOrNull { it.label.startsWith("Base") }?.let { scenario ->
+                reasons += "Scenario condizionale del 100% fisico: " + scenario.date +
+                    " (non consegna garantita)"
+            }
+        }
         if (history?.deltaPoints != null) reasons +=
             "Rilevazioni datate: " + (if (history.deltaPoints > 0) "+" else "") +
                 history.deltaPoints.toString() + " punti tra " + history.firstDate +
