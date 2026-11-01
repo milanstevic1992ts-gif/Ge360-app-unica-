@@ -47,6 +47,9 @@ class EstimatesActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private var filter = "Tutti"
     private var replaceOnImport = false
+    private var pendingEvidenceEstimate = ""
+    private var pendingEvidenceEconomics = ""
+    private var pendingEvidenceCorrection = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -196,20 +199,24 @@ class EstimatesActivity : AppCompatActivity() {
         }
         val economicsRows = store.metricVariantEconomics(estimateGe360Id)
         val economics = economicsRows.associateBy { it.variantGe360Id }
+        val corrected = store.agreementCorrections(estimateGe360Id)
+            .filter { it.status == MetricAgreementCorrectionV5.STATUS_ATTESTED }
+            .associateBy { it.economicsGe360Id }
         val recorded = economicsRows.filter {
             it.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED
+        }.map { econ ->
+            corrected[econ.ge360Id]?.correctedSignedAmountEuro
+                ?: econ.proposedSignedAmountEuro
         }
         val proposed = economicsRows.filter {
             it.status == MetricVariantEconomicsV4.STATUS_PROPOSED
         }
         fun euro(value: Double) = String.format(Locale.ITALY, "%+.2f €", value)
         val overview = "ACCORDI ESTERNI ANNOTATI (NON CONTABILIZZATI)\n" +
-            "Extra: " + euro(recorded.filter { it.proposedSignedAmountEuro > 0 }
-                .sumOf { it.proposedSignedAmountEuro }) + " · riduzioni: " +
-            euro(recorded.filter { it.proposedSignedAmountEuro < 0 }
-                .sumOf { it.proposedSignedAmountEuro }) + "\n" +
-            "Saldo indicativo accordi annotati: " +
-            euro(recorded.sumOf { it.proposedSignedAmountEuro }) + "\n" +
+            "Extra: " + euro(recorded.filter { it > 0 }.sum()) +
+            " · riduzioni: " + euro(recorded.filter { it < 0 }.sum()) + "\n" +
+            "Saldo indicativo accordi annotati (rettifiche una sola volta): " +
+            euro(recorded.sum()) + "\n" +
             "Proposte in attesa di accordo: ${proposed.size}" +
             "\nQuesti importi NON sono inclusi nel preventivo, SAL o fatturazione."
         val labels = variants.map { v ->
@@ -231,6 +238,12 @@ class EstimatesActivity : AppCompatActivity() {
                     event.action + " · " + event.variantGe360Id.take(8) + "\n" +
                         event.reason
                 }.ifBlank { "Nessun evento" }
+                val correctionEvents = store.agreementCorrectionEvents(estimateGe360Id)
+                    .joinToString("\n\n") { event ->
+                        event.action + " · " + event.correctionGe360Id.take(8) +
+                            " · " + String.format(Locale.ITALY, "%+.2f €",
+                                event.signedAmountEuro) + "\n" + event.reason
+                    }.ifBlank { "Nessuna rettifica" }
                 val commercialEvents = store.metricVariantEconomicEvents(estimateGe360Id)
                     .joinToString("\n\n") { event ->
                         event.action + " · " + event.economicsGe360Id.take(8) +
@@ -242,7 +255,8 @@ class EstimatesActivity : AppCompatActivity() {
                     }.ifBlank { "Nessun evento" }
                 textDialog("Riepilogo varianti e accordi",
                     overview + "\n\nSTORICO TECNICO\n" + history +
-                        "\n\nSTORICO ECONOMICO\n" + commercialEvents)
+                        "\n\nSTORICO ECONOMICO\n" + commercialEvents +
+                        "\n\nRETTIFICHE\n" + correctionEvents)
             }
             .setNegativeButton("Chiudi", null)
             .show()
@@ -401,6 +415,61 @@ class EstimatesActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun pickAgreementEvidence(quoteId: String, economicId: String,
+        correctionId: String = ""
+    ) {
+        pendingEvidenceEstimate = quoteId
+        pendingEvidenceEconomics = economicId
+        pendingEvidenceCorrection = correctionId
+        val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "application/pdf", "image/jpeg", "image/png"
+            ))
+        }
+        startActivityForResult(picker, REQ_EVIDENCE_FILE)
+    }
+
+    private fun addAgreementFiles(
+        box: LinearLayout, quoteId: String,
+        economicId: String, correctionId: String
+    ) {
+        val files = store.agreementAttachments(quoteId).filter {
+            it.economicsGe360Id == economicId &&
+                it.correctionGe360Id == correctionId
+        }
+        box.addView(TextView(this).apply {
+            text = "PROVE DOCUMENTALI: ${files.size} copie locali (PDF, JPG, PNG)"
+            textSize = 12f
+        })
+        files.forEach { attachment ->
+            box.addView(MaterialButton(this).apply {
+                text = "APRI · " + attachment.fileName.take(45)
+                setOnClickListener {
+                    runCatching {
+                        val uri = MetricAgreementFilesV5.contentUri(
+                            this@EstimatesActivity, attachment
+                        )
+                        startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, attachment.mimeType)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        })
+                    }.onFailure { toast(it.message ?: "Documento non disponibile") }
+                }
+            })
+        }
+        box.addView(MaterialButton(this).apply {
+            text = "+ ALLEGA PDF / FOTO ACCORDO"
+            setOnClickListener { pickAgreementEvidence(quoteId, economicId, correctionId) }
+        })
+        box.addView(TextView(this).apply {
+            text = "Le prove sono copie private con SHA-256. Allegarle non equivale " +
+                "alla firma o all'accettazione dell'accordo."
+            textSize = 11f
+        })
+    }
+
     private fun showMetricVariantEconomics(
         estimateGe360Id: String, economics: MetricVariantEconomicsV4
     ) {
@@ -427,10 +496,21 @@ class EstimatesActivity : AppCompatActivity() {
                 "non è una firma e non genera fatture."
             textSize = 14f
         })
+        addAgreementFiles(box, estimateGe360Id, economics.ge360Id, "")
         if (economics.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
+            val correction = store.agreementCorrections(estimateGe360Id)
+                .singleOrNull { it.economicsGe360Id == economics.ge360Id }
             AlertDialog.Builder(this).setTitle("Accordo esterno annotato")
                 .setView(ScrollView(this).apply { addView(box) })
-                .setPositiveButton("Chiudi", null).show()
+                .setPositiveButton(if (correction == null)
+                    "RETTIFICA" else "APRI RETTIFICA") { _, _ ->
+                    if (correction == null) proposeAgreementCorrection(
+                        estimateGe360Id, economics
+                    ) else showAgreementCorrection(
+                        estimateGe360Id, economics, correction
+                    )
+                }
+                .setNegativeButton("Chiudi", null).show()
             return
         }
         val reference = EditText(this).apply {
@@ -1166,6 +1246,35 @@ class EstimatesActivity : AppCompatActivity() {
         if (resultCode != Activity.RESULT_OK || data?.data == null) return
         val uri = data.data!!
         when (requestCode) {
+            REQ_EVIDENCE_FILE -> runCatching {
+                require(pendingEvidenceEstimate.isNotBlank() &&
+                    pendingEvidenceEconomics.isNotBlank()) {
+                    "Selezione allegato scaduta: aprire di nuovo la variante"
+                }
+                store.attachAgreementFile(
+                    pendingEvidenceEstimate, pendingEvidenceEconomics,
+                    pendingEvidenceCorrection, uri
+                )
+            }.onSuccess {
+                toast("Documento copiato e verificato SHA-256: ${it.fileName}")
+                val quoteId = pendingEvidenceEstimate
+                val economicId = pendingEvidenceEconomics
+                val correctionId = pendingEvidenceCorrection
+                val economics = store.metricVariantEconomics(quoteId)
+                    .singleOrNull { it.ge360Id == economicId }
+                if (economics != null) {
+                    if (correctionId.isNotBlank()) {
+                        val correction = store.agreementCorrections(quoteId)
+                            .singleOrNull { it.ge360Id == correctionId }
+                        if (correction != null) showAgreementCorrection(quoteId, economics, correction)
+                    } else showMetricVariantEconomics(quoteId, economics)
+                }
+            }.onFailure { toast(it.message ?: "Allegato non salvato") }
+                .also {
+                    pendingEvidenceEstimate = ""
+                    pendingEvidenceEconomics = ""
+                    pendingEvidenceCorrection = ""
+                }
             REQ_EXPORT -> runCatching {
                 contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(store.exportJson()) }
                     ?: error("File non scrivibile")
@@ -1317,6 +1426,7 @@ class EstimatesActivity : AppCompatActivity() {
         const val EXTRA_ESTIMATE_ID = "ge360_estimate_id"
         private const val REQ_EXPORT = 601
         private const val REQ_IMPORT = 602
+        private const val REQ_EVIDENCE_FILE = 603
 
         private val WORK_TYPES_UI = listOf(
             "Ristrutturazione bagno",
