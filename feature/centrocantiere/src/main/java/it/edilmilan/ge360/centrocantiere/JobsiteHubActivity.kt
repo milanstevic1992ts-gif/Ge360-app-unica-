@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.attrezzi.MaterialsActivity
+import it.edilmilan.ge360.attrezzi.MaterialEvidenceActivityV13
 import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -313,6 +314,7 @@ class JobsiteHubActivity : AppCompatActivity() {
         when (action) {
             JobsiteControlV12.Action.WORK -> openContext(JobsiteCenterActivity::class.java)
             JobsiteControlV12.Action.MATERIALS -> openContext(MaterialsActivity::class.java)
+            JobsiteControlV12.Action.EVIDENCE -> openContext(MaterialEvidenceActivityV13::class.java)
             JobsiteControlV12.Action.DOCUMENTS -> openContext(ScannerActivity::class.java)
             JobsiteControlV12.Action.LABOR -> openContext(JobsiteLaborActivity::class.java)
             JobsiteControlV12.Action.COMPENSATIONS -> openContext(CompensationActivity::class.java)

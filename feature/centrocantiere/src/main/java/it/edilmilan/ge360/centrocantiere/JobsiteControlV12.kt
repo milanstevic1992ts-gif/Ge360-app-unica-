@@ -2,6 +2,8 @@ package it.edilmilan.ge360.centrocantiere
 
 import android.content.Context
 import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
+import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceStoreV13
+import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceRulesV13
 import it.edilmilan.ge360.attrezzi.MaterialPlanStore
 import it.edilmilan.ge360.attrezzi.MaterialStockMovement
 import it.edilmilan.ge360.attrezzi.MaterialVarianceRulesV1
@@ -38,7 +40,7 @@ internal object JobsiteControlV12 {
         val action: Action = Action.NONE
     )
 
-    enum class Action { NONE, WORK, MATERIALS, DOCUMENTS, LABOR, COMPENSATIONS, COSTS, ESTIMATES }
+    enum class Action { NONE, WORK, MATERIALS, EVIDENCE, DOCUMENTS, LABOR, COMPENSATIONS, COSTS, ESTIMATES }
 
     data class Pulse(val jobsiteId: String, val at: Long, val signals: List<Signal>) {
         val issues: Int get() = signals.count { it.level == Level.ATTENZIONE || it.level == Level.CRITICO }
@@ -165,6 +167,36 @@ internal object JobsiteControlV12 {
                         " · ${pulse.movements} movimenti registrati",
                     level, Action.MATERIALS)
             } finally { plans.close(); inventory.close() }
+        }
+
+        capture("Fatture / DDT materiali", Action.EVIDENCE) {
+            val ledger = MaterialDocumentEvidenceStoreV13(context)
+            val documents = DocumentStore(context)
+            val inventory = MaterialInventoryStore(context)
+            try {
+                val entries = ledger.forJobsite(id)
+                val docs = documents.list().associateBy { it.ge360Id }
+                val mats = inventory.list().associateBy { it.ge360Id }
+                val missingProof = entries.count {
+                    val doc = docs[it.documentGe360Id]
+                    doc == null ||
+                        !doc.type.equals(it.documentKind, ignoreCase = true) ||
+                        doc.pdfPath.isBlank() || !File(doc.pdfPath).isFile
+                }
+                val mismatch = entries.count {
+                    val material = mats[it.materialGe360Id]
+                    material == null || !material.unit.equals(it.unit, ignoreCase = true)
+                }
+                val invoices = entries.count { it.documentKind == "FATTURA" }
+                val deliveries = entries.count { it.documentKind == "DDT" }
+                Signal("Fatture / DDT materiali", "${entries.size} righe confermate",
+                    "$invoices da fatture · $deliveries da DDT (mai sommati)" +
+                        " · $missingProof PDF/record da verificare" +
+                        " · $mismatch materiali/unità da controllare",
+                    if (missingProof > 0 || mismatch > 0) Level.ATTENZIONE
+                    else Level.INFO,
+                    Action.EVIDENCE)
+            } finally { ledger.close(); documents.close(); inventory.close() }
         }
 
         capture("Documenti", Action.DOCUMENTS) {
