@@ -12,6 +12,7 @@ import it.edilmilan.ge360.clienti.ClientStore
 import it.edilmilan.ge360.core.backup.BackupArchive
 import it.edilmilan.ge360.core.backup.BackupEntrySource
 import it.edilmilan.ge360.core.backup.BackupFileInfo
+import it.edilmilan.ge360.core.backup.EncryptedBackupV8
 import it.edilmilan.ge360.galleria.GalleryArchive
 import it.edilmilan.ge360.galleria.GalleryPhoto
 import it.edilmilan.ge360.galleria.GalleryStore
@@ -193,14 +194,54 @@ class BackupCoordinator(private val context: Context) {
         }
     }
 
-    fun importFromUri(uri: Uri): File {
-        val target = File(context.cacheDir, "restore_${System.currentTimeMillis()}.ge360.zip")
+    /** Read only the header; use a background thread for cloud SAF providers. */
+    fun requiresRecoveryPassword(uri: Uri): Boolean =
         context.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Backup non leggibile" }
-            FileOutputStream(target).use { input.copyTo(it, 64 * 1024) }
+            val prefix = ByteArray(8)
+            val stream = java.io.DataInputStream(input)
+            val matched = runCatching { stream.readFully(prefix); true }.getOrDefault(false)
+            matched && prefix.contentEquals("GE360ENC".toByteArray(Charsets.US_ASCII))
         }
-        archive.inspect(target, verifyHashes = true)
-        return target
+
+    /**
+     * Legacy .ge360.zip and authenticated V8 .ge360.enc are both accepted.
+     * Decryption happens in private cache, with the GCM tag validated before
+     * any database mutation. Callers MUST delete the returned temporary ZIP.
+     */
+    fun importFromUri(uri: Uri, recoveryPassword: CharArray? = null): File {
+        val inputCopy = File(context.cacheDir,
+            "ge360-restore-source-" + UUID.randomUUID().toString() + ".tmp")
+        var decoded: File? = null
+        try {
+            context.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "Backup non leggibile" }
+                FileOutputStream(inputCopy).use { output ->
+                    input.copyTo(output, 64 * 1024)
+                    output.fd.sync()
+                }
+            }
+            if (EncryptedBackupV8.isEncrypted(inputCopy)) {
+                require(recoveryPassword != null && recoveryPassword.isNotEmpty()) {
+                    "Password di recupero richiesta per questo backup"
+                }
+                val clear = File(context.cacheDir,
+                    "ge360-restore-" + UUID.randomUUID().toString() + ".ge360.zip")
+                decoded = clear
+                EncryptedBackupV8.decrypt(inputCopy, clear, recoveryPassword)
+                archive.inspect(clear, verifyHashes = true)
+                return clear
+            }
+            // Compatibility: old ZIP archives need no passphrase.
+            archive.inspect(inputCopy, verifyHashes = true)
+            return inputCopy
+        } catch (error: Throwable) {
+            decoded?.delete()
+            inputCopy.delete()
+            throw error
+        } finally {
+            if (decoded != null) inputCopy.delete()
+        }
     }
 
     fun restore(file: File, replaceAll: Boolean): RestoreResult = restoreInternal(file, replaceAll, guardRollback = true)
