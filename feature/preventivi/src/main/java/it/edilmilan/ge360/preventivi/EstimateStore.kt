@@ -348,9 +348,16 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         } finally { db.endTransaction() }
     }
 
-    fun save(record: EstimateRecord): Long {
+    /**
+     * Normal editor still rewrites quote lines. Sources are independent of rows,
+     * and any financial change to a measured line requires explicit confirmation.
+     */
+    fun save(
+        record: EstimateRecord,
+        metricConfirmations: Map<String, String> = emptyMap()
+    ): Long {
         val editorRevision = record.updatedAt
-        val now = System.currentTimeMillis()
+        val now = maxOf(System.currentTimeMillis(), editorRevision + 1)
         if (record.ge360Id.isBlank()) record.ge360Id = UUID.randomUUID().toString()
         if (record.number.isBlank()) record.number = nextNumber()
         if (record.createdAt <= 0) record.createdAt = now
@@ -359,21 +366,67 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         val db = writableDatabase
         db.beginTransaction()
         try {
+            val reviewEvents = mutableListOf<MetricReviewEventV2>()
             if (record.id > 0) {
-                // This legacy editor rewrites the entire set of quote items.
-                // Protect a measured import from being erased by an outdated editor.
-                val current = get(record.id)
-                if (current != null && current.items.any {
-                        MeasuredEstimateDraftV1.sourceOf(it) != null
-                    }) {
+                val current = get(record.id) ?: error("Preventivo cancellato o non disponibile")
+                val sources = metricSourcesForEstimateId(record.id)
+                val hasLegacyWithoutSource = current.items.any {
+                    it.internalNote.contains(MeasuredEstimateDraftV1.SOURCE_MARKER) &&
+                        sources.none { origin -> origin.itemGe360Id == it.ge360Id }
+                }
+                require(!hasLegacyWithoutSource) {
+                    "Origine della metratura non recuperabile: ripristinare o verificare prima di salvare"
+                }
+                if (sources.isNotEmpty()) {
                     require(current.updatedAt == editorRevision) {
-                        "Il preventivo ha ricevuto nuove quantità dal rilievo: " +
-                            "chiudi e riapri l'editor prima di salvare."
+                        "Preventivo aggiornato da un'altra schermata: riaprire prima di salvare"
+                    }
+                }
+                sources.forEach { origin ->
+                    val before = current.items.singleOrNull { it.ge360Id == origin.itemGe360Id }
+                        ?: error("Riga con provenienza assente nel preventivo")
+                    val after = record.items.singleOrNull { it.ge360Id == origin.itemGe360Id }
+                        ?: error("Per eliminare una metratura usare la gestione varianti, non la cancellazione")
+                    require(after.priceListCode == origin.workCode &&
+                        after.room == origin.roomSnapshot &&
+                        after.unit == "m²" && after.priceMode == "unit" &&
+                        kotlin.math.abs(after.quantity - origin.reviewedQuantityM2) <= 0.001 &&
+                        !after.optional) {
+                        "Origine, ambiente e quantità non modificabili: rivedere il rilievo"
+                    }
+                    val changed = before.included != after.included ||
+                        kotlin.math.abs(before.unitPrice - after.unitPrice) > 0.001
+                    if (changed) {
+                        val reason = metricConfirmations[origin.itemGe360Id].orEmpty().trim()
+                        require(origin.trust == MetricProvenanceV2.TRUST_VERIFIED &&
+                            current.status in setOf(EstimateStatuses.DRAFT, EstimateStatuses.REVIEW) &&
+                            record.status in setOf(EstimateStatuses.DRAFT, EstimateStatuses.REVIEW) &&
+                            reason.length >= 8) {
+                            "Variazione economica metrata: richiede conferma motivata su bozza e origine verificata"
+                        }
+                        require(after.unitPrice.isFinite() && after.unitPrice >= 0.0 &&
+                            (!after.included || after.unitPrice > 0.0)) {
+                            "La voce inclusa nel totale deve avere un prezzo valido e positivo"
+                        }
+                        reviewEvents += MetricReviewEventV2(
+                            estimateGe360Id = record.ge360Id,
+                            itemGe360Id = origin.itemGe360Id,
+                            action = "PRICE_REVIEW",
+                            priorPrice = before.unitPrice,
+                            newPrice = after.unitPrice,
+                            wasIncluded = before.included,
+                            nowIncluded = after.included,
+                            reason = reason
+                        )
                     }
                 }
             }
-            val id = if (record.id > 0) { db.update("estimates", recordValues(record), "id=?", arrayOf(record.id.toString())); record.id }
-            else db.insertOrThrow("estimates", null, recordValues(record)).also { record.id = it }
+            val id = if (record.id > 0) {
+                val updated = db.update("estimates", recordValues(record),
+                    "id=? AND updated_at=?", arrayOf(record.id.toString(), editorRevision.toString()))
+                check(updated == 1) { "Preventivo cambiato durante il salvataggio" }
+                record.id
+            } else db.insertOrThrow("estimates", null, recordValues(record)).also { record.id = it }
             db.delete("estimate_items", "estimate_id=?", arrayOf(id.toString()))
             record.items.forEach { item ->
                 item.estimateId = id
@@ -381,7 +434,12 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 item.total = calculateItemTotal(item)
                 item.id = db.insertOrThrow("estimate_items", null, itemValues(item))
             }
-            db.setTransactionSuccessful(); return id
+            reviewEvents.forEach { event ->
+                check(event.valid())
+                db.insertOrThrow("estimate_metric_events", null, metricEventValues(id, event))
+            }
+            db.setTransactionSuccessful()
+            return id
         } finally { db.endTransaction() }
     }
 
