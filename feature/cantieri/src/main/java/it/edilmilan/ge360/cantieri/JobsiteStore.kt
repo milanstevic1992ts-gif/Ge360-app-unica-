@@ -11,6 +11,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.time.LocalDate
+import java.security.MessageDigest
 import kotlin.math.roundToInt
 
 
@@ -109,10 +111,12 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         db.execSQL("CREATE INDEX idx_jobsites_client ON jobsites(client_id, updated_at DESC)")
         db.execSQL("CREATE INDEX idx_jobsites_code ON jobsites(code)")
         createControlTables(db)
+        createProgressHistoryTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createControlTables(db)
+        if (oldVersion < 3) createProgressHistoryTable(db)
     }
 
     private fun createControlTables(db: SQLiteDatabase) {
@@ -217,6 +221,7 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         try {
             if (job != null) {
                 db.delete(PROGRESS_TABLE, "jobsite_id=?", arrayOf(job.ge360Id))
+                db.delete(PROGRESS_SNAPSHOT_TABLE, "jobsite_id=?", arrayOf(job.ge360Id))
                 db.delete(MILESTONE_TABLE, "jobsite_id=?", arrayOf(job.ge360Id))
             }
             db.delete(TABLE, "id=?", arrayOf(id.toString()))
@@ -365,11 +370,184 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         writableDatabase.delete(MILESTONE_TABLE, "id=?", arrayOf(id.toString()))
     }
 
+    // ---- Cronologia rilevazioni avanzamento -------------------------------
+
+    private fun createProgressHistoryTable(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $PROGRESS_SNAPSHOT_TABLE (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ge360_id TEXT NOT NULL UNIQUE,
+                jobsite_id TEXT NOT NULL,
+                captured_at INTEGER NOT NULL,
+                observed_date TEXT NOT NULL,
+                percent INTEGER NOT NULL,
+                total_weight INTEGER NOT NULL,
+                phase_count INTEGER NOT NULL,
+                phase_fingerprint TEXT NOT NULL,
+                phases_json TEXT NOT NULL,
+                target_end_date TEXT NOT NULL DEFAULT '',
+                jobsite_status TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT ''
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_progress_snapshots_job ON $PROGRESS_SNAPSHOT_TABLE(jobsite_id, captured_at DESC, id DESC)")
+    }
+
+    /**
+     * Explicit user action only: captures current phases at the real device time.
+     * Never automatically backfills the past, creates pseudo-events or changes phases.
+     */
+    fun captureProgressSnapshot(jobsiteId: String, note: String = ""): JobsiteProgressSnapshot {
+        require(jobsiteId.isNotBlank()) { "Cantiere obbligatorio" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val job = getByGe360Id(jobsiteId) ?: error("Cantiere non trovato")
+            val phases = progressItems(jobsiteId)
+            require(phases.isNotEmpty()) { "Nessuna fase da rilevare" }
+            val totalWeight = phases.sumOf { it.weight.coerceAtLeast(0) }
+            require(totalWeight > 0) { "Pesi delle fasi non validi" }
+            val weighted = phases.sumOf {
+                it.weight.coerceAtLeast(0) * it.progressPercent.coerceIn(0, 100) / 100.0
+            }
+            val percent = ((weighted / totalWeight) * 100.0).roundToInt().coerceIn(0, 100)
+            val phasesJson = JSONArray().apply {
+                phases.forEach { phase ->
+                    put(JSONObject()
+                        .put("ge360Id", phase.ge360Id)
+                        .put("title", phase.title)
+                        .put("weight", phase.weight)
+                        .put("percent", phase.progressPercent)
+                        .put("updatedAt", phase.updatedAt)
+                    )
+                }
+            }.toString()
+            // Identity and weight define whether two overall percentages are comparable.
+            val canonical = phases.sortedBy { it.ge360Id }.joinToString("|") {
+                it.ge360Id + ":" + it.weight
+            }
+            val fingerprint = MessageDigest.getInstance("SHA-256")
+                .digest(canonical.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val result = JobsiteProgressSnapshot(
+                ge360Id = UUID.randomUUID().toString(),
+                jobsiteId = jobsiteId,
+                capturedAt = System.currentTimeMillis(),
+                observedDate = LocalDate.now().toString(),
+                percent = percent,
+                totalWeight = totalWeight,
+                phaseCount = phases.size,
+                phaseFingerprint = fingerprint,
+                phasesJson = phasesJson,
+                targetEndDate = job.targetEndDate,
+                jobsiteStatus = job.status,
+                note = note.trim().take(500)
+            )
+            insertProgressSnapshot(db, result)
+            db.setTransactionSuccessful()
+            return result
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun progressSnapshots(jobsiteId: String, limit: Int = 200): List<JobsiteProgressSnapshot> {
+        if (jobsiteId.isBlank()) return emptyList()
+        val result = mutableListOf<JobsiteProgressSnapshot>()
+        readableDatabase.query(
+            PROGRESS_SNAPSHOT_TABLE, null, "jobsite_id=?", arrayOf(jobsiteId),
+            null, null, "captured_at DESC, id DESC", limit.coerceIn(1, 2000).toString()
+        ).use { cursor ->
+            while (cursor.moveToNext()) result += progressSnapshotFromCursor(cursor)
+        }
+        return result
+    }
+
+    fun progressTrend(jobsiteId: String): JobsiteProgressTrend =
+        JobsiteProgressHistory.analyze(progressSnapshots(jobsiteId))
+
+    private fun allProgressSnapshots(): List<JobsiteProgressSnapshot> {
+        val result = mutableListOf<JobsiteProgressSnapshot>()
+        readableDatabase.query(PROGRESS_SNAPSHOT_TABLE, null, null, null,
+            null, null, "jobsite_id, captured_at ASC, id ASC").use { cursor ->
+            while (cursor.moveToNext()) result += progressSnapshotFromCursor(cursor)
+        }
+        return result
+    }
+
+    private fun progressSnapshotByGe360Id(ge360Id: String): JobsiteProgressSnapshot? =
+        readableDatabase.query(PROGRESS_SNAPSHOT_TABLE, null, "ge360_id=?",
+            arrayOf(ge360Id), null, null, null, "1").use {
+            if (it.moveToFirst()) progressSnapshotFromCursor(it) else null
+        }
+
+    private fun insertProgressSnapshot(db: SQLiteDatabase, row: JobsiteProgressSnapshot) {
+        require(row.ge360Id.isNotBlank() && row.jobsiteId.isNotBlank()) { "UUID rilevazione non valido" }
+        require(row.capturedAt > 0L && row.percent in 0..100 &&
+            row.phaseCount > 0 && row.totalWeight > 0 &&
+            row.phaseFingerprint.isNotBlank() &&
+            runCatching { LocalDate.parse(row.observedDate) }.isSuccess
+        ) { "Rilevazione avanzamento non valida" }
+        require(getByGe360Id(row.jobsiteId) != null) { "Cantiere rilevazione assente" }
+        val current = progressSnapshotByGe360Id(row.ge360Id)
+        if (current != null) {
+            require(current == row) { "Conflitto rilevazione esistente: nessuna sovrascrittura silenziosa" }
+            return // Same UUID and same content: idempotent merge.
+        }
+        db.insertOrThrow(PROGRESS_SNAPSHOT_TABLE, null, ContentValues().apply {
+            put("ge360_id", row.ge360Id); put("jobsite_id", row.jobsiteId)
+            put("captured_at", row.capturedAt); put("observed_date", row.observedDate)
+            put("percent", row.percent); put("total_weight", row.totalWeight)
+            put("phase_count", row.phaseCount); put("phase_fingerprint", row.phaseFingerprint)
+            put("phases_json", row.phasesJson); put("target_end_date", row.targetEndDate)
+            put("jobsite_status", row.jobsiteStatus); put("note", row.note)
+        })
+    }
+
+    private fun progressSnapshotFromCursor(c: Cursor) = JobsiteProgressSnapshot(
+        ge360Id = c.getString(c.getColumnIndexOrThrow("ge360_id")),
+        jobsiteId = c.getString(c.getColumnIndexOrThrow("jobsite_id")),
+        capturedAt = c.getLong(c.getColumnIndexOrThrow("captured_at")),
+        observedDate = c.getString(c.getColumnIndexOrThrow("observed_date")),
+        percent = c.getInt(c.getColumnIndexOrThrow("percent")),
+        totalWeight = c.getInt(c.getColumnIndexOrThrow("total_weight")),
+        phaseCount = c.getInt(c.getColumnIndexOrThrow("phase_count")),
+        phaseFingerprint = c.getString(c.getColumnIndexOrThrow("phase_fingerprint")),
+        phasesJson = c.getString(c.getColumnIndexOrThrow("phases_json")),
+        targetEndDate = c.getString(c.getColumnIndexOrThrow("target_end_date")),
+        jobsiteStatus = c.getString(c.getColumnIndexOrThrow("jobsite_status")),
+        note = c.getString(c.getColumnIndexOrThrow("note"))
+    )
+
+    private fun progressSnapshotToJson(s: JobsiteProgressSnapshot) = JSONObject().apply {
+        put("ge360Id", s.ge360Id); put("jobsiteId", s.jobsiteId)
+        put("capturedAt", s.capturedAt); put("observedDate", s.observedDate)
+        put("percent", s.percent); put("totalWeight", s.totalWeight)
+        put("phaseCount", s.phaseCount); put("phaseFingerprint", s.phaseFingerprint)
+        put("phasesJson", s.phasesJson); put("targetEndDate", s.targetEndDate)
+        put("jobsiteStatus", s.jobsiteStatus); put("note", s.note)
+    }
+
+    private fun progressSnapshotFromJson(o: JSONObject) = JobsiteProgressSnapshot(
+        ge360Id = o.getString("ge360Id"),
+        jobsiteId = o.getString("jobsiteId"),
+        capturedAt = o.getLong("capturedAt"),
+        observedDate = o.getString("observedDate"),
+        percent = o.getInt("percent"),
+        totalWeight = o.getInt("totalWeight"),
+        phaseCount = o.getInt("phaseCount"),
+        phaseFingerprint = o.getString("phaseFingerprint"),
+        phasesJson = o.getString("phasesJson"),
+        targetEndDate = o.optString("targetEndDate", ""),
+        jobsiteStatus = o.optString("jobsiteStatus", ""),
+        note = o.optString("note", "")
+    )
+
     fun exportJson(): String {
         val root = JSONObject()
             .put("app", "GE360")
             .put("module", "cantieri")
-            .put("formatVersion", 2)
+            .put("formatVersion", 3)
             .put("exportedAt", System.currentTimeMillis())
 
         val jobsRows = JSONArray()
@@ -383,6 +561,9 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         val milestoneRows = JSONArray()
         allMilestones().forEach { milestoneRows.put(milestoneToJson(it)) }
         root.put("milestones", milestoneRows)
+        root.put("progressSnapshots", JSONArray().apply {
+            allProgressSnapshots().forEach { put(progressSnapshotToJson(it)) }
+        })
         return root.toString(2)
     }
 
@@ -394,6 +575,7 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         db.beginTransaction()
         try {
             if (replaceAll) {
+                db.delete(PROGRESS_SNAPSHOT_TABLE, null, null)
                 db.delete(PROGRESS_TABLE, null, null)
                 db.delete(MILESTONE_TABLE, null, null)
                 db.delete(TABLE, null, null)
@@ -419,6 +601,12 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
             val milestones = root.optJSONArray("milestones")
             if (milestones != null) {
                 for (index in 0 until milestones.length()) saveMilestone(milestoneFromJson(milestones.getJSONObject(index)))
+            }
+            val snapshots = root.optJSONArray("progressSnapshots")
+            if (snapshots != null) {
+                for (index in 0 until snapshots.length()) {
+                    insertProgressSnapshot(db, progressSnapshotFromJson(snapshots.getJSONObject(index)))
+                }
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
@@ -608,7 +796,8 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         private const val TABLE = "jobsites"
         private const val PROGRESS_TABLE = "jobsite_progress_items"
         private const val MILESTONE_TABLE = "jobsite_milestones"
+        private const val PROGRESS_SNAPSHOT_TABLE = "jobsite_progress_snapshots"
         private const val DB_NAME = "ge360_cantieri.db"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
     }
 }
