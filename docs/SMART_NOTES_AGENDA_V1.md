@@ -157,3 +157,27 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 - Sopralluogo e preventivo non vanno classificati come cantieri in ritardo.
 - Fine futura con avanzamento presente e nessun blocco noto = osservazione, non garanzia.
 - Settimana storica o futura non deve contaminare l'allerta odierna con le ore di quella settimana.
+
+
+## Fase 8 — Storico avanzamento datato, senza ricostruzioni inventate
+- Fonte di verità: modulo Cantieri, JobsiteStore SQLite version 3, tabella jobsite_progress_snapshots; nessun database separato in Agenda.
+- L'operatore apre Avanzamento & SAL, aggiorna le fasi e preme REGISTRA RILEVAZIONE ORA. È una conferma esplicita: nessun job scheduler genera fotografie fittizie del passato.
+- Ciascuna rilevazione ha UUID GE360, UUID cantiere, timestamp di cattura, data locale, percentuale pesata, peso totale, numero fasi, firma di struttura, JSON delle singole fasi e relativi pesi, fine prevista e stato del cantiere al momento, nota facoltativa.
+- I record salvati non vengono sovrascritti dalle modifiche successive delle fasi. Una giornata può avere più rilevazioni: sono tutte conservate. Nel confronto tra giorni vale l'ultima rilevazione di ciascun giorno.
+- Il confronto storico richiede almeno due giorni distinti e struttura omogenea delle fasi e dei pesi. Se cambiano gli UUID delle fasi o i pesi, non inventa una variazione confrontabile.
+- Si possono vedere la sequenza di rilevazioni, i dettagli delle fasi registrate e (solo quando confrontabili) variazione in punti percentuali e media osservata di punti/giorno. Questa media NON è una data futura né una previsione di consegna.
+- Nel pianificatore settimanale e nei segnali di rischio è consultabile la stessa evidenza storica, ma classificazione e scadenze non vengono cambiate automaticamente sulla base della media osservata.
+- Il nuovo storico entra in modules/cantieri.json del backup completo, senza creare una voce ZIP aggiuntiva. Export backup formatVersion=3; restore merge per UUID: record identico già presente viene mantenuto, contenuto divergente con stesso UUID rifiutato senza sovrascrittura. Restore di backup vecchio privo della proprietà progressSnapshots resta compatibile; in modalità Sostituisci si applica l'ordinaria semantica distruttiva.
+- Data Hub resta al payload Cantieri formatVersion=2 con jobs.exportJson(forSync=true) e senza progressSnapshots: non è definito un contratto server, tombstone o merge per questo nuovo storico.
+- Eliminare esplicitamente il cantiere elimina anche la sua cronologia locale, insieme alle altre tabelle figlie; il backup precedente resta disponibile secondo la normale retention.
+- Nessuna alterazione del backend Debian, di main o dei contenuti già salvati; nessuna ricostruzione automatica delle percentuali storiche.
+
+### Controlli prima dell'uso reale (NON eseguiti)
+1. Android upgrade DB v2→v3 e apertura di un DB nuovo; nessuna perdita di progressItems/milestones.
+2. Cattura 20%, poi modifica la fase a 50%: la prima rilevazione rimane 20% e mostra i pesi originari.
+3. Due catture lo stesso giorno: due record di audit, un solo giorno distinto per la media.
+4. Almeno due giorni con stesse fasi/pesi: differenza in punti percentuali; giorni o pesi diversi non inventano confronti.
+5. Backup ZIP, ripristino Sostituisci e Unisci, anche da vecchio ZIP v2 senza rilevazioni.
+6. Merge con stesso UUID e contenuto divergente: arresto e rollback, non sovrascrittura.
+7. DataHubSyncCoordinator continua a inviare solo Cantieri v2 senza history.
+8. Revisione UI smartphone, schermata dettagli, cronologia oltre 12/200 record, comportamento a cambio fuso.

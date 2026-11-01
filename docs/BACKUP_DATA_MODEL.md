@@ -139,3 +139,13 @@ La cifratura portabile è un'estensione futura separata, per non rendere irrecup
 - backup completo e ripristino Galleria;
 - comportamento con backup di grandi dimensioni e spazio insufficiente;
 - compilazione Android completa.
+
+
+## Storico avanzamento Cantieri (formatVersion 3 nell'export ZIP)
+L'archivio già presente modules/cantieri.json include il nuovo array progressSnapshots
+con tutte le rilevazioni datate di avanzamento, oltre a jobsites, progressItems e milestones.
+La rilevazione è immutabile per UUID; merge idempotente soltanto se coincide il contenuto,
+altrimenti il restore fallisce con transazione rollback. Non si ricostruiscono date
+retroattive dal valore di avanzamento attuale.
+Il payload di sincronizzazione GE360 Data Hub resta volutamente al formato Cantieri 2,
+non include progressSnapshots e richiede un contratto server separato per l'eventuale futura sync.
