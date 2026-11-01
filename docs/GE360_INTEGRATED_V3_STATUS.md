@@ -380,3 +380,34 @@ Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file tem
 - Scanner, Galleria e Cartella Cantiere mantengono i propri importer/file store: nessuna atomicità fra i database, né nuova verifica SHA256 dei singoli PDF fuori dagli hash del ZIP. Documenti legacy assenti dal manifest possono ancora essere ripristinati solo come metadati secondo politica preesistente.
 - V10 è controllo **prima** delle scritture, non una transazione distribuita ACID né un colludo effettivo. Necessari test autorizzati con backup sintetici misti V5–V9, merge/replace, riferimenti mancanti, PDF inesistenti, duplicati, safety restore fallito e rollback cifrato.
 - Non sono stati eseguiti Gradle/compilazione, JUnit, Actions, CI, APK, merge, deploy o accessi a Debian. `main` e backend Glass invariati; marketing sospeso.
+
+
+## V11 — Centro diagnostico GE360 (1 novembre 2026)
+
+**Stato: CODICE SU BRANCH, NON COMPILATO, NON TESTATO, NON COLLAUDATO, NON DISTRIBUITO.**
+
+### Fondamento sul codice sorgente live
+La shell Android aveva già `app/.../DiagnosticsActivity.kt` accessibile da `Altro → Sistema → Stato GE360`: sistema/storage/sync/crash e controlli elementari di apertura database Clienti, Cantieri, Giornata, Preventivi, Spese, Scanner, Attrezzi e Galleria. La V11 **riusa questa activity e la navigazione esistente**, senza introdurre una seconda dashboard o avviare scansioni al bootstrap.
+
+### Modifiche salvate
+1. `feature/backup/.../DiagnosticsInspectorV11.kt`: motore di ispezione manuale con `Report` e risultati per sezione/livello `OK/ATTENZIONE/ERRORE/INFO`. Apre gli store solo durante richiesta esplicita e ne legge gli export; nessun flusso aggiunto per salvare, eliminare, riparare o sincronizzare dati. L'attività esegue l'ispezione su thread dedicato.
+2. Riusa `RestoreLinksV10.check` per controllare gli UUID canonici incrociati fra Clienti, Cantieri, Preventivi, Scanner, Galleria, Rilievi, Cartella Cantiere. Il messaggio distingue link storici non verificabili, archivi non leggibili e incoerenze che richiedono verifica umana. Se una sorgente obbligatoria non è disponibile, non dichiara i link sani.
+3. Documenti: controlla esistenza locale dei PDF referenziati in Scanner/Cartella Cantiere; gli allegati degli accordi sono controllati tramite `MetricAgreementFilesV5.existsAndMatches` (dimensione, header e SHA-256); verifica l'accessibilità degli URI delle foto tramite `GalleryArchive.readable`. Segnala conteggi aggregati, senza dettagli personali/percorsi.
+4. Backup: distingue ZIP legacy (`BackupArchive.inspect` + checksum interni, **non prova di autenticità**) da `.ge360.enc` (solo riconoscimento header; **non indica una verifica GCM**). Segnala copia assente, V8 disabilitata, Keystore non accessibile e status job automatici. Mostra anche soglia indicativa spazio interno e fallimenti registrati dalla pulizia V9; nessuna rotazione o generazione backup viene avviata dalla diagnostica.
+5. `app/.../DiagnosticsActivity.kt`: schermata manuale aggiornata con tre contatori compatti OK/Attenzioni/Errori, schede per area, indicazioni operative e condivisione sintetica **solo dopo un controllo completato**. I dati condivisi non includono stack del crash, URI SAF, percorsi del filesystem, nomi cliente o credenziali. I dettagli crash, se presenti, rimangono visibili localmente nella sezione precedentemente esistente, ma non nel report esportato.
+6. `app/.../MainSectionFragment.kt`: voce già presente in `Altro` rinominata `Centro diagnostico`, sottotitolo `Integrità dati, documenti e backup`, senza toccare la bottom navigation o i moduli marketing.
+7. `feature/backup/src/test/.../DiagnosticsInspectorV11Test.kt`: casi sintetici per priorità livelli, backup cifrato non verificato e struttura del report condiviso, **soltanto scritti, non eseguiti**. Restituiti i controlli precedenti di Giornata, Spese e Attrezzi.
+
+### Commit Android V11
+- `9c5251a4515e8df49d43afa41ae13ba7bd295625`: ispezione locale on-demand
+- `8dd27f12a64b9884bdafb36695456f28ce24cd82`: integrazione async e report condivisibile
+- `e9222326951fedfc085fc0833730e12d4fa4705d`: classificazioni prudenti, segnalazione storage e voce menu
+- `cfa724238efb2cfd2a79c3040bceb384bd86306a`: contratti JUnit scritti
+- `8048243cdb1c27e3a02d4bb8ac76a08bfb84653b`: ripristino copertura moduli precedenti e riepilogo mobile
+
+### Limiti e rischi / QA necessari
+- Il controllo è una **fotografia parziale**, non una transazione unica, non garantisce l'integrità contabile, l'autenticità degli ZIP o il recupero da backup. L'apertura di SQLiteOpenHelper potrebbe applicare migrazioni DB già previste dal codice esistente in un dispositivo con schema vecchio: l'ispezione non aggiunge scritture applicative, ma non garantisce assenza assoluta di side-effect dovuti all'apertura dei database.
+- UI manuale evita blocchi volontari del main thread ma verifica di file grandi/SAF e controlli hash potrebbero richiedere tempo e RAM. Nessun monitoraggio continuo o invio automatico di diagnostica. Gli archivi cifrati non sono decifrati durante la scansione e nessuna password viene richiesta.
+- La lettura dei backup ZIP ne controlla gli hash auto-dichiarati; la sicurezza rispetto a file malevoli richiede ulteriori hardening e collaudo dedicato. Il numero di allegati senza file è diagnostico, non riparato.
+- La condivisione delle sintesi è una scelta esplicita dell'operatore; il testo sintetico ha contatori e messaggi fissi, non enumera UUID/nomi/documenti.
+- Non eseguiti build/Gradle, JUnit, Actions, generazione APK, PR, merge, deploy o modifiche a Debian/marketing. Android main/backend Glass invariati.
