@@ -11,6 +11,7 @@ import android.text.InputType
 import java.math.BigDecimal
 import it.edilmilan.ge360.preventivi.MeasuredEstimateDraftV1
 import it.edilmilan.ge360.preventivi.EstimateStatuses
+import it.edilmilan.ge360.preventivi.MetricProvenanceV2
 import it.edilmilan.ge360.preventivi.EstimatesActivity
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -168,6 +169,12 @@ class FloorPlansActivity : AppCompatActivity() {
                     }, LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
                     ))
+                    addView(MaterialButton(this@FloorPlansActivity).apply {
+                        text = "NUOVA VARIANTE · CONFRONTA METRATURE"
+                        setOnClickListener { openMetricVariantProposal(plan) }
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+                    ))
                     val linkedRooms = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
                     val stale = bindings.count { binding ->
                         linkedRooms[binding.roomGe360Id]?.let { room ->
@@ -193,6 +200,192 @@ class FloorPlansActivity : AppCompatActivity() {
      * Strict operator review: existing immutable source bindings, explicit manual
      * deduction and a disabled zero-price estimate item. Never modify prior rows.
      */
+    /**
+     * Surface-scoped V3 variant proposal. It never replaces, edits or prices the
+     * original quote line; price delta is for reference only.
+     */
+    private fun openMetricVariantProposal(plan: FloorPlanRecord) {
+        val rooms = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
+        val sourcesCache = mutableMapOf<String, List<MetricProvenanceV2>>()
+        val selections = store.workBindings(plan.ge360Id).flatMap { newBinding ->
+            val room = rooms[newBinding.roomGe360Id] ?: return@flatMap emptyList()
+            if (!PlanGeometryQuantitiesV2.matches(
+                    newBinding, room, store.walls(room.ge360Id))) return@flatMap emptyList()
+            val sources = sourcesCache.getOrPut(newBinding.estimateGe360Id) {
+                estimateStore.metricSources(newBinding.estimateGe360Id)
+            }
+            sources.filter { previous ->
+                previous.trust == MetricProvenanceV2.TRUST_VERIFIED &&
+                    previous.planGe360Id == newBinding.planGe360Id &&
+                    previous.roomGe360Id == newBinding.roomGe360Id &&
+                    previous.wallGe360Id.orEmpty() == newBinding.wallGe360Id.orEmpty() &&
+                    previous.workCode == newBinding.workCode &&
+                    previous.surface == newBinding.surface &&
+                    previous.sourceBindingGe360Id != newBinding.ge360Id &&
+                    previous.geometryFingerprint != newBinding.geometryFingerprint
+            }.map { old -> Triple(room, newBinding, old) }
+        }
+        if (selections.isEmpty()) {
+            Toast.makeText(this,
+                "Non ci sono ancora nuove revisioni compatibili con metrature importate. " +
+                    "Modifica il rilievo e collega nuovamente la superficie.",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val labels = selections.map { (room, new, old) ->
+            room.name + " · " + new.workCode + " · " + new.surface +
+                " · " + String.format(Locale.ITALY, "%.2f → %.2f m²",
+                    old.reviewedQuantityM2, new.quantityM2)
+        }
+        AlertDialog.Builder(this).setTitle("Confronta nuova metratura")
+            .setItems(labels.toTypedArray()) { _, index ->
+                val (room, newBinding, old) = selections[index]
+                reviewMetricVariantProposal(plan, room, old, newBinding)
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun reviewMetricVariantProposal(
+        plan: FloorPlanRecord,
+        room: FloorPlanRoom,
+        old: MetricProvenanceV2,
+        newBinding: PlanWorkBindingV1
+    ) {
+        val quote = estimateStore.getByGe360Id(newBinding.estimateGe360Id)
+            ?: return
+        val previous = quote.items.singleOrNull { it.ge360Id == old.itemGe360Id }
+            ?: run {
+                Toast.makeText(this, "Voce originale non disponibile",
+                    Toast.LENGTH_LONG).show()
+                return
+            }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(12))
+        }
+        box.addView(TextView(this).apply {
+            text = "Preventivo: ${quote.number} · ${quote.status}\n" +
+                "Ambiente: ${room.name}\n" +
+                "Lavorazione: ${newBinding.workCode}\n" +
+                "Superficie: ${newBinding.surface}\n" +
+                "Vecchia revisione: " +
+                String.format(Locale.ITALY, "%.2f m²", old.reviewedQuantityM2) + "\n" +
+                "Nuova geometria: " +
+                String.format(Locale.ITALY, "%.2f m²", newBinding.quantityM2) + "\n" +
+                "Aperture già sottratte: " +
+                String.format(Locale.ITALY, "%.2f m²", newBinding.openingDeductionsM2) + "\n" +
+                "Prezzo precedente: " +
+                String.format(Locale.ITALY, "%.2f €/m²", previous.unitPrice) +
+                "\nIl preventivo originale NON verrà modificato."
+            textSize = 13f
+        })
+        val additional = EditText(this).apply {
+            hint = "Ulteriore detrazione nella nuova revisione (m²)"
+            setText("0")
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val reason = EditText(this).apply {
+            hint = "Motivo della variante · cosa è cambiato e perché (obbligatorio)"
+            minLines = 2
+        }
+        val compare = TextView(this).apply { textSize = 14f }
+        val refresh = MaterialButton(this).apply {
+            text = "CALCOLA DIFFERENZA"
+            setOnClickListener {
+                runCatching {
+                    val x = BigDecimal(additional.text.toString().trim()
+                        .replace(',', '.')).setScale(2, java.math.RoundingMode.UNNECESSARY)
+                    val next = BigDecimal.valueOf(newBinding.quantityM2).subtract(x)
+                    require(next > BigDecimal.ZERO) { "La nuova superficie deve essere positiva" }
+                    val delta = next.subtract(BigDecimal.valueOf(old.reviewedQuantityM2))
+                    val euro = if (previous.included && !previous.optional)
+                        delta.multiply(BigDecimal.valueOf(previous.unitPrice))
+                            .setScale(2, java.math.RoundingMode.HALF_UP)
+                    else BigDecimal.ZERO
+                    compare.text = "Nuova misura ${next.toPlainString()} m² · " +
+                        "Delta ${delta.toPlainString()} m² · " +
+                        "Impatto indicativo ${euro.toPlainString()} € " +
+                        "(solo riferimento, NON contabilizzato)"
+                }.onFailure { compare.text = it.message ?: "Detrazione non valida" }
+            }
+        }
+        box.addView(additional)
+        box.addView(reason)
+        box.addView(refresh)
+        box.addView(compare)
+        val confirm = CheckBox(this).apply {
+            text = "Confermo la revisione geometrica: registra SOLO una proposta, " +
+                "senza cambiare importi, fatture o preventivo originale."
+        }
+        box.addView(confirm)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Proponi variante di metratura")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("SALVA PROPOSTA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    require(confirm.isChecked) { "Confermare la proposta di variante" }
+                    val actualRoom = store.rooms(plan.ge360Id)
+                        .singleOrNull { it.ge360Id == room.ge360Id }
+                        ?: error("Ambiente non trovato")
+                    require(PlanGeometryQuantitiesV2.matches(newBinding,
+                        actualRoom, store.walls(room.ge360Id))) {
+                        "Geometria variata durante la revisione: ripetere l'operazione"
+                    }
+                    val deduction = BigDecimal(additional.text.toString().trim()
+                        .replace(',', '.')).setScale(2, java.math.RoundingMode.UNNECESSARY)
+                        .toDouble()
+                    val motivation = reason.text.toString().trim()
+                    val candidate = MeasuredEstimateDraftV1(
+                        sourceBindingGe360Id = newBinding.ge360Id,
+                        planGe360Id = newBinding.planGe360Id,
+                        roomGe360Id = newBinding.roomGe360Id,
+                        wallGe360Id = newBinding.wallGe360Id,
+                        roomLabel = actualRoom.name,
+                        workCode = newBinding.workCode,
+                        surface = newBinding.surface,
+                        geometryFingerprint = newBinding.geometryFingerprint,
+                        measuredQuantityM2 = newBinding.quantityM2,
+                        grossM2 = newBinding.grossM2,
+                        openingDeductionsM2 = newBinding.openingDeductionsM2,
+                        additionalDeductionM2 = deduction,
+                        deductionReason = if (deduction > 0.0) motivation else ""
+                    )
+                    require(candidate.valid()) { "Misura della variante non valida" }
+                    estimateStore.proposeMetricVariant(
+                        quote.ge360Id, quote.updatedAt,
+                        old.itemGe360Id, candidate, motivation
+                    )
+                }.onSuccess { variant ->
+                    dialog.dismiss()
+                    AlertDialog.Builder(this)
+                        .setTitle("Proposta di variante registrata")
+                        .setMessage("Delta: " +
+                            String.format(Locale.ITALY, "%+.2f m²", variant.deltaQuantityM2()) +
+                            "\nImpatto solo indicativo: " +
+                            String.format(Locale.ITALY, "%+.2f €", variant.referenceDeltaEuro()) +
+                            "\n\nNessuna modifica al preventivo originale. " +
+                            "La verifica tecnica si trova nella scheda Preventivi.")
+                        .setPositiveButton("APRI PREVENTIVI") { _, _ ->
+                            startActivity(Intent(this, EstimatesActivity::class.java)
+                                .putExtra(EstimatesActivity.EXTRA_ESTIMATE_ID, quote.ge360Id))
+                        }
+                        .setNegativeButton("CHIUDI", null)
+                        .show()
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Variante non registrata",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun openMeasuredReview(plan: FloorPlanRecord) {
         val roomIndex = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
         val bindings = store.workBindings(plan.ge360Id)
