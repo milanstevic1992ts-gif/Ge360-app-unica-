@@ -5,7 +5,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.Toast
@@ -158,9 +160,9 @@ class FloorPlansActivity : AppCompatActivity() {
                     val linkedRooms = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
                     val stale = bindings.count { binding ->
                         linkedRooms[binding.roomGe360Id]?.let { room ->
-                            room.updatedAt != binding.roomRevisionAt ||
-                                kotlin.math.abs(PlanWorkBindingV1.quantity(room, binding.surface) -
-                                    binding.quantityM2) > 0.01
+                            !PlanGeometryQuantitiesV2.matches(
+                                binding, room, store.walls(room.ge360Id)
+                            )
                         } ?: true
                     }
                     addView(TextView(this@FloorPlansActivity).apply {
@@ -184,15 +186,23 @@ class FloorPlansActivity : AppCompatActivity() {
         val works = StandardWorkCatalog.search().filter { it.unit == "m²" }
         if (rooms.isEmpty() || estimates.isEmpty() || works.isEmpty()) {
             Toast.makeText(this,
-                "Servono almeno un ambiente, un preventivo esistente e una lavorazione a m²",
+                "Servono ambienti, un preventivo esistente e una lavorazione a m²",
                 Toast.LENGTH_LONG).show()
             return
         }
+
+        val surfaces = listOf(
+            PlanWorkBindingV1.FLOOR to "Pavimento · stanza/e",
+            PlanWorkBindingV1.CEILING to "Soffitto · stanza/e",
+            PlanWorkBindingV1.WALLS to "Tutte le pareti · lordo",
+            PlanWorkBindingV1.WALLS_NET to "Tutte le pareti · netto aperture",
+            PlanWorkBindingV1.SINGLE_WALL_GROSS to "Pareti singole · lordo",
+            PlanWorkBindingV1.SINGLE_WALL_NET to "Pareti singole · netto aperture"
+        )
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(8))
         }
-        val chosen = mutableListOf<Pair<FloorPlanRoom, CheckBox>>()
         val estimateSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@FloorPlansActivity,
                 android.R.layout.simple_spinner_dropdown_item,
@@ -201,39 +211,102 @@ class FloorPlansActivity : AppCompatActivity() {
         val surfaceSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@FloorPlansActivity,
                 android.R.layout.simple_spinner_dropdown_item,
-                listOf("Pavimento", "Soffitto", "Pareti lorde"))
+                surfaces.map { it.second })
         }
         val workSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@FloorPlansActivity,
                 android.R.layout.simple_spinner_dropdown_item,
                 works.map { it.code + " · " + it.title })
         }
-        form.addView(TextView(this).apply { text = "PREVENTIVO ESISTENTE (NESSUN PREZZO MODIFICATO)" })
+        form.addView(TextView(this).apply { text = "PREVENTIVO ESISTENTE · NESSUN PREZZO MODIFICATO" })
         form.addView(estimateSpinner)
-        form.addView(TextView(this).apply { text = "SUPERFICI" })
+        form.addView(TextView(this).apply { text = "SUPERFICIE DA LAVORARE" })
         form.addView(surfaceSpinner)
-        form.addView(TextView(this).apply { text = "LAVORAZIONE DEL CATALOGO" })
+        form.addView(TextView(this).apply { text = "LAVORAZIONE CATALOGO" })
         form.addView(workSpinner)
-        form.addView(TextView(this).apply {
-            text = "AMBIENTI DA INCLUDERE · selezione multipla"
+
+        val roomHeader = TextView(this).apply {
+            text = "AMBIENTI DA SELEZIONARE · più di uno possibile"
             setPadding(0, dp(10), 0, dp(4))
-        })
-        rooms.forEach { room ->
-            val check = CheckBox(this).apply {
-                text = room.name + " · ${String.format(Locale.ITALY, "%.2f", room.floorArea())} m² pav."
-            }
-            chosen += room to check
-            form.addView(check)
         }
-        form.addView(TextView(this).apply {
-            text = "Quantità provvisorie in m². Pareti lorde: non dedurre automaticamente aperture o superfici già quotate. La selezione non crea righe economiche."
+        val roomBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val selectedRooms = rooms.map { room ->
+            room to CheckBox(this).apply {
+                text = room.name + " · " +
+                    String.format(Locale.ITALY, "%.2f", room.floorArea()) + " m² pav."
+                roomBox.addView(this)
+            }
+        }
+        form.addView(roomHeader)
+        form.addView(roomBox)
+
+        val wallHeader = TextView(this).apply {
+            text = "PARETI SPECIFICHE · ogni parete è una faccia, non due"
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        val wallBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val selectedWalls = rooms.flatMap { room ->
+            store.walls(room.ge360Id).mapIndexed { i, wall ->
+                Triple(room, wall, CheckBox(this).apply {
+                    text = room.name + " · Parete " + (i + 1) +
+                        " · " + String.format(Locale.ITALY, "%.2f", wall.length) + " ml" +
+                        FloorPlanWallOpenings.countLabel(wall.note).let {
+                            label -> if (label.isBlank()) "" else " · " + label
+                        }
+                    wallBox.addView(this)
+                })
+            }
+        }
+        form.addView(wallHeader)
+        form.addView(wallBox)
+        val guide = TextView(this).apply {
+            text = "Le pareti nette sottraggono solo aperture valide e non sovrapposte. " +
+                "Ambienti irregolari: il profilo deve essere chiuso. " +
+                "Le quantità sono fotografie della geometria, NON nuove righe economiche."
             textSize = 12f
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        form.addView(guide)
+        val preview = TextView(this).apply {
+            textSize = 14f
+            setPadding(0, dp(8), 0, dp(10))
+        }
+        form.addView(MaterialButton(this).apply {
+            text = "CONTROLLA MISURE"
+            setOnClickListener {
+                runCatching {
+                    val area = surfaces[surfaceSpinner.selectedItemPosition].first
+                    val current = selectedMeasurements(area, selectedRooms, selectedWalls)
+                    val total = current.sumOf { it.second.quantityM2 }
+                    val deductions = current.sumOf { it.second.openingDeductionsM2 }
+                    preview.text = current.size.toString() + " superfici selezionate · " +
+                        String.format(Locale.ITALY, "%.2f", total) + " m²" +
+                        " · aperture detratte: " +
+                        String.format(Locale.ITALY, "%.2f", deductions) + " m²"
+                }.onFailure { preview.text = it.message ?: "Controllare geometria e aperture" }
+            }
         })
+        form.addView(preview)
+        surfaceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?,
+                                        position: Int, id: Long) {
+                val single = surfaces[position].first in listOf(
+                    PlanWorkBindingV1.SINGLE_WALL_GROSS, PlanWorkBindingV1.SINGLE_WALL_NET
+                )
+                roomHeader.visibility = if (single) View.GONE else View.VISIBLE
+                roomBox.visibility = if (single) View.GONE else View.VISIBLE
+                wallHeader.visibility = if (single) View.VISIBLE else View.GONE
+                wallBox.visibility = if (single) View.VISIBLE else View.GONE
+                preview.text = ""
+            }
+        }
+
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Selezione lavorazioni da rilievo")
+            .setTitle("Rilievo → lavorazioni selezionate")
             .setView(ScrollView(this).apply { addView(form) })
             .setNegativeButton("Annulla", null)
-            .setPositiveButton("SALVA COLLEGAMENTI", null)
+            .setPositiveButton("SALVA SELEZIONI", null)
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -241,27 +314,55 @@ class FloorPlansActivity : AppCompatActivity() {
                     val estimate = estimates[estimateSpinner.selectedItemPosition]
                     require(plan.jobsiteId.isBlank() || estimate.jobsiteId.isBlank() ||
                         plan.jobsiteId == estimate.jobsiteId) {
-                        "Il preventivo è collegato a un altro cantiere"
+                        "Preventivo collegato a un cantiere diverso"
                     }
-                    val area = PlanWorkBindingV1.SURFACES[surfaceSpinner.selectedItemPosition]
+                    val area = surfaces[surfaceSpinner.selectedItemPosition].first
                     val workCode = works[workSpinner.selectedItemPosition].code
-                    val selected = chosen.filter { it.second.isChecked }.map { it.first }
-                    require(selected.isNotEmpty()) { "Seleziona almeno un ambiente" }
-                    store.addWorkBindings(selected.map { room ->
-                        PlanWorkBindingV1.fromRoom(room, estimate.ge360Id, workCode, area)
+                    val measured = selectedMeasurements(area, selectedRooms, selectedWalls)
+                    store.addWorkBindings(measured.map { (room, quantity) ->
+                        PlanWorkBindingV1.fromMeasured(
+                            room, estimate.ge360Id, workCode, quantity
+                        )
                     })
                 }.onSuccess {
                     dialog.dismiss()
                     renderList()
                     Toast.makeText(this,
-                        "Selezioni salvate: dati di preventivo e prezzi invariati",
+                        "Selezioni salvate: preventivo e prezzi invariati",
                         Toast.LENGTH_LONG).show()
                 }.onFailure {
-                    Toast.makeText(this, it.message ?: "Selezioni non salvate", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this,
+                        it.message ?: "Selezioni non salvate", Toast.LENGTH_LONG).show()
                 }
             }
         }
         dialog.show()
+    }
+
+    private fun selectedMeasurements(
+        surface: String,
+        selectedRooms: List<Pair<FloorPlanRoom, CheckBox>>,
+        selectedWalls: List<Triple<FloorPlanRoom, FloorPlanWall, CheckBox>>
+    ): List<Pair<FloorPlanRoom, PlanGeometryQuantitiesV2.Measured>> {
+        val single = surface == PlanWorkBindingV1.SINGLE_WALL_GROSS ||
+            surface == PlanWorkBindingV1.SINGLE_WALL_NET
+        val roomWallRows = mutableMapOf<String, List<FloorPlanWall>>()
+        fun walls(room: FloorPlanRoom) =
+            roomWallRows.getOrPut(room.ge360Id) { store.walls(room.ge360Id) }
+        val measurements = if (single) selectedWalls.filter { it.third.isChecked }
+            .map { (room, wall, _) ->
+                room to PlanGeometryQuantitiesV2.measure(
+                    room, walls(room), surface, wall.ge360Id
+                )
+            }
+        else selectedRooms.filter { it.second.isChecked }
+            .map { (room, _) ->
+                room to PlanGeometryQuantitiesV2.measure(room, walls(room), surface)
+            }
+        require(measurements.isNotEmpty()) {
+            if (single) "Seleziona una o più pareti" else "Seleziona uno o più ambienti"
+        }
+        return measurements
     }
 
     private fun newPlanDialog() {
