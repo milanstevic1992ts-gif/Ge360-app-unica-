@@ -20,12 +20,19 @@ data class PlanWorkBindingV1(
     val createdAt: Long,
     // Blank on legacy V1 bindings: always requires renewed operator confirmation.
     val geometryFingerprint: String = "",
-    val wallGe360Id: String? = null
+    val wallGe360Id: String? = null,
+    val grossM2: Double = 0.0,
+    val openingDeductionsM2: Double = 0.0
 ) {
     fun valid(): Boolean =
         listOf(ge360Id, planGe360Id, roomGe360Id, estimateGe360Id, workCode).all { it.isNotBlank() } &&
         surface in SURFACES && quantityM2.isFinite() && quantityM2 > 0.0 &&
         roomRevisionAt > 0 && createdAt > 0 &&
+        grossM2.isFinite() && openingDeductionsM2.isFinite() &&
+        grossM2 >= 0.0 && openingDeductionsM2 >= 0.0 &&
+        (geometryFingerprint.isBlank() ||
+            (grossM2 > 0.0 && grossM2 + 0.02 >= quantityM2 &&
+                kotlin.math.abs(grossM2 - openingDeductionsM2 - quantityM2) <= 0.02)) &&
         (geometryFingerprint.isBlank() ||
             (geometryFingerprint.length == 64 && geometryFingerprint.all {
                 it in '0'..'9' || it in 'a'..'f'
@@ -45,6 +52,8 @@ data class PlanWorkBindingV1(
         .put("createdAt", createdAt)
         .put("geometryFingerprint", geometryFingerprint)
         .put("wallGe360Id", wallGe360Id.orEmpty())
+        .put("grossM2", grossM2)
+        .put("openingDeductionsM2", openingDeductionsM2)
 
     companion object {
         const val FLOOR = "PAVIMENTO"
@@ -92,7 +101,9 @@ data class PlanWorkBindingV1(
             roomRevisionAt = room.updatedAt,
             createdAt = System.currentTimeMillis(),
             geometryFingerprint = measured.fingerprint,
-            wallGe360Id = measured.wallGe360Id
+            wallGe360Id = measured.wallGe360Id,
+            grossM2 = measured.grossM2,
+            openingDeductionsM2 = measured.openingDeductionsM2
         )
 
         fun fromJson(o: JSONObject) = PlanWorkBindingV1(
@@ -106,7 +117,9 @@ data class PlanWorkBindingV1(
             roomRevisionAt = o.getLong("roomRevisionAt"),
             createdAt = o.getLong("createdAt"),
             geometryFingerprint = o.optString("geometryFingerprint", ""),
-            wallGe360Id = o.optString("wallGe360Id", "").ifBlank { null }
+            wallGe360Id = o.optString("wallGe360Id", "").ifBlank { null },
+            grossM2 = o.optDouble("grossM2", 0.0),
+            openingDeductionsM2 = o.optDouble("openingDeductionsM2", 0.0)
         )
     }
 }
