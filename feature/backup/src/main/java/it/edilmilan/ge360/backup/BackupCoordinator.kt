@@ -20,6 +20,8 @@ import it.edilmilan.ge360.giornata.CompensationStore
 import it.edilmilan.ge360.messaggi.TemplateStore
 import it.edilmilan.ge360.planimetrie.FloorPlanStore
 import it.edilmilan.ge360.preventivi.EstimateStore
+import it.edilmilan.ge360.preventivi.MetricAgreementFilesV5
+import it.edilmilan.ge360.preventivi.MetricAgreementAttachmentV5
 import it.edilmilan.ge360.preventivi.EstimateLifecycleStore
 import it.edilmilan.ge360.preventivi.EstimateRoomStore
 import it.edilmilan.ge360.preventivi.PreventiviCustomizationStore
@@ -103,6 +105,26 @@ class BackupCoordinator(private val context: Context) {
                 entries += BackupEntrySource(path) { ByteArrayInputStream(bytes) }
             }
 
+            // All private agreement evidence is included even in automatic backups:
+            // missing or corrupted evidence fails the backup instead of producing
+            // a seemingly complete but unusable archive.
+            val evidenceMap = JSONObject()
+            estimates.list().forEach { quote ->
+                estimates.agreementAttachments(quote.ge360Id).forEach { attachment ->
+                    require(MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
+                        "Backup sospeso: allegato accordo mancante o alterato (${attachment.fileName})"
+                    }
+                    val original = MetricAgreementFilesV5.fileFor(context, attachment)
+                    val archivePath = "files/metric-agreements/${attachment.ge360Id}." +
+                        attachment.mimeType.substringAfter('/').let {
+                            when (it) { "pdf" -> "pdf"; "jpeg" -> "jpg"; "png" -> "png"
+                                else -> error("Tipo allegato non supportato") }
+                        }
+                    evidenceMap.put(attachment.ge360Id, archivePath)
+                    entries += BackupEntrySource(archivePath) { FileInputStream(original) }
+                }
+            }
+
             val scannerMap = JSONObject()
             var scannerFiles = 0
             documents.list().forEach { doc ->
@@ -153,6 +175,7 @@ class BackupCoordinator(private val context: Context) {
                 .put("automaticMediaPolicy", "daily=allData+scannerPDF+jobsiteArchivePDF+galleryFiles")
                 .put("includesGalleryFiles", includeGalleryFiles)
                 .put("scannerFiles", scannerMap)
+                .put("metricAgreementFiles", evidenceMap)
                 .put("jobsiteArchiveFiles", jobsiteArchiveMap)
                 .put("galleryFiles", galleryMap)
                 .put("galleryFilesSkipped", gallerySkipped)
@@ -241,7 +264,10 @@ class BackupCoordinator(private val context: Context) {
             counts["Spese"] = finances.importJson(archive.readText(file, "modules/spese.json"), replaceAll)
 
             val estimatesJson = remapEstimateClientIds(archive.readText(file, "modules/preventivi.json"), clientIds)
+            // Metadata of agreements is imported first; every file must then be
+            // restored from a ZIP entry and SHA-256 verified before continuing.
             counts["Preventivi"] = estimates.importJson(estimatesJson, replaceAll)
+            restoreMetricAgreementFiles(file, manifest, estimates)
 
             val roomsJson = runCatching { archive.readText(file, "modules/preventivi-rooms.json") }.getOrNull()
             if (roomsJson != null) counts["Ambienti preventivo"] = estimateRooms.importJson(roomsJson, replaceAll)
@@ -341,6 +367,46 @@ class BackupCoordinator(private val context: Context) {
         optionalSchemas.forEach { (path, schema) ->
             runCatching { archive.readText(file, path) }.getOrNull()?.let { json ->
                 require(JSONObject(json).optString("schema") == schema) { "Modulo backup non valido: $path" }
+            }
+        }
+    }
+
+    private fun restoreMetricAgreementFiles(
+        file: File, manifest: JSONObject, estimates: EstimateStore
+    ) {
+        val paths = manifest.optJSONObject("metricAgreementFiles") ?: JSONObject()
+        estimates.list().forEach { quote ->
+            estimates.agreementAttachments(quote.ge360Id).forEach { attachment ->
+                val target = MetricAgreementFilesV5.fileFor(context, attachment)
+                val zipPath = paths.optString(attachment.ge360Id)
+                if (zipPath.isBlank()) {
+                    // Keep pre-existing evidence on a non-destructive import only if
+                    // its SHA is already correct. Otherwise reject incomplete ZIP.
+                    require(MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
+                        "Backup privo del file dell'accordo: ${attachment.fileName}"
+                    }
+                } else {
+                    require(zipPath.startsWith("files/metric-agreements/") &&
+                        zipPath.substringAfterLast('/').substringBefore('.') ==
+                            attachment.ge360Id) { "Percorso allegato non attendibile" }
+                    if (!MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
+                        require(target.parentFile?.mkdirs() == true ||
+                            target.parentFile?.isDirectory == true)
+                        val temp = File(target.parentFile,
+                            "${attachment.ge360Id}.restore-partial")
+                        try {
+                            archive.extractEntry(file, zipPath, temp)
+                            require(temp.isFile && temp.length() == attachment.sizeBytes)
+                            require(!target.exists() || target.delete())
+                            check(temp.renameTo(target)) {
+                                "Impossibile ripristinare copia privata accordo"
+                            }
+                            require(MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
+                                "SHA-256 dell'allegato non coincide con il registro"
+                            }
+                        } finally { temp.delete() }
+                    }
+                }
             }
         }
     }
