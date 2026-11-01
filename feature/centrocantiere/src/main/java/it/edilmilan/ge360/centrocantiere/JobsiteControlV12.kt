@@ -269,7 +269,9 @@ internal object JobsiteControlV12 {
                 val coverageCount = trustedCosts.map { it.invoiceLineGe360Id }.distinct().size
                 Signal("Budget e costi materiali",
                     "$coverageCount/$invoiceCount righe fattura valorizzate",
-                    "Imponibile documentato: " + MaterialCostRulesV15.euro(documentedNet) +
+                    "Imponibile documentato: " +
+                        (if (coverageCount > 0) MaterialCostRulesV15.euro(documentedNet)
+                         else "non registrato") +
                         " · budget confermato: " +
                         (if (budgeted > 0) MaterialCostRulesV15.euro(totalBudget)
                          else "non registrato") +

@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import it.edilmilan.ge360.scanner.DocumentStore
+import it.edilmilan.ge360.cantieri.JobsiteStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
@@ -59,7 +60,8 @@ object MaterialCostRulesV15 {
             .movePointRight(2).longValueExact()
     }
 
-    fun euro(cents: Long): String = String.format(Locale.ITALY, "%,.2f €", cents / 100.0)
+    fun euro(cents: Long): String = String.format(Locale.ITALY, "%,.2f €",
+        BigDecimal.valueOf(cents, 2))
 
     fun plannedNetCents(plan: MaterialPlanRevisionV1, budget: MaterialBudgetRevisionV15): Long {
         require(plan.ge360Id == budget.planRevisionGe360Id &&
@@ -234,7 +236,7 @@ class MaterialCostStoreV15(context: Context) :
                 "Materiale o unità del piano non disponibile"
             }
             if (!plan.jobsiteGe360Id.isNullOrBlank()) {
-                val jobs = it.edilmilan.ge360.cantieri.JobsiteStore(app)
+                val jobs = JobsiteStore(app)
                 try {
                     require(jobs.list().any { it.ge360Id == plan.jobsiteGe360Id }) {
                         "Cantiere del piano non più presente"
@@ -244,6 +246,9 @@ class MaterialCostStoreV15(context: Context) :
             val row = MaterialBudgetRevisionV15(UUID.randomUUID().toString(),
                 plan.ge360Id, plan.materialGe360Id, plan.jobsiteGe360Id.orEmpty(),
                 plan.unit, unitNetCents, System.currentTimeMillis())
+            // Never store a confirmed budget that would overflow the monetary
+            // model when projected onto the selected approved quantity.
+            MaterialCostRulesV15.plannedNetCents(plan, row)
             writableDatabase.insertOrThrow("budget_revision_v15", null, budgetValues(row))
             return row
         } finally { plans.close(); stock.close() }
