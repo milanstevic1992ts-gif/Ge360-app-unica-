@@ -46,8 +46,8 @@ internal object RestoreLinksV10 {
         val clients = JSONObject(snapshot.clients).getJSONArray("clients")
         val jobs = JSONObject(snapshot.jobs).getJSONArray("jobsites")
         val estimates = JSONObject(snapshot.estimates).getJSONArray("estimates")
-        val documents = JSONObject(snapshot.scanner).getJSONArray("documents")
-        val photos = JSONObject(snapshot.gallery).getJSONArray("photos")
+        val documents = JSONObject(snapshot.scanner).optJSONArray("documents") ?: JSONArray()
+        val photos = JSONObject(snapshot.gallery).optJSONArray("photos") ?: JSONArray()
 
         val clientIds = uniqueIds(clients, "Clienti", allowBlank = true) +
             if (replaceAll) emptySet() else local.clientIds
@@ -64,7 +64,7 @@ internal object RestoreLinksV10 {
             }
 
         val plansJson = snapshot.floorPlans?.let(::JSONObject)
-        val plans = plansJson?.getJSONArray("floorPlans")
+        val plans = plansJson?.optJSONArray("floorPlans")
         val importedRoomIds = linkedMapOf<String, Set<String>>()
         if (plans != null) {
             uniqueIds(plans, "Planimetrie")
@@ -173,7 +173,7 @@ internal object RestoreLinksV10 {
 
         snapshot.jobsiteArchive?.let { json ->
             val root = JSONObject(json)
-            val files = root.getJSONArray("files")
+            val files = root.optJSONArray("files") ?: JSONArray()
             val memos = root.optJSONArray("memos") ?: JSONArray()
             uniqueIds(files, "Documenti cantiere", allowBlank = true)
             uniqueIds(memos, "Note cantiere", allowBlank = true)
