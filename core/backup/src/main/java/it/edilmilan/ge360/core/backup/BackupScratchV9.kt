@@ -17,11 +17,17 @@ object BackupScratchV9 {
         Regex("^ge360-restore-[0-9a-fA-F-]{36}\\.ge360\\.zip$"),
         Regex("^ge360-rollback-[0-9a-fA-F-]{36}\\.ge360\\.zip$"),
         Regex("^ge360-restore-source-[0-9a-fA-F-]{36}\\.tmp$"),
+        Regex("^ge360-recovery-source-[0-9a-fA-F-]{36}\\.tmp$"),
+        Regex("^ge360-recovery-check-[0-9a-fA-F-]{36}\\.ge360\\.zip$"),
         Regex("^restore_[0-9]+\\.ge360\\.zip$")
     )
     private val partialArchive = Regex(
         "^GE360_(AUTO|FULL)_[0-9]{8}_[0-9]{6}_[0-9a-fA-F]{8}\\.ge360\\.(zip|enc)\\.partial$"
     )
+
+    fun isOwnedScratchName(name: String) = cacheNames.any { it.matches(name) }
+
+    fun isOwnedPartialArchiveName(name: String) = partialArchive.matches(name)
 
     data class Summary(val deleted: Int, val failed: Int)
 
@@ -30,10 +36,10 @@ object BackupScratchV9 {
         var deleted = 0
         var failed = 0
         val locations = listOf(
-            context.cacheDir to { name: String -> cacheNames.any { it.matches(name) } },
+            context.cacheDir to { name: String -> isOwnedScratchName(name) },
             File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS)
                 ?: context.filesDir, "GE360/Backups") to
-                { name: String -> partialArchive.matches(name) }
+                { name: String -> isOwnedPartialArchiveName(name) }
         )
         locations.forEach { (parent, matches) ->
             parent.listFiles()?.forEach { file ->
