@@ -30,8 +30,9 @@ class MetricVariantEconomicsV4Test {
             priorUnitPrice = 40.0,
             priorIncluded = true,
             reason = "Variazione delle dimensioni della stanza",
+            createdAt = 1_000L,
             status = MetricVariantV3.STATUS_TECH_REVIEWED,
-            reviewedAt = System.currentTimeMillis(),
+            reviewedAt = 1_001L,
             reviewReason = "Rilievo rivisto e confermato"
         )
     }

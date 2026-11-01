@@ -36,8 +36,8 @@ grep -Fq 'defaultType == MaterialStockMovement.TYPE_CONSUME' "$materials"
 grep -Fq 'Costi / statistiche' "$hub"
 grep -Fq 'JobsiteCostAnalyticsActivity::class.java' "$hub"
 grep -Fq 'android:name=".JobsiteCostAnalyticsActivity"' "$manifest"
-grep -Fq 'versionCode = 2125' "$gradle"
-grep -Fq 'versionName = "0.21.24"' "$gradle"
+grep -Fq 'versionCode = 2126' "$gradle"
+grep -Fq 'versionName = "0.21.25"' "$gradle"
 
 if grep -Fq 'SQLiteOpenHelper' "$activity" || grep -Fq 'JobsiteCostAnalyticsActivity' "$main" || grep -Fq 'JobsiteCostAnalyticsActivity' "$safehome"; then
   echo "Le statistiche cantiere non devono introdurre DB o bootstrap iniziale" >&2

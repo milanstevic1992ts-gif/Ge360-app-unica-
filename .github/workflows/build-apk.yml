@@ -33,7 +33,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Test critical modules and build installable debug APK
+      - name: Build installable debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Run critical module tests
+        id: tests
+        continue-on-error: true
         run: |
           gradle \
             :feature:agenda:testDebugUnitTest \
@@ -41,7 +46,8 @@ jobs:
             :feature:attrezzi:testDebugUnitTest \
             :feature:planimetrie:testDebugUnitTest \
             :feature:preventivi:testDebugUnitTest \
-            :app:assembleDebug --stacktrace
+            --stacktrace
+
 
       - name: Verify APK structure and checksum
         if: success()
@@ -65,3 +71,7 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Enforce all unit tests passed
+        if: steps.tests.outcome != 'success'
+        run: exit 1

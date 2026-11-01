@@ -209,7 +209,7 @@ class BackupCoordinator(private val context: Context) {
             val driveDone = copyToDrive && archive.driveReady() && runCatching { archive.copyToDrive(info.file) }.isSuccess
             return CreateResult(info, driveDone, galleryIncluded, gallerySkipped, scannerFiles)
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, materialCosts, customWorkPacks, vanPreparations, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, materialCosts, gallery)
         }
     }
 
@@ -430,7 +430,7 @@ class BackupCoordinator(private val context: Context) {
             }
             throw error
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, materialCosts, customWorkPacks, vanPreparations, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, materialCosts, gallery)
         }
     }
 

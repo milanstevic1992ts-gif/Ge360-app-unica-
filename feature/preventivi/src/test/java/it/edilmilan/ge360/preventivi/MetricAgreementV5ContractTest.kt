@@ -63,6 +63,7 @@ class MetricAgreementV5ContractTest {
     }
 
     private fun agreedEconomic() = MetricVariantEconomicsV4(
+        ge360Id = "commercial-01",
         estimateGe360Id = "quote-01",
         variantGe360Id = "variant-01",
         sourceItemGe360Id = "item-01",
