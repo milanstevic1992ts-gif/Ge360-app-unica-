@@ -18,11 +18,13 @@ data class MetricAgreementAttachmentV5(
     val sha256: String,
     val capturedAt: Long = System.currentTimeMillis()
 ) {
-    fun valid() = ge360Id.matches(Regex("[0-9a-fA-F-]{36}")) &&
+    fun valid() = runCatching {
+        UUID.fromString(ge360Id).toString() == ge360Id.lowercase()
+    }.getOrDefault(false) &&
         estimateGe360Id.isNotBlank() && economicsGe360Id.isNotBlank() &&
         fileName.isNotBlank() && fileName.length <= 120 &&
         mimeType in setOf("application/pdf", "image/jpeg", "image/png") &&
-        sizeBytes in 1..MetricAgreementFilesV5.MAX_BYTES &&
+        sizeBytes in 1L..MetricAgreementFilesV5.MAX_BYTES &&
         sha256.matches(Regex("[0-9a-f]{64}")) && capturedAt > 0
 
     fun toJson() = JSONObject()
@@ -74,6 +76,8 @@ data class MetricAgreementCorrectionV5(
             correctedSignedAmountEuro.isFinite())
         require(priorSignedAmountEuro != 0.0 &&
             correctedSignedAmountEuro != 0.0 &&
+            kotlin.math.abs(priorSignedAmountEuro) < 100_000_000.0 &&
+            kotlin.math.abs(correctedSignedAmountEuro) < 100_000_000.0 &&
             (priorSignedAmountEuro > 0) == (correctedSignedAmountEuro > 0) &&
             kotlin.math.abs(adjustmentEuro()) >= 0.01)
         require(status in setOf(STATUS_PROPOSED, STATUS_ATTESTED))
