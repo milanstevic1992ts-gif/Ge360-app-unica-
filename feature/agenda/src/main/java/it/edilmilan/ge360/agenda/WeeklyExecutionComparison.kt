@@ -21,9 +21,6 @@ data class WeeklyLaborDayAudit(
     val sessionCount: Int,
     val incompleteTimers: Int
 ) {
-    val isCompleteDay: Boolean get() = date.isBefore(LocalDate.now())
-    val deviationMinutes: Long? get() =
-        if (isCompleteDay && incompleteTimers == 0) recordedMinutes - plannedMinutes else null
 }
 
 data class WeeklyLaborJobAudit(

@@ -160,7 +160,9 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 if (comparison.completedDays == 0) "Nessuna giornata conclusa da confrontare."
                 else "Giornate passate: " + hours(comparison.closedPlannedMinutes) +
                     " previste · " + hours(comparison.closedRecordedMinutes) + " registrate" +
-                    " · differenza " + signedHours(comparison.closedVariance)
+                    (if (comparison.daily.any { it.incompleteTimers > 0 })
+                        " · timer storici aperti: scostamento non definitivo"
+                     else " · differenza " + signedHours(comparison.closedVariance))
             ))
             if (comparison.unplannedMinutes > 0L) items.addView(hint(
                 "⚠ " + hours(comparison.unplannedMinutes) +
@@ -240,7 +242,7 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
             items.addView(hint(
                 "Ore: " + hours(audit.plannedMinutes) + " previste · " +
                     hours(audit.recordedMinutes) + " registrate · " + status +
-                    if (audit.unplannedMinutes > 0L) " · " + hours(audit.unplannedMinutes) + " senza piano" else ""
+                    (if (audit.unplannedMinutes > 0L) " · " + hours(audit.unplannedMinutes) + " senza piano" else "")
             ))
         }
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }

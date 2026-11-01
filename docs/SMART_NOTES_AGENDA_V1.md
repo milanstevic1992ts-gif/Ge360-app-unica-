@@ -110,3 +110,28 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 - I dati non vengono sincronizzati con il Data Hub dal nuovo modulo; i calendari esterni restano esclusi.
 - Necessari prima dell'uso: compilazione, verifica Android, casi limite date/DST, revisione del flusso persone e assegnazioni, controlli autorizzazioni.
 - Nessuna GitHub Action, test, APK, deploy, merge o modifica al backend eseguita in questa fase.
+
+
+## Fase 6 — Programmato vs effettivo (codice su ramo, NON collaudato)
+- WeeklyExecutionComparison legge le assegnazioni di DailyStore e i timer Giornata originali per ciascun giorno della settimana: nessuna copia di sessioni, nessuna nuova tabella.
+- "Previste" indica la somma dei minuti di PersonnelAssignment; "registrate" è la somma delle durate dei WorkSession presenti nel registro.
+- La vista espone settimana, giorni e cantiere; i giorni futuri e quello corrente non sono trattati come scostamenti definitivi.
+- Il delta di giorni passati è registrate meno previste: NON misura la produttività e non prova che un lavoro senza timer non sia stato eseguito.
+- I timer ancora aperti in giorni precedenti sono evidenziati e non generano falsi conteggi di ore fino a oggi; il confronto di quei giorni non è definitivo.
+- Le ore registrate senza assegnazione vengono evidenziate, ma non inserite automaticamente in pianificazione. Le vecchie sessioni senza UUID personale sono attribuite solo se la corrispondenza nome/cantiere/giorno è univoca.
+- Checklist: mostra numero di lavorazioni "Fatto", aperte e bloccate nello STATO ATTUALE, non come produttività o lavorazioni concluse nella settimana (manca uno storico affidabile di snapshot settimanali).
+- Avanzamento percentuale: letto da JobsiteStore.progressSummary se esiste, come stato attuale. Non viene inventato un obiettivo percentuale a data.
+- Materiali: riepilogo di mancanti, richieste e preparazione deriva da ToolsStore.summary; il pulsante "Confronta materiali" apre la riconciliazione ufficiale MaterialEvidenceActivityV13 per il cantiere via UUID.
+- La riconciliazione di quantità previste/consumate resta nel modulo Materiali V13, che distingue fattura, DDT, consumo e completezza dello storico. Il pianificatore non somma quantità eterogenee né inventa consumi.
+- I dati passano da fonti originali e sono consultati senza creare sessioni, prezzi, movimenti o fatture.
+- Se la lettura dei timer fallisce, il programma settimanale rimane consultabile e il confronto è indicato come NON DISPONIBILE (mai come zero effettivo).
+- Non sono stati compilati APK né avviati test, GitHub Actions o deploy; verificare i confronti con timer aperti, sessioni legacy, lavori con personale senza UUID e cantieri multipli prima dell'uso reale.
+
+### Prossimi controlli di accettazione (da autorizzare separatamente)
+1. Stessa persona, due cantieri, una giornata: tutte le ore registrate sono attribuite una sola volta.
+2. Timbrature senza assegnazioni: ore presenti nel consuntivo, segnalate come non pianificate.
+3. Settimana futura: nessun falso scostamento negativo.
+4. Giornata in corso con timer aperto: valori parziali e avviso.
+5. Timer lasciato aperto da ieri: valori non proiettati impropriamente al presente.
+6. Una lavorazione ancora aperta: non conteggiata come completata per mancanza di storico.
+7. Magazzino con storia parziale: accesso alla riconciliazione ufficiale, nessun delta materiale inventato.
