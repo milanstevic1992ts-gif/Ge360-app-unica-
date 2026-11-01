@@ -127,6 +127,9 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         require(doc.jobsiteId.isBlank() || doc.jobsiteId == scope) {
             "Documento associato a un cantiere diverso. Verificare prima in Scanner"
         }
+        require(doc.pdfPath.isNotBlank() && java.io.File(doc.pdfPath).isFile) {
+            "Documento Scanner senza PDF locale verificabile: associare prima il file"
+        }
         val line = MaterialDocumentLineV13(
             ge360Id = UUID.randomUUID().toString(),
             documentGe360Id = doc.ge360Id,

@@ -546,6 +546,13 @@ class BackupCoordinator(private val context: Context) {
                 jobIds += js.list().map { it.ge360Id }
             } finally { closeAll(ds, ms, js) }
         }
+        val scannerFiles = archive.readManifest(file).optJSONObject("scannerFiles")
+            ?: JSONObject()
+        lines.filter { it.active }.forEach { row ->
+            require(scannerFiles.has(row.documentGe360Id)) {
+                "Backup V13: PDF della fattura/DDT confermata assente dal pacchetto"
+            }
+        }
         lines.forEach { row ->
             val doc = documents[row.documentGe360Id]
                 ?: error("Backup V13: fattura/DDT senza documento Scanner")
