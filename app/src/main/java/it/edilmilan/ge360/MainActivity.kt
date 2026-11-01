@@ -14,6 +14,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import it.edilmilan.ge360.agenda.AgendaActivity
+import it.edilmilan.ge360.agenda.AgendaEntry
 import it.edilmilan.ge360.backup.BackupScheduler
 import it.edilmilan.ge360.backup.JobsiteReplicaCoordinator
 import it.edilmilan.ge360.cantieri.JobsitesActivity
@@ -304,7 +306,10 @@ class MainActivity : AppCompatActivity() {
             "Preventivo",
             "Nuovo rilievo",
             "Spesa / entrata",
-            "Scansiona documento"
+            "Scansiona documento",
+            "Nota veloce",
+            "Attivita\u0027",
+            "Appuntamento"
         )
         runCatching {
             AlertDialog.Builder(this)
@@ -316,6 +321,9 @@ class MainActivity : AppCompatActivity() {
                         2 -> startActivity(Intent(this, FloorPlansActivity::class.java).putExtra(FloorPlansActivity.EXTRA_CREATE_NEW, true))
                         3 -> startActivity(Intent(this, ExpensesActivity::class.java))
                         4 -> startActivity(Intent(this, ScannerActivity::class.java))
+                        5 -> startActivity(Intent(this, AgendaActivity::class.java).putExtra(AgendaActivity.EXTRA_CREATE_KIND, AgendaEntry.NOTE))
+                        6 -> startActivity(Intent(this, AgendaActivity::class.java).putExtra(AgendaActivity.EXTRA_CREATE_KIND, AgendaEntry.TASK))
+                        7 -> startActivity(Intent(this, AgendaActivity::class.java).putExtra(AgendaActivity.EXTRA_CREATE_KIND, AgendaEntry.EVENT))
                     }
                 }
                 .setNegativeButton("Chiudi", null)

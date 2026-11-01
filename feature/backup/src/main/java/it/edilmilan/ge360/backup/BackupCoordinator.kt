@@ -2,6 +2,7 @@ package it.edilmilan.ge360.backup
 
 import android.content.Context
 import android.net.Uri
+import it.edilmilan.ge360.agenda.AgendaStore
 import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
 import it.edilmilan.ge360.attrezzi.MaterialPlanStore
@@ -95,6 +96,7 @@ class BackupCoordinator(private val context: Context) {
                 "modules/centro-cantiere.json" to workflow.exportJson(),
                 "modules/jobsite-archive.json" to jobsiteArchive.exportJson(),
                 "modules/giornata.json" to daily.exportJson(),
+                "modules/agenda.json" to AgendaStore(context).exportJson(),
                 "modules/compensi.json" to compensi.exportJson(),
                 "modules/messaggi.json" to messages.exportJson(),
                 "modules/spese.json" to finances.exportJson(),
@@ -343,6 +345,10 @@ class BackupCoordinator(private val context: Context) {
             val compensiJson = runCatching { archive.readText(file, "modules/compensi.json") }.getOrNull()
             if (compensiJson != null) counts["Compensi"] = compensi.importJson(compensiJson, replaceAll)
             else warnings += "Backup precedente al nuovo registro Compensi: archivio Compensi attuale conservato, nessun pagamento storico dedotto."
+
+            val agendaJson = runCatching { archive.readText(file, "modules/agenda.json") }.getOrNull()
+            if (agendaJson != null) counts["Note e Agenda"] = AgendaStore(context).importJson(agendaJson, replaceAll)
+            else warnings += "Backup precedente al modulo Note e Agenda: eventuali dati locali conservati."
 
             counts["Messaggi"] = messages.importJson(archive.readText(file, "modules/messaggi.json"), replaceAll)
             counts["Spese"] = finances.importJson(archive.readText(file, "modules/spese.json"), replaceAll)
@@ -841,6 +847,7 @@ class BackupCoordinator(private val context: Context) {
             "modules/preventivi-customizations.json" to PreventiviCustomizationStore.FULL_BACKUP_SCHEMA,
             "modules/attrezzi-custom-packs.json" to CustomWorkPackStore.BACKUP_SCHEMA,
             "modules/compensi.json" to CompensationStore.SCHEMA,
+            "modules/agenda.json" to AgendaStore.SCHEMA,
             "modules/furgone.json" to VanPreparationStore.BACKUP_SCHEMA
         )
         optionalSchemas.forEach { (path, schema) ->

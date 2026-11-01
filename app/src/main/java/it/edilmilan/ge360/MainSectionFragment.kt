@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.agenda.AgendaActivity
 import it.edilmilan.ge360.attrezzi.ToolsHubActivity
 import it.edilmilan.ge360.backup.BackupActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
@@ -207,6 +208,7 @@ class MainSectionFragment : Fragment() {
         title("Altro", "Tutti gli strumenti operativi, ordinati senza affollare la Home.")
         sectionTitle("Lavoro e organizzazione")
         toolGrid(
+            Tool("Note e Agenda", "Taccuino, scadenze e appuntamenti", AgendaActivity::class.java),
             Tool("Clienti", "Contatti e follow-up", ClientsActivity::class.java),
             Tool("Giornata", "Ore e rapportino", DailyWorkActivity::class.java),
             Tool("Collaboratori", "Paghe e promemoria", CollaboratorsActivity::class.java),

@@ -1,6 +1,7 @@
 package it.edilmilan.ge360.sync
 
 import android.content.Context
+import it.edilmilan.ge360.agenda.AgendaStore
 import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.attrezzi.CustomWorkPackStore
 import it.edilmilan.ge360.attrezzi.VanPreparationPlan
@@ -253,6 +254,7 @@ object DataHubSyncCoordinator {
                 snapshot("jobsite_archive", jobsiteArchive.exportJson()),
                 snapshot("giornata", daily.exportJson()),
                 snapshot("compensi", compensiSnapshot(compensi, daily)),
+                snapshot("agenda", AgendaStore(context).exportForSyncJson()),
                 snapshot("messaggi", messages.exportJson()),
                 snapshot("spese", finances.exportJson()),
                 snapshot("scanner", documents.exportJson()),

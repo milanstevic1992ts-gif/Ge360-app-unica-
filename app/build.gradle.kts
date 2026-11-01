@@ -57,6 +57,7 @@ dependencies {
     implementation(project(":feature:backup"))
     implementation(project(":feature:marketing"))
     implementation(project(":feature:jarvis"))
+    implementation(project(":feature:agenda"))
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")

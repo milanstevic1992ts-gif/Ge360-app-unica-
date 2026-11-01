@@ -36,3 +36,5 @@ include(":feature:fisco")
 include(":feature:backup")
 include(":feature:marketing")
 include(":feature:jarvis")
+
+include(":feature:agenda")

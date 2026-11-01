@@ -31,6 +31,7 @@ dependencies {
     implementation(project(":feature:attrezzi"))
     implementation(project(":feature:galleria"))
     implementation(project(":feature:fisco"))
+    implementation(project(":feature:agenda"))
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
