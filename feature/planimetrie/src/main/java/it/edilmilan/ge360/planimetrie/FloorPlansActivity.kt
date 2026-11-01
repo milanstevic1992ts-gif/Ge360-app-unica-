@@ -7,6 +7,10 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.text.InputType
+import java.math.BigDecimal
+import it.edilmilan.ge360.preventivi.MeasuredEstimateDraftV1
+import it.edilmilan.ge360.preventivi.EstimateStatuses
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
@@ -157,6 +161,12 @@ class FloorPlansActivity : AppCompatActivity() {
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
                 val bindings = store.workBindings(plan.ge360Id)
                 if (bindings.isNotEmpty()) {
+                    addView(MaterialButton(this@FloorPlansActivity).apply {
+                        text = "RIVEDI QUANTITÀ → BOZZA PREVENTIVO"
+                        setOnClickListener { openMeasuredReview(plan) }
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+                    ))
                     val linkedRooms = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
                     val stale = bindings.count { binding ->
                         linkedRooms[binding.roomGe360Id]?.let { room ->
@@ -176,6 +186,176 @@ class FloorPlansActivity : AppCompatActivity() {
                 }
             })
         }
+    }
+
+    /**
+     * Strict operator review: existing immutable source bindings, explicit manual
+     * deduction and a disabled zero-price estimate item. Never modify prior rows.
+     */
+    private fun openMeasuredReview(plan: FloorPlanRecord) {
+        val roomIndex = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
+        val bindings = store.workBindings(plan.ge360Id)
+        if (bindings.isEmpty()) {
+            Toast.makeText(this, "Prima collega almeno una lavorazione dal rilievo",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val labels = bindings.map { binding ->
+            val room = roomIndex[binding.roomGe360Id]
+            val valid = room != null &&
+                PlanGeometryQuantitiesV2.matches(binding, room, store.walls(room.ge360Id))
+            val status = if (valid) "PRONTA PER REVISIONE" else "MISURE DA RICONFERMARE"
+            "${room?.name ?: "Ambiente rimosso"} · ${binding.workCode} · " +
+                "${binding.surface} · " +
+                String.format(Locale.ITALY, "%.2f", binding.quantityM2) +
+                " m² · $status"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Selezioni dal rilievo")
+            .setItems(labels.toTypedArray()) { _, index ->
+                reviewMeasuredBinding(plan, bindings[index])
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun reviewMeasuredBinding(plan: FloorPlanRecord, binding: PlanWorkBindingV1) {
+        val room = store.rooms(plan.ge360Id)
+            .singleOrNull { it.ge360Id == binding.roomGe360Id }
+        if (room == null || !PlanGeometryQuantitiesV2.matches(
+                binding, room, store.walls(room.ge360Id))) {
+            Toast.makeText(this, "Geometria variata: ripeti la selezione dal rilievo",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val estimate = estimateStore.getByGe360Id(binding.estimateGe360Id)
+        if (estimate == null || estimate.status !in setOf(
+                EstimateStatuses.DRAFT, EstimateStatuses.REVIEW)) {
+            Toast.makeText(this, "Serve un preventivo esistente in bozza o da controllare",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        if (plan.jobsiteId.isNotBlank() && estimate.jobsiteId.isNotBlank() &&
+            plan.jobsiteId != estimate.jobsiteId) {
+            Toast.makeText(this, "Cantiere del rilievo diverso da quello del preventivo",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val work = StandardWorkCatalog.byCode(binding.workCode)
+        if (work == null || work.unit != "m²") {
+            Toast.makeText(this, "Lavorazione m² non più disponibile nel catalogo",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val preview = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        preview.addView(TextView(this).apply {
+            text = "Preventivo ${estimate.number} · ${estimate.status}\n" +
+                "Ambiente: ${room.name}\n" +
+                "Lavorazione: ${work.code} · ${work.title}\n" +
+                "Superficie: ${binding.surface}" +
+                (binding.wallGe360Id?.let { "\nParete UUID: $it" } ?: "") +
+                "\nLordo: ${String.format(Locale.ITALY, "%.2f", binding.grossM2)} m²" +
+                "\nAperture già detratte: " +
+                "${String.format(Locale.ITALY, "%.2f", binding.openingDeductionsM2)} m²" +
+                "\nNetto rilevato: " +
+                "${String.format(Locale.ITALY, "%.2f", binding.quantityM2)} m²"
+            textSize = 14f
+        })
+        val deduction = EditText(this).apply {
+            hint = "Ulteriore detrazione manuale m² (0 se nessuna)"
+            setText("0")
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val reason = EditText(this).apply {
+            hint = "Motivazione della detrazione (obbligatoria se diversa da zero)"
+            minLines = 2
+        }
+        val relatedRows = estimate.items.filter { it.priceListCode == binding.workCode &&
+            it.room.trim().equals(room.name.trim(), ignoreCase = true) }
+        preview.addView(TextView(this).apply {
+            text = if (relatedRows.isEmpty())
+                "Nessuna voce con lo stesso codice e ambiente riconosciuta."
+            else "ATTENZIONE: ${relatedRows.size} voci esistenti con codice e ambiente " +
+                "uguali. La sovrapposizione di superfici già importate blocca l'operazione."
+            textSize = 12f
+            setPadding(0, dp(12), 0, dp(4))
+        })
+        preview.addView(deduction)
+        preview.addView(reason)
+        val verifyManual = CheckBox(this).apply {
+            text = "Ho controllato le altre voci: non sto conteggiando due volte " +
+                "una lavorazione manuale."
+        }
+        val verifyReason = EditText(this).apply {
+            hint = "Motivo della verifica (se esistono voci manuali simili)"
+        }
+        preview.addView(verifyManual)
+        preview.addView(verifyReason)
+        val confirm = CheckBox(this).apply {
+            text = "CONFERMO la quantità revisionata. Crea soltanto una voce " +
+                "fuori totale con prezzo 0 €, da prezzare manualmente."
+        }
+        preview.addView(confirm)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Revisione metratura → bozza")
+            .setView(ScrollView(this).apply { addView(preview) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("CONFERMA VOCE FUORI TOTALE", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    require(confirm.isChecked) { "Conferma esplicitamente la revisione" }
+                    // Re-read geometry + quote immediately before touching the quote database.
+                    val latestRoom = store.rooms(plan.ge360Id)
+                        .singleOrNull { it.ge360Id == binding.roomGe360Id }
+                        ?: error("Ambiente non più disponibile")
+                    require(PlanGeometryQuantitiesV2.matches(
+                        binding, latestRoom, store.walls(latestRoom.ge360Id)
+                    )) { "Geometria modificata: selezione scaduta" }
+                    val extra = BigDecimal(deduction.text.toString().trim()
+                        .replace(',', '.')).toDouble()
+                    val request = MeasuredEstimateDraftV1(
+                        sourceBindingGe360Id = binding.ge360Id,
+                        planGe360Id = binding.planGe360Id,
+                        roomGe360Id = binding.roomGe360Id,
+                        wallGe360Id = binding.wallGe360Id,
+                        roomLabel = latestRoom.name,
+                        workCode = binding.workCode,
+                        surface = binding.surface,
+                        geometryFingerprint = binding.geometryFingerprint,
+                        measuredQuantityM2 = binding.quantityM2,
+                        grossM2 = binding.grossM2,
+                        openingDeductionsM2 = binding.openingDeductionsM2,
+                        additionalDeductionM2 = extra,
+                        deductionReason = reason.text.toString().trim(),
+                        manualOverlapAcknowledged = verifyManual.isChecked,
+                        manualOverlapReason = verifyReason.text.toString().trim()
+                    )
+                    require(request.valid()) {
+                        "Controllare la detrazione: numeri non validi, eccedenti o senza motivo"
+                    }
+                    estimateStore.insertMeasuredReviewLine(
+                        estimate.ge360Id, estimate.updatedAt, request
+                    )
+                }.onSuccess {
+                    dialog.dismiss()
+                    renderList()
+                    Toast.makeText(this,
+                        "Voce misurata aggiunta fuori totale, prezzo 0 €. " +
+                            "Apri Preventivi per verificarla e prezzarla.",
+                        Toast.LENGTH_LONG).show()
+                }.onFailure {
+                    Toast.makeText(this,
+                        it.message ?: "Trasferimento non eseguito", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun chooseWorkBinding(plan: FloorPlanRecord) {
