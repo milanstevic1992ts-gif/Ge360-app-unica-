@@ -38,7 +38,7 @@ data class MetricVariantEconomicsV4(
             variantGe360Id.isNotBlank() && sourceItemGe360Id.isNotBlank())
         require(deltaM2.isFinite() && abs(deltaM2) >= 0.01 &&
             abs(deltaM2) < 1_000_000.0)
-        require(kind == if (deltaM2 > 0) KIND_EXTRA else KIND_REDUCTION)
+        require(kind == (if (deltaM2 > 0) KIND_EXTRA else KIND_REDUCTION))
         require(pricingMode in setOf(MODE_UNIT, MODE_LUMP_SUM))
         require(proposedUnitRateEuro.isFinite() && proposedLumpSumEuro.isFinite() &&
             proposedUnitRateEuro >= 0.0 && proposedLumpSumEuro >= 0.0)
@@ -63,7 +63,9 @@ data class MetricVariantEconomicsV4(
         } else {
             require(externalAgreementReference.trim().length >= 8 &&
                 evidenceNote.trim().length >= 8 && attestedAt >= proposedAt)
-            LocalDate.parse(externalAgreementDate)
+            require(!LocalDate.parse(externalAgreementDate).isAfter(LocalDate.now())) {
+                "La data dell'accordo non può essere futura"
+            }
         }
         true
     }.getOrDefault(false)
