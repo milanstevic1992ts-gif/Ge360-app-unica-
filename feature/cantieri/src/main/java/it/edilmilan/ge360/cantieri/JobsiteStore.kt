@@ -473,7 +473,8 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
             snapshots = progressSnapshots(jobsiteId, 2000),
             current = progressSummary(jobsiteId),
             targetDateIso = job.targetEndDate,
-            hasUnresolvedBlockers = hasUnresolvedBlockers
+            hasUnresolvedBlockers = hasUnresolvedBlockers,
+            isOperational = job.status != STATUS_INSPECTION && job.status != STATUS_ESTIMATE
         )
     }
 

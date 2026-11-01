@@ -211,3 +211,5 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 8. Data teorica oltre due anni: nessuna data.
 9. Stato 100%: non dedurre consegna.
 10. Riapertura del planner su settimane passate: non applicare ore storiche come ritmo della settimana corrente.
+
+- Gate aggiuntivi: non simulare date quando il cantiere è solo in sopralluogo/preventivo; confrontare anche le percentuali delle singole fasi con l'ultimo snapshot (un totale uguale non basta se le fasi cambiano).

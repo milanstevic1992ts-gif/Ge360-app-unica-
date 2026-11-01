@@ -1,6 +1,7 @@
 package it.edilmilan.ge360.cantieri
 
 import java.security.MessageDigest
+import org.json.JSONArray
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.math.ceil
@@ -56,12 +57,35 @@ object ProgressScenarioForecast {
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
+    /** Avoid silently trusting equal overall % when individual phases have changed. */
+    private fun samePhases(
+        latest: JobsiteProgressSnapshot,
+        current: List<JobsiteProgressItem>
+    ): Boolean {
+        if (latest.phaseCount != current.size) return false
+        val recorded = runCatching {
+            val rows = JSONArray(latest.phasesJson)
+            (0 until rows.length()).map { i ->
+                val row = rows.getJSONObject(i)
+                row.getString("ge360Id") to
+                    (row.getInt("weight") to row.getInt("percent"))
+            }
+        }.getOrNull() ?: return false
+        if (recorded.size != current.size) return false
+        val byId = recorded.toMap()
+        if (byId.size != current.size) return false
+        return current.all { phase ->
+            byId[phase.ge360Id] == (phase.weight to phase.progressPercent)
+        }
+    }
+
     fun evaluate(
         snapshots: List<JobsiteProgressSnapshot>,
         current: JobsiteProgressSummary?,
         targetDateIso: String,
         today: LocalDate = LocalDate.now(),
-        hasUnresolvedBlockers: Boolean = false
+        hasUnresolvedBlockers: Boolean = false,
+        isOperational: Boolean = true
     ): ProgressFinishAssessment {
         val target = runCatching { LocalDate.parse(targetDateIso) }.getOrNull()
         val assumptions = listOf(
@@ -82,6 +106,10 @@ object ProgressScenarioForecast {
             emptyList(), target, listOf(reason), assumptions
         )
 
+        if (!isOperational) return stop(
+            ProgressFinishAssessment.State.NOT_READY,
+            "Cantiere in sopralluogo/preventivo: non esiste ancora una fase operativa da proiettare"
+        )
         if (current == null || current.items.isEmpty()) return stop(
             ProgressFinishAssessment.State.NOT_READY,
             "Nessuna misurazione attuale delle fasi: verifica Avanzamento & SAL"
@@ -126,6 +154,12 @@ object ProgressScenarioForecast {
             ProgressFinishAssessment.State.NEEDS_NEW_MEASUREMENT,
             "Avanzamento attuale " + current.percent + "% diverso dall'ultima rilevazione (" +
                 latest.second.percent + "%): registra una nuova misura prima della simulazione",
+            daily.size, 0L, latest.first, latest.second.percent
+        )
+
+        if (!samePhases(latest.second, current.items)) return stop(
+            ProgressFinishAssessment.State.NEEDS_NEW_MEASUREMENT,
+            "Le percentuali delle singole fasi sono cambiate anche se il totale è uguale: registra la situazione attuale",
             daily.size, 0L, latest.first, latest.second.percent
         )
 
