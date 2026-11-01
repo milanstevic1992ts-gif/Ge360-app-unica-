@@ -144,10 +144,27 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         db.execSQL("CREATE INDEX idx_floor_plan_updated ON floor_plans(updated_at DESC)")
         db.execSQL("CREATE INDEX idx_floor_plan_rooms_plan ON floor_plan_rooms(floor_plan_id, sort_order, id)")
         createWallsTable(db)
+        createBindingsTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createWallsTable(db)
+        if (oldVersion < 3) createBindingsTable(db)
+    }
+
+    private fun createBindingsTable(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS floor_plan_work_bindings (
+            ge360_id TEXT PRIMARY KEY,
+            plan_ge360_id TEXT NOT NULL,
+            room_ge360_id TEXT NOT NULL,
+            estimate_ge360_id TEXT NOT NULL,
+            work_code TEXT NOT NULL,
+            surface TEXT NOT NULL,
+            quantity_m2 REAL NOT NULL,
+            room_revision_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_bindings_plan ON floor_plan_work_bindings(plan_ge360_id)")
     }
 
     private fun createWallsTable(db: SQLiteDatabase) {
@@ -166,6 +183,53 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_floor_plan_walls_room ON floor_plan_walls(room_id, sort_order, id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_floor_plan_walls_plan ON floor_plan_walls(floor_plan_id, room_id)")
+    }
+
+    fun workBindings(planId: String): List<PlanWorkBindingV1> {
+        val result = mutableListOf<PlanWorkBindingV1>()
+        readableDatabase.query("floor_plan_work_bindings", null, "plan_ge360_id=?",
+            arrayOf(planId), null, null, "created_at DESC").use { c ->
+            while (c.moveToNext()) result += PlanWorkBindingV1(
+                ge360Id = c.getString(c.getColumnIndexOrThrow("ge360_id")),
+                planGe360Id = c.getString(c.getColumnIndexOrThrow("plan_ge360_id")),
+                roomGe360Id = c.getString(c.getColumnIndexOrThrow("room_ge360_id")),
+                estimateGe360Id = c.getString(c.getColumnIndexOrThrow("estimate_ge360_id")),
+                workCode = c.getString(c.getColumnIndexOrThrow("work_code")),
+                surface = c.getString(c.getColumnIndexOrThrow("surface")),
+                quantityM2 = c.getDouble(c.getColumnIndexOrThrow("quantity_m2")),
+                roomRevisionAt = c.getLong(c.getColumnIndexOrThrow("room_revision_at")),
+                createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"))
+            )
+        }
+        return result
+    }
+
+    private fun bindingValues(b: PlanWorkBindingV1) = ContentValues().apply {
+        put("ge360_id", b.ge360Id); put("plan_ge360_id", b.planGe360Id)
+        put("room_ge360_id", b.roomGe360Id); put("estimate_ge360_id", b.estimateGe360Id)
+        put("work_code", b.workCode); put("surface", b.surface)
+        put("quantity_m2", b.quantityM2); put("room_revision_at", b.roomRevisionAt)
+        put("created_at", b.createdAt)
+    }
+
+    fun addWorkBindings(rows: List<PlanWorkBindingV1>) {
+        require(rows.isNotEmpty() && rows.distinctBy { it.ge360Id }.size == rows.size)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            rows.forEach { b ->
+                require(b.valid()) { "Collegamento non valido" }
+                require(get(b.planGe360Id) != null) { "Rilievo non trovato" }
+                val room = rooms(b.planGe360Id).singleOrNull { it.ge360Id == b.roomGe360Id }
+                    ?: error("Ambiente non trovato")
+                require(room.updatedAt == b.roomRevisionAt &&
+                    kotlin.math.abs(PlanWorkBindingV1.quantity(room, b.surface) - b.quantityM2) < 0.01) {
+                    "Misure cambiate: ricontrollare la selezione"
+                }
+                db.insertOrThrow("floor_plan_work_bindings", null, bindingValues(b))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
 
     fun list(): List<FloorPlanRecord> {
@@ -562,7 +626,7 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
 
     companion object {
         private const val DB_NAME = "ge360_rilievi.db"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
         const val BACKUP_SCHEMA = "ge360.planimetrie.v1"
     }
 }
