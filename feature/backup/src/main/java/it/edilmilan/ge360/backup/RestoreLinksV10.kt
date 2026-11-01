@@ -31,7 +31,9 @@ internal object RestoreLinksV10 {
         val clientIds: Set<String> = emptySet(),
         val jobIds: Set<String> = emptySet(),
         val estimateIds: Set<String> = emptySet(),
-        val planRooms: Map<String, Set<String>> = emptyMap()
+        val planRooms: Map<String, Set<String>> = emptyMap(),
+        val jobClients: Map<String, String> = emptyMap(),
+        val estimateLinks: Map<String, Pair<String, String>> = emptyMap()
     )
 
     data class Report(
@@ -53,6 +55,13 @@ internal object RestoreLinksV10 {
             if (replaceAll) emptySet() else local.jobIds
         val estimateIds = uniqueIds(estimates, "Preventivi") +
             if (replaceAll) emptySet() else local.estimateIds
+
+        val jobClients = (if (replaceAll) emptyMap() else local.jobClients) +
+            rowsMap(jobs) { it.optString("clientGe360Id") }
+        val estimateLinks = (if (replaceAll) emptyMap() else local.estimateLinks) +
+            rowsMap(estimates) {
+                it.optString("clientGe360Id") to it.optString("jobsiteId")
+            }
 
         val plansJson = snapshot.floorPlans?.let(::JSONObject)
         val plans = plansJson?.getJSONArray("floorPlans")
@@ -90,8 +99,19 @@ internal object RestoreLinksV10 {
 
         each(jobs) { client(it.optString("clientGe360Id")) }
         each(estimates) {
-            client(it.optString("clientGe360Id"))
-            job(it.optString("jobsiteId"))
+            val clientId = it.optString("clientGe360Id")
+            val jobId = it.optString("jobsiteId")
+            client(clientId)
+            job(jobId)
+            if (uuid.matches(clientId) && uuid.matches(jobId)) {
+                val jobClientId = jobClients[jobId].orEmpty()
+                if (uuid.matches(jobClientId)) {
+                    checked++
+                    require(clientId == jobClientId) {
+                        "Backup incoerente: preventivo e cantiere hanno clienti GE360 differenti"
+                    }
+                }
+            }
         }
 
         val progress = JSONObject(snapshot.jobs).optJSONArray("progressItems")
@@ -113,8 +133,19 @@ internal object RestoreLinksV10 {
 
         plans?.let { rows ->
             each(rows) {
-                job(it.optString("jobsiteId"))
-                estimate(it.optString("estimateId"))
+                val jobId = it.optString("jobsiteId")
+                val estimateId = it.optString("estimateId")
+                job(jobId)
+                estimate(estimateId)
+                if (uuid.matches(jobId) && uuid.matches(estimateId)) {
+                    val estimateJobId = estimateLinks[estimateId]?.second.orEmpty()
+                    if (uuid.matches(estimateJobId)) {
+                        checked++
+                        require(jobId == estimateJobId) {
+                            "Backup incoerente: rilievo e preventivo richiamano cantieri differenti"
+                        }
+                    }
+                }
             }
             plansJson?.optJSONArray("workBindings")?.let { bindings ->
                 uniqueIds(bindings, "Collegamenti rilievi")
@@ -157,6 +188,17 @@ internal object RestoreLinksV10 {
 
     private inline fun each(rows: JSONArray, block: (JSONObject) -> Unit) {
         for (i in 0 until rows.length()) block(rows.getJSONObject(i))
+    }
+
+    private inline fun <T> rowsMap(
+        rows: JSONArray, extract: (JSONObject) -> T
+    ): Map<String, T> {
+        val result = linkedMapOf<String, T>()
+        each(rows) { row ->
+            val id = row.optString("ge360Id").trim()
+            if (id.isNotBlank()) result[id] = extract(row)
+        }
+        return result
     }
 
     private fun uniqueIds(rows: JSONArray, kind: String, allowBlank: Boolean = false): Set<String> {
