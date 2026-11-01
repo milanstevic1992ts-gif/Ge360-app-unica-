@@ -308,34 +308,57 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             require(lines.none { it.ge360Id == item.ge360Id }) {
                 "Questa selezione è già presente nel preventivo"
             }
-            lines.forEach { previous ->
-                val origin = MeasuredEstimateDraftV1.sourceOf(previous)
-                if (origin != null && origin.optString("work") == source.workCode &&
-                    origin.optString("plan") == source.planGe360Id &&
-                    origin.optString("room") == source.roomGe360Id) {
-                    require(origin.optString("binding") != source.sourceBindingGe360Id) {
-                        "Questo collegamento è già stato importato"
-                    }
-                    val previousSurface = origin.optString("surface")
-                    val previousWall = origin.optString("wall").ifBlank { null }
+            val existingSources = metricSourcesForEstimateId(estimate.id)
+            existingSources.forEach { origin ->
+                require(origin.sourceBindingGe360Id != source.sourceBindingGe360Id) {
+                    "Questa selezione è già presente nel registro delle origini"
+                }
+                if (origin.workCode == source.workCode &&
+                    origin.planGe360Id == source.planGe360Id &&
+                    origin.roomGe360Id == source.roomGe360Id) {
                     require(!MeasuredEstimateDraftV1.surfacesOverlap(
-                        previousSurface, previousWall, source.surface, source.wallGe360Id
+                        origin.surface, origin.wallGe360Id, source.surface, source.wallGe360Id
                     )) {
-                        "Stessa lavorazione già presente su una superficie sovrapposta. " +
-                            "Controllare e risolvere la voce precedente prima di importare."
+                        "Lavorazione già presente su una superficie sovrapposta: verificare la variante"
                     }
-                } else if (origin == null && previous.priceListCode == source.workCode &&
-                    previous.room.trim().equals(source.roomLabel.trim(), ignoreCase = true)) {
-                    require(source.manualOverlapAcknowledged &&
-                        source.manualOverlapReason.trim().length >= 8) {
-                        "Esiste una voce manuale simile per la stanza. " +
-                            "Confermare l'assenza di doppio conteggio e motivare."
+                }
+            }
+            lines.forEach { previous ->
+                val existingSource = existingSources.firstOrNull {
+                    it.itemGe360Id == previous.ge360Id
+                }
+                if (existingSource == null) {
+                    require(!previous.internalNote.contains(MeasuredEstimateDraftV1.SOURCE_MARKER)) {
+                        "Riferimento metrico legacy non riconosciuto: verificare prima il backup"
+                    }
+                    if (previous.priceListCode == source.workCode &&
+                        previous.room.trim().equals(source.roomLabel.trim(), ignoreCase = true)) {
+                        require(source.manualOverlapAcknowledged &&
+                            source.manualOverlapReason.trim().length >= 8) {
+                            "Possibile duplicazione con voce manuale della stanza: motivare la verifica"
+                        }
                     }
                 }
             }
             // The review item has included=false and unitPrice=0, so totals never increase.
             item.estimateId = estimate.id
             db.insertOrThrow("estimate_items", null, itemValues(item))
+            val provenance = MetricProvenanceV2.fromApprovedDraft(estimateGe360Id, source)
+            require(provenance.valid()) { "Snapshot origine metratura incompleto" }
+            db.insertOrThrow("estimate_metric_sources", null,
+                metricSourceValues(estimate.id, provenance))
+            val importEvent = MetricReviewEventV2(
+                estimateGe360Id = estimateGe360Id,
+                itemGe360Id = item.ge360Id,
+                action = "IMPORT",
+                priorPrice = 0.0,
+                newPrice = 0.0,
+                wasIncluded = false,
+                nowIncluded = false,
+                reason = "Revisione manuale della metratura; prima importazione fuori totale"
+            )
+            db.insertOrThrow("estimate_metric_events", null,
+                metricEventValues(estimate.id, importEvent))
             val now = maxOf(System.currentTimeMillis(), estimate.updatedAt + 1)
             val touched = db.update("estimates", ContentValues().apply {
                 put("updated_at", now)
