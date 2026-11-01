@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
+import it.edilmilan.ge360.attrezzi.MaterialEvidenceActivityV13
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.core.common.Ge360Contracts
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
@@ -148,6 +149,33 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 model.openIssues + " cantieri da verificare · " +
                 model.conflicts.size + " sovrapposizioni"
         ))
+        val comparison = model.execution
+        if (comparison == null) {
+            items.addView(hint("Confronto delle ore non disponibile. Consulta il registro Giornata."))
+        } else {
+            items.addView(header("PROGRAMMATO / REGISTRATO"))
+            items.addView(info(
+                "Settimana: " + hours(comparison.plannedMinutes) + " previste · " +
+                    hours(comparison.recordedMinutes) + " registrate finora",
+                if (comparison.completedDays == 0) "Nessuna giornata conclusa da confrontare."
+                else "Giornate passate: " + hours(comparison.closedPlannedMinutes) +
+                    " previste · " + hours(comparison.closedRecordedMinutes) + " registrate" +
+                    " · differenza " + signedHours(comparison.closedVariance)
+            ))
+            if (comparison.unplannedMinutes > 0L) items.addView(hint(
+                "⚠ " + hours(comparison.unplannedMinutes) +
+                    " registrate senza assegnazione corrispondente. Controlla il registro prima di correggere il piano."
+            ))
+            if (comparison.runningTimers > 0) items.addView(hint(
+                comparison.runningTimers.toString() +
+                    " timer ancora aperti: i valori registrati possono aumentare."
+            ))
+            items.addView(hint(
+                "La differenza riguarda le ore annotate nei timer, non la produttività. " +
+                    "Un'assenza di timbratura non prova che il lavoro non sia stato eseguito."
+            ))
+        }
+
         if (model.people.isEmpty()) items.addView(hint(
             "Nessun collaboratore attivo registrato. Aggiungilo nella sezione Collaboratori/Giornata."
         ))
@@ -166,6 +194,18 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         relevantJobs.forEach { state ->
             val details = buildString {
                 append(state.openWork).append(" lavorazioni aperte")
+                append(" · ").append(state.doneWork).append(" completate (stato attuale)")
+                state.progressPercent?.let { append(" · avanzamento attuale ").append(it).append("%") }
+                model.execution?.byJob?.get(state.job.ge360Id)?.let { labor ->
+                    append("\nOre settimana: ").append(hours(labor.plannedMinutes))
+                        .append(" previste · ").append(hours(labor.recordedMinutes))
+                        .append(" registrate")
+                    if (labor.closedPlannedMinutes > 0 || labor.closedRecordedMinutes > 0) {
+                        append("\nGiornate passate: ").append(hours(labor.closedPlannedMinutes))
+                            .append(" pianificate · ").append(hours(labor.closedRecordedMinutes))
+                            .append(" registrate")
+                    }
+                }
                 if (state.blockedWork > 0) append(" · ").append(state.blockedWork).append(" bloccate")
                 if (state.resources == null) append(" · materiali non disponibili")
                 else {
@@ -178,7 +218,9 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 state.job.displayTitle(),
                 details,
                 if (state.needsReview) 0xFFFFF2E9.toInt() else Ge360Brand.Surface,
-                onOpen = { openMaterials(state.job) }
+                onOpen = { openMaterials(state.job) },
+                secondaryLabel = "Confronta materiali",
+                onSecondary = { openMaterialEvidence(state.job) }
             ))
         }
         items.addView(hint(
@@ -188,6 +230,19 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
 
     private fun renderDay(day: WeeklyPlannerDay, model: WeeklyPlannerSnapshot) {
         items.addView(header(day.date.format(shortDate).replaceFirstChar { it.uppercase() }))
+        model.execution?.daily?.firstOrNull { it.date == day.date }?.let { audit ->
+            val status = when {
+                day.date.isAfter(LocalDate.now()) -> "da eseguire"
+                day.date == LocalDate.now() -> "in corso / parziale"
+                audit.incompleteTimers > 0 -> "timer aperti da verificare"
+                else -> "giornata conclusa"
+            }
+            items.addView(hint(
+                "Ore: " + hours(audit.plannedMinutes) + " previste · " +
+                    hours(audit.recordedMinutes) + " registrate · " + status +
+                    if (audit.unplannedMinutes > 0L) " · " + hours(audit.unplannedMinutes) + " senza piano" else ""
+            ))
+        }
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         actions.addView(MaterialButton(this).apply {
             text = "＋ Assegna squadra"
@@ -366,6 +421,11 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         })
     }
 
+    private fun openMaterialEvidence(job: JobsiteRecord) {
+        startActivity(Intent(this, MaterialEvidenceActivityV13::class.java)
+            .putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, job.ge360Id))
+    }
+
     private fun openMaterials(job: JobsiteRecord) {
         startActivity(Intent(this, WorkPreparationActivity::class.java)
             .putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, job.ge360Id))
@@ -387,7 +447,10 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         else toast("Scheda originale non disponibile")
     }
 
-    private fun rowCard(title: String, detail: String, background: Int, onOpen: () -> Unit): View {
+    private fun rowCard(
+        title: String, detail: String, background: Int, onOpen: () -> Unit,
+        secondaryLabel: String? = null, onSecondary: (() -> Unit)? = null
+    ): View {
         val card = MaterialCardView(this).apply {
             radius = dp(16).toFloat()
             strokeColor = Ge360Brand.Border
@@ -412,6 +475,14 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(4), 0, 0)
             })
+            if (secondaryLabel != null && onSecondary != null) {
+                addView(MaterialButton(this@WeeklySitePlannerActivity).apply {
+                    text = secondaryLabel
+                    isAllCaps = false
+                    textSize = 11f
+                    setOnClickListener { onSecondary() }
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+            }
         })
         card.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
@@ -440,6 +511,12 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         setTextColor(Ge360Brand.TextSecondary)
         setPadding(dp(10), dp(9), dp(10), dp(9))
     }
+
+    private fun hours(minutes: Long): String =
+        String.format(Locale.ITALY, "%.1f h", minutes / 60.0)
+
+    private fun signedHours(minutes: Long): String =
+        (if (minutes > 0L) "+" else "") + hours(minutes)
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
     private fun dp(v: Int): Int = (resources.displayMetrics.density * v).toInt()
