@@ -1449,7 +1449,11 @@ class EstimatesActivity : AppCompatActivity() {
     private fun deleteConfirm(r: EstimateRecord) = AlertDialog.Builder(this)
         .setTitle("Elimina preventivo")
         .setMessage("Eliminare ${r.number}?")
-        .setPositiveButton("Elimina") { _, _ -> store.delete(r.id); refresh() }
+        .setPositiveButton("Elimina") { _, _ ->
+            runCatching { store.delete(r.id) }
+                .onSuccess { refresh() }
+                .onFailure { toast(it.message ?: "Cancellazione non consentita") }
+        }
         .setNegativeButton("Annulla", null)
         .show()
 
