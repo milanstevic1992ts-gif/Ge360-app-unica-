@@ -167,9 +167,27 @@ class JobsiteWorkflowStore(context: Context) : SQLiteOpenHelper(context, DB_NAME
         db.execSQL("CREATE INDEX idx_notes_job ON jobsite_notes(jobsite_id, pinned DESC, updated_at DESC)")
         db.execSQL("CREATE INDEX idx_events_job ON workflow_events(jobsite_id, created_at DESC)")
         db.execSQL("CREATE INDEX idx_learning_status ON learning_suggestions(status, occurrences DESC)")
+        createTaskPlanTable(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createTaskPlanTable(db)
+    }
+
+    private fun createTaskPlanTable(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS workflow_task_plans (
+                task_ge360_id TEXT PRIMARY KEY NOT NULL,
+                jobsite_id TEXT NOT NULL,
+                planned_workdays INTEGER NOT NULL DEFAULT 0,
+                predecessor_ids_json TEXT NOT NULL DEFAULT '[]',
+                note TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_workflow_plan_job ON workflow_task_plans(jobsite_id, updated_at DESC)")
+    }
 
     fun tasks(jobsiteId: String): List<WorkflowTask> {
         if (jobsiteId.isBlank()) return emptyList()
@@ -328,7 +346,10 @@ class JobsiteWorkflowStore(context: Context) : SQLiteOpenHelper(context, DB_NAME
     }
 
     fun deleteTask(task: WorkflowTask) {
+        writableDatabase.delete(PLANS, "task_ge360_id=?", arrayOf(task.ge360Id))
         writableDatabase.delete(TASKS, "id=?", arrayOf(task.id.toString()))
+        // Incoming dependencies are intentionally NOT auto-rewired:
+        // the schedule will expose a missing predecessor for manual correction.
         recordEvent(task.jobsiteId, "TASK_DELETE", "Attività rimossa", task.title, task.ge360Id)
     }
 
@@ -429,24 +450,136 @@ class JobsiteWorkflowStore(context: Context) : SQLiteOpenHelper(context, DB_NAME
         }
     }
 
-    fun exportJson(): String = JSONObject().apply {
-        put("schema", "ge360.centro-cantiere.v1")
+    // ---- Programma singole lavorazioni (solo metadati, checklist canonica) ----
+
+    fun taskPlans(jobsiteId: String): List<WorkflowTaskPlan> {
+        if (jobsiteId.isBlank()) return emptyList()
+        val out = mutableListOf<WorkflowTaskPlan>()
+        readableDatabase.query(PLANS, null, "jobsite_id=?", arrayOf(jobsiteId),
+            null, null, "updated_at DESC, task_ge360_id").use { cursor ->
+            while (cursor.moveToNext()) out += taskPlanFromCursor(cursor)
+        }
+        return out
+    }
+
+    fun saveTaskPlan(plan: WorkflowTaskPlan) {
+        val task = findTaskByGe360(plan.taskGe360Id) ?: error("La lavorazione non esiste più")
+        val current = taskPlans(task.jobsiteId)
+        TaskScheduleEngine.validateCandidate(task, plan, tasks(task.jobsiteId), current)
+        require(plan.plannedWorkdays > 0 || plan.predecessorIds.isNotEmpty()) {
+            "Imposta durata o predecessori; usa Rimuovi piano per cancellare la programmazione"
+        }
+        require(plan.note.length <= 500) { "Nota troppo lunga" }
+        val prior = current.firstOrNull { it.taskGe360Id == plan.taskGe360Id }
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put("task_ge360_id", plan.taskGe360Id); put("jobsite_id", plan.jobsiteId)
+            put("planned_workdays", plan.plannedWorkdays)
+            put("predecessor_ids_json", JSONArray(plan.predecessorIds).toString())
+            put("note", plan.note.trim())
+            put("created_at", prior?.createdAt ?: now)
+            put("updated_at", now)
+        }
+        if (prior != null) writableDatabase.update(PLANS, values,
+            "task_ge360_id=?", arrayOf(plan.taskGe360Id))
+        else writableDatabase.insertOrThrow(PLANS, null, values)
+    }
+
+    fun removeTaskPlan(taskGe360Id: String) {
+        writableDatabase.delete(PLANS, "task_ge360_id=?", arrayOf(taskGe360Id))
+    }
+
+    fun taskSchedule(
+        jobsiteId: String, today: java.time.LocalDate = java.time.LocalDate.now(),
+        targetEndIso: String = ""
+    ): TaskScheduleReport =
+        TaskScheduleEngine.project(tasks(jobsiteId), taskPlans(jobsiteId), today, targetEndIso)
+
+    private fun taskPlanFromCursor(cursor: Cursor): WorkflowTaskPlan {
+        val deps = JSONArray(cursor.string("predecessor_ids_json"))
+        return WorkflowTaskPlan(
+            taskGe360Id = cursor.string("task_ge360_id"),
+            jobsiteId = cursor.string("jobsite_id"),
+            plannedWorkdays = cursor.int("planned_workdays"),
+            predecessorIds = (0 until deps.length()).map { deps.getString(it) },
+            note = cursor.string("note"),
+            createdAt = cursor.long("created_at"),
+            updatedAt = cursor.long("updated_at")
+        )
+    }
+
+    private fun allTaskPlans(): List<WorkflowTaskPlan> {
+        val out = mutableListOf<WorkflowTaskPlan>()
+        readableDatabase.query(PLANS, null, null, null,
+            null, null, "jobsite_id, task_ge360_id").use { cursor ->
+            while (cursor.moveToNext()) out += taskPlanFromCursor(cursor)
+        }
+        return out
+    }
+
+    private fun taskPlanJson(p: WorkflowTaskPlan) = JSONObject().apply {
+        put("taskGe360Id", p.taskGe360Id); put("jobsiteId", p.jobsiteId)
+        put("plannedWorkdays", p.plannedWorkdays)
+        put("predecessorIds", JSONArray(p.predecessorIds))
+        put("note", p.note); put("createdAt", p.createdAt); put("updatedAt", p.updatedAt)
+    }
+
+    private fun taskPlanFromJson(o: JSONObject): WorkflowTaskPlan {
+        val deps = o.getJSONArray("predecessorIds")
+        return WorkflowTaskPlan(
+            taskGe360Id = o.getString("taskGe360Id"),
+            jobsiteId = o.getString("jobsiteId"),
+            plannedWorkdays = o.getInt("plannedWorkdays"),
+            predecessorIds = (0 until deps.length()).map { deps.getString(it) },
+            note = o.optString("note", ""),
+            createdAt = o.getLong("createdAt"),
+            updatedAt = o.getLong("updatedAt")
+        )
+    }
+
+    private fun importTaskPlan(plan: WorkflowTaskPlan) {
+        val task = findTaskByGe360(plan.taskGe360Id) ?: error("Lavorazione piano non trovata nel backup")
+        val plans = taskPlans(task.jobsiteId)
+        TaskScheduleEngine.validateCandidate(task, plan, tasks(task.jobsiteId), plans)
+        require(plan.plannedWorkdays > 0 || plan.predecessorIds.isNotEmpty()) {
+            "Piano attività privo di durata e dipendenze"
+        }
+        val previous = plans.firstOrNull { it.taskGe360Id == plan.taskGe360Id }
+        if (previous != null) {
+            require(previous == plan) {
+                "Conflitto piano lavorazione: stesso UUID ma contenuti diversi; risolvi manualmente"
+            }
+            return
+        }
+        writableDatabase.insertOrThrow(PLANS, null, ContentValues().apply {
+            put("task_ge360_id", plan.taskGe360Id); put("jobsite_id", plan.jobsiteId)
+            put("planned_workdays", plan.plannedWorkdays)
+            put("predecessor_ids_json", JSONArray(plan.predecessorIds).toString())
+            put("note", plan.note); put("created_at", plan.createdAt); put("updated_at", plan.updatedAt)
+        })
+    }
+
+    fun exportJson(forSync: Boolean = false): String = JSONObject().apply {
+        put("schema", if (forSync) "ge360.centro-cantiere.v1" else "ge360.centro-cantiere.v2")
         put("exportedAt", System.currentTimeMillis())
         put("learningPolicy", "observe-propose-approve")
         put("tasks", JSONArray().apply { allTasks().forEach { put(taskToJson(it)) } })
         put("notes", JSONArray().apply { allNotes().forEach { put(noteToJson(it)) } })
         put("events", JSONArray().apply { allEvents().forEach { put(eventToJson(it)) } })
         put("learningSuggestions", JSONArray().apply { learningSuggestions().forEach { put(learningToJson(it)) } })
+        // New plans are backed up in the full ZIP but have no Data Hub contract.
+        if (!forSync) put("taskPlans", JSONArray().apply { allTaskPlans().forEach { put(taskPlanJson(it)) } })
     }.toString(2)
 
     fun importJson(json: String, replaceAll: Boolean): Int {
         val root = JSONObject(json)
-        require(root.optString("schema") == "ge360.centro-cantiere.v1") { "Formato Centro Cantiere non riconosciuto" }
+        require(root.optString("schema") in setOf("ge360.centro-cantiere.v1", "ge360.centro-cantiere.v2")) { "Formato Centro Cantiere non riconosciuto" }
         val db = writableDatabase
         var count = 0
         db.beginTransaction()
         try {
             if (replaceAll) {
+                db.delete(PLANS, null, null)
                 db.delete(TASKS, null, null)
                 db.delete(NOTES, null, null)
                 db.delete(EVENTS, null, null)
@@ -468,6 +601,12 @@ class JobsiteWorkflowStore(context: Context) : SQLiteOpenHelper(context, DB_NAME
             }
             root.optJSONArray("learningSuggestions")?.let { rows ->
                 for (i in 0 until rows.length()) upsertLearning(learningFromJson(rows.getJSONObject(i))).also { count++ }
+            }
+            root.optJSONArray("taskPlans")?.let { rows ->
+                for (i in 0 until rows.length()) {
+                    importTaskPlan(taskPlanFromJson(rows.getJSONObject(i)))
+                    count++
+                }
             }
             db.setTransactionSuccessful()
         } finally {
@@ -621,11 +760,12 @@ class JobsiteWorkflowStore(context: Context) : SQLiteOpenHelper(context, DB_NAME
 
     companion object {
         private const val DB_NAME = "ge360_centro_cantiere.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
         private const val TASKS = "workflow_tasks"
         private const val NOTES = "jobsite_notes"
         private const val EVENTS = "workflow_events"
         private const val LEARNING = "learning_suggestions"
+        private const val PLANS = "workflow_task_plans"
         private const val LEARNING_THRESHOLD = 3
     }
 }
