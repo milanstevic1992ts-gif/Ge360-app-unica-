@@ -62,6 +62,11 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
             applyGe360Primary()
             setOnClickListener { chooseLine() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        root.addView(MaterialButton(this).apply {
+            text = "RICONCILIA FATTURA ↔ DDT · V14"
+            applyGe360Secondary()
+            setOnClickListener { chooseMatch() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(10), 0, dp(20))
@@ -102,13 +107,21 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                 item != null && item.unit.equals(line.unit, ignoreCase = true) &&
                 (line.jobsiteGe360Id.isBlank() || line.jobsiteGe360Id in jobs)
         }
+        val trustedIds = trusted.map { it.ge360Id }.toSet()
+        val matches = ledger.matches().filter { jobFilter.isBlank() ||
+            (rows.any { line -> line.ge360Id == it.invoiceLineGe360Id &&
+                line.jobsiteGe360Id == jobFilter }) }
+        val credibleMatches = matches.filter { it.active &&
+            it.invoiceLineGe360Id in trustedIds && it.ddtLineGe360Id in trustedIds }
         val plansByMaterial = plans.all()
         val fullHistory = inventory.hasCompleteMovementHistory()
         val movements = inventory.allMovementHistory(
             jobsiteGe360Id = jobFilter.takeIf { it.isNotBlank() })
         body.addView(label("RIEPILOGO MATERIALE · " + trusted.size +
             " righe verificabili · " + (active.size - trusted.size) +
-            " da controllare · " + (rows.size - active.size) + " annullate", 12f))
+            " da controllare · " + (rows.size - active.size) + " annullate" +
+            "\nV14: " + credibleMatches.size + " abbinamenti verificabili · " +
+            (matches.count { it.active } - credibleMatches.size) + " da controllare", 12f))
         if (active.isEmpty()) body.addView(label("Nessuna riga attribuita. " +
             "Scegli il documento Scanner, il materiale, il cantiere e la quantità.", 13f))
         // Include planned and consumed materials even when no invoice/DDT
@@ -132,6 +145,10 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
             }?.unit ?: return@forEach
             val values = MaterialDocumentEvidenceRulesV13.totals(
                 trusted, key.first, key.second, unit)
+            val matched = MaterialReconciliationRulesV14.matchedQuantity(
+                trusted, credibleMatches, key.first, key.second, unit)
+            val notMatchedInvoiced = (values.invoiced - matched).coerceAtLeast(0.0)
+            val notMatchedDelivered = (values.delivered - matched).coerceAtLeast(0.0)
             val plan = plansByMaterial.filter {
                 it.materialGe360Id == key.first &&
                     it.jobsiteGe360Id.orEmpty() == key.second
@@ -171,8 +188,46 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                     "\nConsumo magazzino: " + fmt(consumed) + " " + unit +
                     "\nPrevisto − consumato: " + remaining +
                     "\nUnità non compatibili: " + values.invalidUnits +
-                    "\nFatture e DDT NON sono sommabili.", null)
+                    "\nRiconciliato V14: " + fmt(matched) + " " + unit +
+                    "\nFatturato non abbinato: " +
+                        (if (values.invoiceLines > 0) fmt(notMatchedInvoiced) + " " + unit
+                         else "non documentato") +
+                    "\nDDT non abbinati: " +
+                        (if (values.ddtLines > 0) fmt(notMatchedDelivered) + " " + unit
+                         else "non documentati") +
+                    "\nL'abbinamento NON somma né duplica fatture e DDT.", null)
         }
+        body.addView(label("RICONCILIAZIONI FATTURA ↔ DDT · V14", 12f))
+        if (matches.isEmpty()) body.addView(label(
+            "Nessun abbinamento confermato: quantità fatturate e DDT restano indipendenti.", 12f))
+        val sourceLines = ledger.all().associateBy { it.ge360Id }
+        matches.forEach { match ->
+            val invoice = sourceLines[match.invoiceLineGe360Id]
+            val delivery = sourceLines[match.ddtLineGe360Id]
+            val invoiceDoc = invoice?.let { docs[it.documentGe360Id] }
+            val deliveryDoc = delivery?.let { docs[it.documentGe360Id] }
+            addCard(
+                (if (!match.active) "ANNULLATO · "
+                 else if (match !in credibleMatches) "DA VERIFICARE · " else "") +
+                    (invoice?.let { materials[it.materialGe360Id]?.name } ?: "Materiale mancante"),
+                "Abbinati: " + fmt(match.quantity) + " " + match.unit,
+                "Fattura " + (invoiceDoc?.documentNumber ?: "non trovata") +
+                    " ↔ DDT " + (deliveryDoc?.documentNumber ?: "non trovato") +
+                    "\nAssociazione manuale, senza costi o carichi automatici.",
+                if (match.active) "ANNULLA ABBINAMENTO" to {
+                    AlertDialog.Builder(this)
+                        .setTitle("Annullare questa riconciliazione?")
+                        .setMessage("Rimane nello storico. Le righe originali di FATTURA e DDT " +
+                            "non vengono eliminate né modificate.")
+                        .setNegativeButton("Indietro", null)
+                        .setPositiveButton("ANNULLA") { _, _ ->
+                            runCatching { ledger.voidMatch(match.ge360Id) }
+                                .onSuccess { render() }
+                                .onFailure { toast("Impossibile annullare l'abbinamento") }
+                        }.show()
+                } else null)
+        }
+
         body.addView(label("RIGHE DOCUMENTALI CONFERMATE", 12f))
         rows.forEach { row ->
             val name = materials[row.materialGe360Id]?.name ?: "Materiale mancante"
@@ -196,6 +251,115 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                         }.show()
                 } else null)
         }
+    }
+
+    /** Only two explicitly selected V13 rows can be reconciled. */
+    private fun chooseMatch() {
+        val lines = ledger.all().filter { it.active &&
+            (jobFilter.isBlank() || it.jobsiteGe360Id == jobFilter) }
+        val docs = scanner.list().associateBy { it.ge360Id }
+        val mats = inventory.list().associateBy { it.ge360Id }
+        val sites = sites.list().map { it.ge360Id }.toSet()
+        val valid = lines.filter { line ->
+            val doc = docs[line.documentGe360Id]
+            val material = mats[line.materialGe360Id]
+            doc != null && doc.type.equals(line.documentKind, ignoreCase = true) &&
+                (doc.jobsiteId.isBlank() || doc.jobsiteId == line.jobsiteGe360Id) &&
+                doc.pdfPath.isNotBlank() && java.io.File(doc.pdfPath).isFile &&
+                material?.unit?.trim()?.equals(line.unit.trim(), ignoreCase = true) == true &&
+                (line.jobsiteGe360Id.isBlank() || line.jobsiteGe360Id in sites)
+        }
+        val invoices = valid.filter { it.documentKind == "FATTURA" }
+        val deliveries = valid.filter { it.documentKind == "DDT" }
+        if (invoices.isEmpty() || deliveries.isEmpty()) {
+            toast("Servono righe fattura e DDT V13 già confermate e documentate")
+            return
+        }
+        fun detail(line: MaterialDocumentLineV13): String {
+            val doc = docs[line.documentGe360Id]
+            return (doc?.documentNumber?.ifBlank { "senza numero" } ?: "senza documento") +
+                " · " + (doc?.supplier?.take(25) ?: "") + " · " +
+                fmt(line.quantity) + " " + line.unit +
+                " · " + (mats[line.materialGe360Id]?.name ?: "materiale assente")
+        }
+        val invoice = select(invoices.map(::detail))
+        val ddt = select(deliveries.map(::detail))
+        val quantity = EditText(this).apply {
+            hint = "Quantità comune da abbinare"
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+            fun field(title: String, view: View) {
+                addView(label(title, 11f))
+                addView(view, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+            }
+            field("RIGA FATTURA CONFERMATA", invoice)
+            field("RIGA DDT CONFERMATA", ddt)
+            field("QUANTITÀ DA RICONCILIARE", quantity)
+            addView(label("La stessa merce può comparire su entrambi i documenti. " +
+                "La quantità abbinata NON viene aggiunta due volte.", 11f))
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("Riconciliazione V14")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("Chiudi", null)
+            .setPositiveButton("CONFRONTA", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val source = invoices[invoice.selectedItemPosition]
+                val target = deliveries[ddt.selectedItemPosition]
+                val amount = quantity.text.toString().trim().replace(',', '.').toDoubleOrNull()
+                if (amount == null || !amount.isFinite() || amount <= 0.0) {
+                    toast("Indica una quantità positiva comune")
+                    return@setOnClickListener
+                }
+                val proposed = runCatching {
+                    val candidate = MaterialInvoiceDdtMatchV14(
+                        ge360Id = java.util.UUID.randomUUID().toString(),
+                        invoiceLineGe360Id = source.ge360Id,
+                        ddtLineGe360Id = target.ge360Id,
+                        quantity = amount,
+                        unit = source.unit,
+                        confirmedAt = System.currentTimeMillis()
+                    )
+                    MaterialReconciliationRulesV14.validate(
+                        ledger.all(), ledger.matches(), candidate)
+                }.getOrElse {
+                    toast(it.message ?: "Righe o quantità non compatibili")
+                    return@setOnClickListener
+                }
+                val invoiceDoc = docs[source.documentGe360Id]
+                val ddtDoc = docs[target.documentGe360Id]
+                val suppliersDiffer = invoiceDoc?.supplier?.trim()?.isNotBlank() == true &&
+                    ddtDoc?.supplier?.trim()?.isNotBlank() == true &&
+                    !invoiceDoc.supplier.trim().equals(ddtDoc.supplier.trim(), ignoreCase = true)
+                AlertDialog.Builder(this).setTitle("Conferma abbinamento manuale")
+                    .setMessage(
+                        "FATTURA: " + detail(source) +
+                        "\nDDT: " + detail(target) +
+                        "\nQuantità da abbinare: " + fmt(amount) + " " + source.unit +
+                        "\nDisponibilità FATTURA: " + fmt(proposed.invoicedRemaining) +
+                        "\nDisponibilità DDT: " + fmt(proposed.deliveredRemaining) +
+                        (if (suppliersDiffer)
+                            "\nATTENZIONE: fornitori diversi, verificare i documenti." else "") +
+                        "\nNon modifica stock, Spese, pagamenti o quantità originali."
+                    )
+                    .setNegativeButton("Rivedi", null)
+                    .setPositiveButton("REGISTRA ABBINAMENTO") { _, _ ->
+                        runCatching { ledger.confirmMatch(
+                            source.ge360Id, target.ge360Id, amount
+                        ) }.onSuccess {
+                            dialog.dismiss()
+                            render()
+                            toast("Abbinamento V14 registrato")
+                        }.onFailure { toast(it.message ?: "Riconciliazione rifiutata") }
+                    }.show()
+            }
+        }
+        dialog.show()
     }
 
     private fun chooseLine() {
