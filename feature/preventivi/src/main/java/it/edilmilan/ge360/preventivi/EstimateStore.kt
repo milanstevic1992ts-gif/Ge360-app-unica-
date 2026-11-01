@@ -207,7 +207,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             }
             lines.forEach { previous ->
                 val origin = MeasuredEstimateDraftV1.sourceOf(previous)
-                if (origin != null && previous.priceListCode == source.workCode &&
+                if (origin != null && origin.optString("work") == source.workCode &&
                     origin.optString("plan") == source.planGe360Id &&
                     origin.optString("room") == source.roomGe360Id) {
                     require(origin.optString("binding") != source.sourceBindingGe360Id) {
