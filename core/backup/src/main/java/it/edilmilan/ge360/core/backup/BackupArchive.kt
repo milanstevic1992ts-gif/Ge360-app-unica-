@@ -41,12 +41,25 @@ class BackupArchive(private val context: Context) {
         return File(base, "GE360/Backups").apply { mkdirs() }
     }
 
-    fun latestLocal(): File? = backupDir().listFiles { f -> f.isFile && f.name.endsWith(".ge360.zip") }
-        ?.maxByOrNull { it.lastModified() }
+    private fun isGe360Archive(file: File) = file.isFile &&
+        (file.name.endsWith(".ge360.zip") || file.name.endsWith(".ge360.enc"))
 
-    fun localBackups(): List<File> = backupDir().listFiles { f -> f.isFile && f.name.endsWith(".ge360.zip") }
+    fun latestLocal(): File? = localBackups().firstOrNull()
+
+    fun localBackups(): List<File> = backupDir().listFiles()?.filter(::isGe360Archive)
         ?.sortedByDescending { it.lastModified() }.orEmpty()
 
+    fun encryptionEnabled(): Boolean = BackupPassphraseStoreV8(context).isEnabled()
+
+    fun enableEncryption(password: CharArray) =
+        BackupPassphraseStoreV8(context).enable(password)
+
+    /**
+     * With V8 enabled the ZIP is built in PRIVATE cache only, checked using
+     * the existing V7 semantic preflight, and published as encrypted .ge360.enc.
+     * A missing Keystore secret is fatal: do not silently create a plain backup.
+     * Legacy unencrypted backup creation is preserved until the user opts in.
+     */
     fun create(
         entries: List<BackupEntrySource>,
         manifest: JSONObject,
@@ -58,58 +71,65 @@ class BackupArchive(private val context: Context) {
         }.getOrNull()
         if (!runtimeVersion.isNullOrBlank()) manifest.put("appVersion", runtimeVersion)
 
+        val credential = BackupPassphraseStoreV8(context)
+        val secured = credential.isEnabled()
+        val secret = if (secured) credential.readForBackup() else null
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ITALY).format(Date())
-        // Never overwrite a valid backup created during the same second.
-        val target = File(backupDir(),
-            "${prefix}_${stamp}_${UUID.randomUUID().toString().take(8)}.ge360.zip")
-        check(target.createNewFile()) { "Impossibile prenotare un nuovo file di backup" }
-        val hashes = JSONObject()
-        var count = 0
+        val name = prefix + "_" + stamp + "_" + UUID.randomUUID().toString().take(8)
+        val target = File(backupDir(), name + if (secured) ".ge360.enc" else ".ge360.zip")
+        val stage = if (secured) File(context.cacheDir,
+            "ge360-v8-build-" + UUID.randomUUID().toString() + ".zip") else target
         try {
-            ZipOutputStream(BufferedOutputStream(FileOutputStream(target))).use { zip ->
-            entries.forEach { source ->
-                val normalized = source.path.trimStart('/').replace("..", "_")
-                val digest = MessageDigest.getInstance("SHA-256")
-                zip.putNextEntry(ZipEntry(normalized))
-                source.open().use { input ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n <= 0) break
-                        zip.write(buffer, 0, n)
-                        digest.update(buffer, 0, n)
+            check(stage.createNewFile()) { "Impossibile preparare il file di backup" }
+            val hashes = JSONObject()
+            var count = 0
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(stage))).use { zip ->
+                entries.forEach { source ->
+                    val normalized = source.path.trimStart('/').replace("..", "_")
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    zip.putNextEntry(ZipEntry(normalized))
+                    source.open().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            if (n == 0) continue
+                            zip.write(buffer, 0, n)
+                            digest.update(buffer, 0, n)
+                        }
                     }
+                    zip.closeEntry()
+                    hashes.put(normalized, digest.digest().hex())
+                    count++
                 }
+                manifest.put("entrySha256", hashes)
+                val manifestBytes = manifest.toString(2).toByteArray(Charsets.UTF_8)
+                zip.putNextEntry(ZipEntry(MANIFEST))
+                zip.write(manifestBytes)
                 zip.closeEntry()
-                hashes.put(normalized, digest.digest().hex())
                 count++
             }
-            manifest.put("entrySha256", hashes)
-            val manifestBytes = manifest.toString(2).toByteArray(Charsets.UTF_8)
-            zip.putNextEntry(ZipEntry(MANIFEST))
-            zip.write(manifestBytes)
-            zip.closeEntry()
-            count++
-            }
+            val zipInfo = inspect(stage, verifyHashes = true)
+            validateBeforePublish?.invoke(stage)
+            val info = if (secured) {
+                EncryptedBackupV8.encrypt(stage, target, requireNotNull(secret))
+                check(EncryptedBackupV8.isEncrypted(target)) { "Archivio cifrato non valido" }
+                BackupFileInfo(target, sha256(FileInputStream(target)), target.length(), zipInfo.entries)
+            } else zipInfo
+            rotate(10)
+            prefs.edit()
+                .putLong("last_backup_at", System.currentTimeMillis())
+                .putString("last_backup_sha256", info.sha256)
+                .apply()
+            return info
         } catch (error: Throwable) {
-            // A failed stream can leave a valid-looking, unencrypted partial ZIP.
+            // Also remove plain intermediate data on I/O or Keystore errors.
             target.delete()
             throw error
+        } finally {
+            if (secured) stage.delete()
+            secret?.fill('\u0000')
         }
-        // Run feature-level semantic checks before rotation/last_backup_at.
-        // An archive may have internally correct ZIP hashes yet contain
-        // documents that disagree with the app's authoritative metadata.
-        val info = try {
-            inspect(target, verifyHashes = true).also {
-                validateBeforePublish?.invoke(target)
-            }
-        } catch (error: Throwable) {
-            target.delete()
-            throw error
-        }
-        rotate(10)
-        prefs.edit().putLong("last_backup_at", System.currentTimeMillis()).putString("last_backup_sha256", info.sha256).apply()
-        return info
     }
 
     fun inspect(file: File, verifyHashes: Boolean): BackupFileInfo {
@@ -228,8 +248,12 @@ class BackupArchive(private val context: Context) {
         val root = DocumentFile.fromTreeUri(context, rootUri) ?: error("Cartella backup non accessibile")
         val folder = root.findFile("GE360 BACKUP")?.takeIf { it.isDirectory }
             ?: root.createDirectory("GE360 BACKUP") ?: error("Impossibile creare GE360 BACKUP")
-        folder.findFile(file.name)?.delete()
-        val target = folder.createFile("application/zip", file.name) ?: error("Impossibile creare backup")
+        require(folder.findFile(file.name) == null) {
+            "Backup già esistente: non sovrascrivere una copia precedente"
+        }
+        val mime = if (file.name.endsWith(".ge360.enc"))
+            "application/octet-stream" else "application/zip"
+        val target = folder.createFile(mime, file.name) ?: error("Impossibile creare backup")
         context.contentResolver.openOutputStream(target.uri, "w").use { output ->
             requireNotNull(output) { "Destinazione backup non scrivibile" }
             FileInputStream(file).use { input -> input.copyTo(output, 64 * 1024) }
@@ -240,7 +264,10 @@ class BackupArchive(private val context: Context) {
 
     private fun rotateSaf(folder: DocumentFile, keep: Int) {
         folder.listFiles()
-            .filter { it.isFile && (it.name?.endsWith(".ge360.zip") == true || it.name?.contains("GE360_") == true) }
+            .filter { it.isFile && (
+                it.name?.endsWith(".ge360.zip") == true ||
+                    it.name?.endsWith(".ge360.enc") == true
+            ) }
             .sortedByDescending { it.lastModified() }
             .drop(keep.coerceAtLeast(1))
             .forEach { runCatching { it.delete() } }
