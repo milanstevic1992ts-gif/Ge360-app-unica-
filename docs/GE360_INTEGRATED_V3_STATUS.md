@@ -120,7 +120,19 @@ Codice su `feature/ge360-integrated-v3-20261101` soltanto. **NESSUNA BUILD, TEST
 
 ### Limiti e gate
 - Prezzi **non calcolati automaticamente** e nessuna autorizzazione bancaria/contabile implicita.
-- Il salvataggio del preventivo tramite vecchi editor usa ancora `EstimateStore.save()` e può riscrivere le righe quando l'editor aveva caricato una copia stantia: richiede futura protezione optimistic lock complessiva, o un registro dedicato agli import metrici. Il controllo `expectedEstimateUpdatedAt` copre soltanto il nuovo ingresso metrico.
+- Il salvataggio del preventivo tramite l'editor legacy usa ancora `EstimateStore.save()` e riscrive l'elenco delle righe; è stato aggiunto un **controllo della revisione** quando il preventivo corrente contiene almeno un import metrico. Un editor stantio viene rifiutato per evitare la perdita delle nuove righe. Rimane comunque da implementare optimistic locking uniforme per tutte le righe e tutti i moduli.
 - I database Rilievi e Preventivi sono separati: il fingerprint viene riletto prima della transazione, ma non c'è transazione ACID cross-database. Le dimensioni non sono computi certificati o quantità contrattuali.
 - L'annotazione `internalNote` resta tecnicamente editabile attraverso altri client/API/import. Per maggiore robustezza in produzione, progettare vincolo persistente di origine fuori dalle note e gestione delle revisioni a preventivo già prezzato.
 - Verificare migrazioni, export/import, scenari con duplicati manuali e reali, cantiere collegato e stessa lavorazione su due facce diverse. Compilazione, UI Android, JUnit, GitHub Actions, APK, PR, merge e deploy **non autorizzati e non eseguiti**.
+
+### Hardening aggiuntivo dello stesso incremento
+- Il picker iniziale accetta solo preventivi `Bozza` e `Da controllare`, senza creare nuovi link a preventivi finalizzati.
+- La verifica di sovrapposizione sfrutta il codice lavorazione memorizzato nel riferimento di origine (non soltanto l'eventuale campo modificabile `priceListCode` della riga).
+- La schermata Preventivi blocca l'attivazione economica di una voce importata se manca la spunta di riconferma oppure il prezzo è nullo/non positivo.
+- `EstimateStore.save()` confronta `updatedAt` dell'editor con il valore attuale del preventivo quando quest'ultimo contiene voci metriche. Le copie stantie non possono cancellarle silenziosamente.
+- Se il passaggio va a buon fine, viene offerta l'apertura diretta del preventivo.
+- I test JUnit sono stati solamente aggiunti al repository. Nessuna esecuzione di test, Gradle o APK.
+
+### Attenzione QA
+- Il riconoscimento di voci manuali non correlate resta conservativo ma non può dimostrare automaticamente che due lavori siano o meno duplicati: serve valutazione esplicita dell'operatore.
+- I nuovi controlli interattivi non sostituiscono un workflow di approvazione economica centralizzato. La provenienza nelle note non è crittograficamente vincolante.
