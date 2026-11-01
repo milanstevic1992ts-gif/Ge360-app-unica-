@@ -9,6 +9,9 @@ import it.edilmilan.ge360.core.backup.BackupPassphraseStoreV8
 import it.edilmilan.ge360.core.backup.BackupScratchV9
 import it.edilmilan.ge360.core.backup.EncryptedBackupV8
 import it.edilmilan.ge360.galleria.GalleryArchive
+import it.edilmilan.ge360.giornata.DailyStore
+import it.edilmilan.ge360.spese.FinanceStore
+import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.planimetrie.FloorPlanStore
 import it.edilmilan.ge360.preventivi.EstimateStore
@@ -99,6 +102,17 @@ object DiagnosticsInspectorV11 {
         }
         val archives = capture("Cartella Cantiere") {
             val s = JobsiteArchiveStore(app); try { s.exportJson() } finally { s.close() }
+        }
+        // Preserve the original DiagnosticsActivity coverage of the other
+        // operating modules, without adding new write paths.
+        capture("Giornata") {
+            val s = DailyStore(app); try { s.exportJson() } finally { s.close() }
+        }
+        capture("Spese") {
+            val s = FinanceStore(app); try { s.exportJson() } finally { s.close() }
+        }
+        capture("Attrezzi / materiali") {
+            val s = ToolsStore(app); try { s.exportJson() } finally { s.close() }
         }
 
         if (listOf(clients, jobs, estimates, scanner, gallery).all { it != null }) {

@@ -155,9 +155,8 @@ class DiagnosticsActivity : AppCompatActivity() {
         if (result == null) {
             addStatusRow("Ancora da controllare", "Premi CONTROLLA DATI per verificare collegamenti, documenti e backup.")
         } else {
-            addStatusRow(result.headline,
-                "${result.successful} controlli OK · ${result.warnings} attenzioni · ${result.errors} errori" +
-                    " · ${formatDate(result.checkedAt)}")
+            addStatusRow(result.headline, "Controllo: ${formatDate(result.checkedAt)}")
+            addMetricStrip(result)
             result.findings.groupBy { it.section }.forEach { (name, findings) ->
                 addSection(name.uppercase(Locale.ITALY), "Risultato della verifica manuale, non del funzionamento in tempo reale.")
                 findings.forEach(::addFindingRow)
@@ -196,6 +195,47 @@ class DiagnosticsActivity : AppCompatActivity() {
             else appendLine("Nessuna verifica approfondita eseguita.")
             // No crash stacks, SAF URIs, filesystem paths or credentials.
         }
+    }
+
+    private fun addMetricStrip(report: DiagnosticsInspectorV11.Report) {
+        val cells = listOf(
+            Triple("OK", report.successful, Color.parseColor("#E5F4EF")),
+            Triple("ATTENZIONI", report.warnings, Color.parseColor("#FFF3DE")),
+            Triple("ERRORI", report.errors, Color.parseColor("#FCE7EB"))
+        )
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        cells.forEachIndexed { index, (label, count, backgroundColor) ->
+            val tile = MaterialCardView(this).apply {
+                radius = dp(15).toFloat()
+                strokeWidth = 0
+                setCardBackgroundColor(backgroundColor)
+                addView(LinearLayout(this@DiagnosticsActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(7), dp(12), dp(7), dp(12))
+                    addView(TextView(this@DiagnosticsActivity).apply {
+                        text = count.toString()
+                        textSize = 24f
+                        setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(Color.parseColor("#183448"))
+                        gravity = Gravity.CENTER
+                    })
+                    addView(TextView(this@DiagnosticsActivity).apply {
+                        text = label
+                        textSize = 10f
+                        setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(Color.parseColor("#4B5967"))
+                        gravity = Gravity.CENTER
+                    })
+                })
+            }
+            row.addView(tile, LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (index > 0) marginStart = dp(6)
+            })
+        }
+        body.addView(row, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
     }
 
     private fun addFindingRow(item: DiagnosticsInspectorV11.Finding) {

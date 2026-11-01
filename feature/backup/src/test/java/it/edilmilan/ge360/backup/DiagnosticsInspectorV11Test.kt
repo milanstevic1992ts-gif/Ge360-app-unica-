@@ -46,7 +46,7 @@ class DiagnosticsInspectorV11Test {
                 "Oltre 256 MB liberi")
         ))
         val export = report.publicSummary()
-        assertTrue(export.contains("Centro").not()) // current report uses compact V11 heading
+        assertTrue(export.contains("Rapporto diagnostico sintetico V11"))
         assertTrue(export.contains("Spazio disponibile"))
         assertFalse(export.contains("/storage/emulated/"))
         assertFalse(export.contains("content://"))
