@@ -411,3 +411,42 @@ La shell Android aveva già `app/.../DiagnosticsActivity.kt` accessibile da `Alt
 - La lettura dei backup ZIP ne controlla gli hash auto-dichiarati; la sicurezza rispetto a file malevoli richiede ulteriori hardening e collaudo dedicato. Il numero di allegati senza file è diagnostico, non riparato.
 - La condivisione delle sintesi è una scelta esplicita dell'operatore; il testo sintetico ha contatori e messaggi fissi, non enumera UUID/nomi/documenti.
 - Non eseguiti build/Gradle, JUnit, Actions, generazione APK, PR, merge, deploy o modifiche a Debian/marketing. Android main/backend Glass invariati.
+
+
+## V12 — Centro di controllo cantieri operativo (1 novembre 2026)
+
+**Stato: CODICE SALVATO SU BRANCH. NON COMPILATO / NON TESTATO / NON COLLAUDATO / NON DISTRIBUITO.**
+
+### Decisioni dall'HEAD reale
+- `JobsiteHubActivity` è già il punto di ingresso dei cantieri, richiamato tramite `Ge360Contracts.ACTION_OPEN_JOBSITE`; offre collegamenti a checklist/cronologia (`JobsiteCenterActivity`), ore, documenti, materiali, costi e preventivi. V12 **non** crea una nuova activity e **non** modifica il flusso principale.
+- `JobsiteStore.progressSummary` e `JobsiteWorkflowStore.summary` sono metriche diverse; una è avanzamento ponderato delle fasi, l'altra stato della checklist. Non vengono confuse.
+- `MaterialPlanStore` conserva versioni confermate per `materialGe360Id` e `jobsiteGe360Id`; `MaterialInventoryStore.allMovementHistory` offre il ledger completo, senza limitazione a 200 record. `MaterialVarianceRulesV1` distingue carico di magazzino, consumo, reso e unità incompatibili. **Carico ≠ acquisto fatturato.**
+- `CompensationStore` usa accordi/maturati/pagamenti espliciti; i pagamenti sono dichiarazioni dell'operatore, non attestazioni automatiche del bonifico. `FinanceStore` e `DailyStore` rappresentano viste contabili/gestionali distinte.
+
+### Modifiche V12 effettive
+1. `feature/centrocantiere/.../JobsiteControlV12.kt`: proiezione aggregata `Pulse` + `Signal` e quattro stati `INFO/OK/ATTENZIONE/CRITICO`. Lettura per **UUID cantiere**, su richiesta dell'activity, con fallimento parziale dei singoli settori visibile senza sovrascrivere i dati. Non crea pagamenti, acquisti, preventivi, checklist, movimenti o associazioni.
+2. **Lavorazioni:** sintetizza checklist, task bloccati, task da fare, avanzamento ponderato e SAL con stato `Da richiedere`. I progressi non vengono aumentati automaticamente e una checklist assente non viene spacciata per completata.
+3. **Materiali:** ultimo piano confermato per ogni `materialGe360Id` e UUID cantiere, confronto unit-safe con il ledger completo dei movimenti dello stesso cantiere (consumo oltre piano, unità incompatibili, senza piano). Mai aggregare quantità di unità diverse, dedurre acquisti da carichi o generare apprendimenti automatici. Senza piano resta un'informazione, non un'accusa di mancanza.
+4. **Documenti:** conta metadati Scanner e Cartella Cantiere pertinenti; distingue file referenziati ma assenti e schede senza percorso allegato, mostra il numero di foto archiviate, ma **non** attesta assolvimento degli obblighi documentali (FIR/contratti/diarie/permessi).
+5. **Collaboratori:** conteggio persone con ore, accordi compensi esplicitamente collegati al cantiere, maturati confermati, eventi pagamento registrato e storni, tariffe ore mancanti. Non deduce pagamenti dalla presenza di una fattura, da una giornata o da un movimento Spese.
+6. **Costi:** mostra entrate/uscite/saldo del registro Spese e costo ore gestionale **separato e non sommato**; non attribuisce margine definitivo o cash-flow garantito. Preventivi: numero di documenti collegati, senza associare automaticamente un preventivo a un cantiere autonomo.
+7. `JobsiteHubActivity.kt`: nuova sezione `CONTROLLO OPERATIVO` sopra il riepilogo già esistente, caricata in thread dedicato durante `onResume`; indicatore compatto della salute, card mobili per settore con collegamenti ai moduli autentici, aggiornamento manuale. In caso di errore settore viene dichiarato `Non disponibile`, non `OK`. I pulsanti vanno a JobsiteCenterActivity, MaterialsActivity, ScannerActivity, CompensationActivity, JobsiteCostAnalyticsActivity e EstimatesActivity.
+8. `JobsiteControlV12Test.kt`: contratti sintetici per storico completo per cantiere, revisione piano più recente, unità incompatibili, carico magazzino non equiparato a consumo/acquisto, libertà di cantiere senza piano, priorità delle criticità. Dipendenza JUnit aggiunta al solo modulo centrocantiere. **Test scritti ma NON eseguiti.**
+
+### Commit Android
+- `bd07b5b7ed2a777bff70ae753cf7debb1f810a26` — motore V12
+- `627b9558193da2333897863c5d3dd07ef250fc24` — riferimento corretto agli stati SAL
+- `b80e18da28f0b522f4553d8ae62ae449b8730970` — pannello mobile in `JobsiteHubActivity`
+- `9a195d072a9ffb2668441d5ea68be8cca1b570d2` — dettagli compensi e documenti senza percorso
+- `605fa447be8b9e218e8f69eb74f86932ceb3d6fe` — navigazione verso MaterialsActivity / CompensationActivity
+- `9cccdafa7a4065fe88ba5b4beb9dcc604535fbc1` — contratti JUnit aggiunti (non eseguiti)
+- `4a1f0f9e68312a41c2514a673032493b07428a75` — raggruppamento movimenti per materiale e revisione di espressione
+
+### Limiti e gate successivi
+- La vista legge database distinti in istanti diversi: **non è uno snapshot transazionale globale**. L'apertura di SQLiteOpenHelper potrebbe comportare migrazioni già definite nel sistema: la V12 non aggiunge scritture operative, ma non garantisce zero side-effect sui DB legacy.
+- La verifica `File.isFile` distingue file locali referenziati ma assenti; l'accessibilità di allegati remoti/URI SAF e gli obblighi FIR non sono certificati dalla V12.
+- `MaterialInventoryStore` non è il registro di fatture acquisto e `MaterialVarianceRulesV1` confronta **consumi**, non prezzi o quantità acquistate dai fornitori. Serve futuro mapping esplicito, basato su documenti acquisto e approvazione operatore, prima di confrontare acquisti fatturati a previsione.
+- Il ledger Compensi include solo accordi direttamente assegnati a UUID cantiere, non assegna automaticamente pagamenti senza cantiere né movimenta il registro Spese. "Pagamento registrato" non implica pagamento bancario verificato.
+- Il pannello nasce nel dettaglio cantiere esistente, non affolla la Home e non ha job automatici. Avvia la lettura quando l'operatore apre/torna al dettaglio, non all'avvio dell'app.
+- Prima di un collaudo: autorizzazione separata per compilazione, test JUnit, flussi app su smartphone, schema compatibile, DB vuoti, lavori senza cantiere, grandi ledger materiali, cantiere con task bloccati, costi manodopera vs Spese, registri compensi con storni e documenti mancanti.
+- Nessun build/Gradle eseguito, test/Actions/CI/APK/merge/deploy o accesso Debian. Android `main`, backend Glass e marketing invariati.
