@@ -7,6 +7,10 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
+import android.widget.Toast
+import it.edilmilan.ge360.preventivi.EstimateStore
+import it.edilmilan.ge360.preventivi.StandardWorkCatalog
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -22,11 +26,13 @@ import java.util.Locale
 
 class FloorPlansActivity : AppCompatActivity() {
     private lateinit var store: FloorPlanStore
+    private lateinit var estimateStore: EstimateStore
     private lateinit var listRoot: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = FloorPlanStore(applicationContext)
+        estimateStore = EstimateStore(applicationContext)
         setContentView(buildUi())
         if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_CREATE_NEW, false)) {
             listRoot.post { if (!isFinishing && !isDestroyed) newPlanDialog() }
@@ -40,6 +46,7 @@ class FloorPlansActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         store.close()
+        estimateStore.close()
         super.onDestroy()
     }
 
@@ -142,8 +149,105 @@ class FloorPlansActivity : AppCompatActivity() {
                     setTextColor(Color.parseColor("#8A8E93"))
                     setPadding(0, dp(4), 0, 0)
                 })
+                addView(MaterialButton(this@FloorPlansActivity).apply {
+                    text = "COLLEGA AMBIENTI / LAVORAZIONI"
+                    setOnClickListener { chooseWorkBinding(plan) }
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
+                val bindings = store.workBindings(plan.ge360Id)
+                if (bindings.isNotEmpty()) addView(TextView(this@FloorPlansActivity).apply {
+                    text = "${bindings.size} selezioni con preventivo UUID · prezzi non modificati"
+                    textSize = 11f
+                })
             })
         }
+    }
+
+    private fun chooseWorkBinding(plan: FloorPlanRecord) {
+        val rooms = store.rooms(plan.ge360Id)
+        val estimates = estimateStore.list().filter { it.ge360Id.isNotBlank() }
+            .filter { plan.jobsiteId.isBlank() || it.jobsiteId.isBlank() ||
+                it.jobsiteId == plan.jobsiteId }
+        val works = StandardWorkCatalog.search().filter { it.unit == "m²" }
+        if (rooms.isEmpty() || estimates.isEmpty() || works.isEmpty()) {
+            Toast.makeText(this,
+                "Servono almeno un ambiente, un preventivo esistente e una lavorazione a m²",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        val chosen = mutableListOf<Pair<FloorPlanRoom, CheckBox>>()
+        val estimateSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@FloorPlansActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                estimates.map { it.number.ifBlank { "Preventivo" } + " · " + it.title })
+        }
+        val surfaceSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@FloorPlansActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Pavimento", "Soffitto", "Pareti lorde"))
+        }
+        val workSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@FloorPlansActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                works.map { it.code + " · " + it.title })
+        }
+        form.addView(TextView(this).apply { text = "PREVENTIVO ESISTENTE (NESSUN PREZZO MODIFICATO)" })
+        form.addView(estimateSpinner)
+        form.addView(TextView(this).apply { text = "SUPERFICI" })
+        form.addView(surfaceSpinner)
+        form.addView(TextView(this).apply { text = "LAVORAZIONE DEL CATALOGO" })
+        form.addView(workSpinner)
+        form.addView(TextView(this).apply {
+            text = "AMBIENTI DA INCLUDERE · selezione multipla"
+            setPadding(0, dp(10), 0, dp(4))
+        })
+        rooms.forEach { room ->
+            val check = CheckBox(this).apply {
+                text = room.name + " · ${String.format(Locale.ITALY, "%.2f", room.floorArea())} m² pav."
+            }
+            chosen += room to check
+            form.addView(check)
+        }
+        form.addView(TextView(this).apply {
+            text = "Quantità provvisorie in m². Pareti lorde: non dedurre automaticamente aperture o superfici già quotate. La selezione non crea righe economiche."
+            textSize = 12f
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Selezione lavorazioni da rilievo")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("SALVA COLLEGAMENTI", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    val estimate = estimates[estimateSpinner.selectedItemPosition]
+                    require(plan.jobsiteId.isBlank() || estimate.jobsiteId.isBlank() ||
+                        plan.jobsiteId == estimate.jobsiteId) {
+                        "Il preventivo è collegato a un altro cantiere"
+                    }
+                    val area = PlanWorkBindingV1.SURFACES[surfaceSpinner.selectedItemPosition]
+                    val workCode = works[workSpinner.selectedItemPosition].code
+                    val selected = chosen.filter { it.second.isChecked }.map { it.first }
+                    require(selected.isNotEmpty()) { "Seleziona almeno un ambiente" }
+                    store.addWorkBindings(selected.map { room ->
+                        PlanWorkBindingV1.fromRoom(room, estimate.ge360Id, workCode, area)
+                    })
+                }.onSuccess {
+                    dialog.dismiss()
+                    renderList()
+                    Toast.makeText(this,
+                        "Selezioni salvate: dati di preventivo e prezzi invariati",
+                        Toast.LENGTH_LONG).show()
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Selezioni non salvate", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun newPlanDialog() {
