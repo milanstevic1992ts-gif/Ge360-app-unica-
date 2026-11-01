@@ -34,7 +34,8 @@ data class JobsiteDelayAssessment(
 object JobsiteDelaySignals {
     fun evaluate(
         state: WeeklyJobHealth,
-        today: LocalDate = LocalDate.now()
+        today: LocalDate = LocalDate.now(),
+        laborThisWeek: WeeklyLaborJobAudit? = null
     ): JobsiteDelayAssessment {
         val job = state.job
         val deadline = runCatching { LocalDate.parse(job.targetEndDate) }.getOrNull()
@@ -68,6 +69,17 @@ object JobsiteDelaySignals {
         if (job.status == JobsiteStore.STATUS_PAUSED) reasons += "Cantiere attualmente sospeso"
         if (state.progressPercent != null) reasons += "Avanzamento registrato: " + state.progressPercent + "% (dato attuale)"
         if (state.openWork > 0) reasons += state.openWork.toString() + " lavorazioni attualmente aperte"
+        // Staff evidence is displayed, but NEVER converted into delivery odds or an ETA.
+        if (laborThisWeek != null) {
+            if (laborThisWeek.closedPlannedMinutes > 0L || laborThisWeek.closedRecordedMinutes > 0L) {
+                reasons += "Settimana corrente, giorni passati: " +
+                    (laborThisWeek.closedPlannedMinutes / 60.0) + "h pianificate / " +
+                    (laborThisWeek.closedRecordedMinutes / 60.0) +
+                    "h nei timer (non prova lavoro mancato)"
+            }
+            if (laborThisWeek.unplannedMinutes > 0L) reasons +=
+                "Ore registrate senza assegnazione: " + (laborThisWeek.unplannedMinutes / 60.0) + "h"
+        }
 
         val preparation = job.status == JobsiteStore.STATUS_INSPECTION ||
             job.status == JobsiteStore.STATUS_ESTIMATE

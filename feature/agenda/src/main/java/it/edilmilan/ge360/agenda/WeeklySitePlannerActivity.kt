@@ -142,7 +142,11 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
             monday.plusDays(6).format(shortDate)))
         val warnings = model.warnings
         // Current factual signals are independent of the historical/future week selected.
-        val assessed = model.jobs.map { state -> state to JobsiteDelaySignals.evaluate(state) }
+        val isCurrentWeek = model.monday == WeeklySitePlanner.mondayOf(LocalDate.now())
+        val assessed = model.jobs.map { state ->
+            val currentWeekLabor = if (isCurrentWeek) model.execution?.byJob?.get(state.job.ge360Id) else null
+            state to JobsiteDelaySignals.evaluate(state, laborThisWeek = currentWeekLabor)
+        }
             .sortedWith(compareBy<Pair<WeeklyJobHealth, JobsiteDelayAssessment>> { it.second.level.order }
                 .thenBy { it.first.job.displayTitle() })
         val assessedByJob = assessed.associate { it.first.job.ge360Id to it.second }
@@ -235,8 +239,10 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                     val keyReasons = risk.reasons.filterNot { it.startsWith("Avanzamento registrato:") }
                     if (keyReasons.isNotEmpty()) append(" · ").append(keyReasons.take(3).joinToString(" · "))
                     append("\nCosa fare: ").append(risk.suggestedAction)
-                    if (risk.missingEvidence.size > 1) append("\nDati mancanti: ")
-                        .append(risk.missingEvidence.take(2).joinToString("; "))
+                    if (risk.missingEvidence.size > 1) {
+                        append("\nDati mancanti: ")
+                            .append(risk.missingEvidence.take(2).joinToString("; "))
+                    }
                     append("\n")
                 }
                 append(state.openWork).append(" lavorazioni aperte")

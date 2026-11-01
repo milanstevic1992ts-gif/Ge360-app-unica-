@@ -135,3 +135,25 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 5. Timer lasciato aperto da ieri: valori non proiettati impropriamente al presente.
 6. Una lavorazione ancora aperta: non conteggiata come completata per mancanza di storico.
 7. Magazzino con storia parziale: accesso alla riconciliazione ufficiale, nessun delta materiale inventato.
+
+
+## Fase 7 — Segnali anticipati sui ritardi (codice sul ramo, non collaudato)
+- Motore puramente locale JobsiteDelaySignals, senza nuovi archivi, servizi IA o invii al Data Hub.
+- Legge la fine prevista (JobsiteRecord.targetEndDate, ISO), lo stato del cantiere, le lavorazioni WorkflowTask, i materiali da ToolsStore.summary e l'avanzamento attuale da JobsiteStore.progressSummary.
+- Priorità spiegabili: fine prevista già superata (solo cantiere non segnato completato); attenzione alta se scadenza entro 7 giorni e lavorazioni aperte/blocchi o avanzamento non registrato; da verificare per blocchi/materiali; dati insufficienti; nessun blocco noto; fase di sopralluogo/preventivo non trattata come cantiere in ritardo.
+- Ogni segnale contiene evidenze osservate, dati mancanti, e una possibile prossima azione. La schermata Settimana cantieri mostra il quadro di rischio alla data corrente, indipendentemente dalla settimana consultata.
+- Per la settimana corrente soltanto mostra anche l'evidenza delle ore pianificate contro le ore annotate nei timer in giornate già trascorse; questo dato NON viene convertito automaticamente in probabilità di ritardo o giorni di slittamento.
+- Fonte lavori non leggibile = checklist non disponibile, mai zero lavorazioni. Fonte materiali non leggibile = non disponibile, mai scorte sufficienti.
+- "Nessun blocco noto" NON è un semaforo di consegna garantita.
+- NON stima percentuali di rischio, data di completamento, durata residua, produttività media o andamento pianificato percentuale: mancano baseline attività, durate, dipendenze e snapshot storici confrontabili.
+- Azioni consigliate portano alle schede originali; nessuna modifica automatica a scadenze, SAL, squadra, stato cantiere, materiali o checklist.
+- Nessuna build, test, GitHub Actions, APK, deploy, merge o modifica a main o Debian in questa fase.
+
+### Accettazione da verificare in un collaudo futuro
+- Fine prevista ieri con status In corso = fine prevista superata, NON certezza di mancata consegna fisica.
+- Fine prevista entro 7 giorni e lavorazioni bloccate = alta attenzione con motivazione.
+- Materiali assenti vs riepilogo non leggibile = due diagnosi distinte.
+- Fine non impostata o data invalida = lacuna evidente, non zero giorni.
+- Sopralluogo e preventivo non vanno classificati come cantieri in ritardo.
+- Fine futura con avanzamento presente e nessun blocco noto = osservazione, non garanzia.
+- Settimana storica o futura non deve contaminare l'allerta odierna con le ore di quella settimana.
