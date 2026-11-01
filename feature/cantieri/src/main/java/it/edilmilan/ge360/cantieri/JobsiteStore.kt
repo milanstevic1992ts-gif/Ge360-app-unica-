@@ -543,11 +543,11 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         note = o.optString("note", "")
     )
 
-    fun exportJson(): String {
+    fun exportJson(forSync: Boolean = false): String {
         val root = JSONObject()
             .put("app", "GE360")
             .put("module", "cantieri")
-            .put("formatVersion", 3)
+            .put("formatVersion", if (forSync) 2 else 3)
             .put("exportedAt", System.currentTimeMillis())
 
         val jobsRows = JSONArray()
@@ -561,7 +561,9 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         val milestoneRows = JSONArray()
         allMilestones().forEach { milestoneRows.put(milestoneToJson(it)) }
         root.put("milestones", milestoneRows)
-        root.put("progressSnapshots", JSONArray().apply {
+        // Data Hub schema has no snapshot lifecycle/tombstone contract yet.
+        // Preserve snapshots in full ZIP backup, but do not send them to Debian.
+        if (!forSync) root.put("progressSnapshots", JSONArray().apply {
             allProgressSnapshots().forEach { put(progressSnapshotToJson(it)) }
         })
         return root.toString(2)

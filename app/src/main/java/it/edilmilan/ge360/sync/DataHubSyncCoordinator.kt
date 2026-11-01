@@ -248,7 +248,7 @@ object DataHubSyncCoordinator {
         return try {
             listOf(
                 snapshot("clienti", clients.exportJson()),
-                snapshot("cantieri", jobs.exportJson()),
+                snapshot("cantieri", jobs.exportJson(forSync = true)),
                 snapshot("centrocantiere", workflow.exportJson()),
                 snapshot("jobsite_archive", jobsiteArchive.exportJson()),
                 snapshot("giornata", daily.exportJson()),
