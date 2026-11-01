@@ -18,6 +18,8 @@ import it.edilmilan.ge360.clienti.ClientsActivity
 import it.edilmilan.ge360.core.common.Ge360Contracts
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.giornata.DailyWorkActivity
+import it.edilmilan.ge360.giornata.DailyStore
+import java.time.LocalDate
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,6 +39,7 @@ class OperationalDayActivity : AppCompatActivity() {
     private var mode = "Oggi"
     private var agendaRows: List<AgendaEntry> = emptyList()
     private var agendaError: String? = null
+    private var workPulse = "Ore e squadra: dati non ancora disponibili"
     private val timeFormat = SimpleDateFormat("dd/MM · HH:mm", Locale.ITALY)
     private val dayFormat = SimpleDateFormat("dd/MM", Locale.ITALY)
 
@@ -49,6 +52,7 @@ class OperationalDayActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshLocal()
+        reloadWorkPulse()
         reloadSources()
     }
 
@@ -144,6 +148,24 @@ class OperationalDayActivity : AppCompatActivity() {
         }
     }
 
+    private fun reloadWorkPulse() {
+        workPulse = runCatching {
+            val daily = DailyStore(applicationContext)
+            try {
+                val today = LocalDate.now()
+                val timers = buildList {
+                    daily.runningSession()?.let { add(it.ge360Id) }
+                    addAll(daily.runningPersonnelSessions().map { it.ge360Id })
+                }.distinct().size
+                val planned = daily.assignments(today, today).size
+                val reports = daily.reports(1000).count { it.workDate == today.toString() }
+                timers.toString() + " timer attivi · " + planned +
+                    " assegnazioni squadra · " + reports + " rapportini oggi"
+            } finally { daily.close() }
+        }.getOrElse { "Ore e squadra: apri il registro per verificare i dati" }
+        if (::contentArea.isInitialized) render()
+    }
+
     private fun refreshLocal() {
         runCatching { store.list() }.onSuccess {
             agendaRows = it
@@ -161,6 +183,7 @@ class OperationalDayActivity : AppCompatActivity() {
         val snapshot = AgendaDayPlan.build(agendaRows, sourceState.deadlines)
         val today = snapshot.dueNow
         val urgent = (snapshot.overdue + snapshot.today).count { it.urgent }
+        contentArea.addView(sectionTitle("ORE E SQUADRA", workPulse))
         contentArea.addView(sectionTitle(
             "RIEPILOGO",
             today.toString() + " impegni in scadenza o scaduti · " +
