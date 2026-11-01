@@ -154,10 +154,24 @@ class FloorPlansActivity : AppCompatActivity() {
                     setOnClickListener { chooseWorkBinding(plan) }
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
                 val bindings = store.workBindings(plan.ge360Id)
-                if (bindings.isNotEmpty()) addView(TextView(this@FloorPlansActivity).apply {
-                    text = "${bindings.size} selezioni con preventivo UUID · prezzi non modificati"
-                    textSize = 11f
-                })
+                if (bindings.isNotEmpty()) {
+                    val linkedRooms = store.rooms(plan.ge360Id).associateBy { it.ge360Id }
+                    val stale = bindings.count { binding ->
+                        linkedRooms[binding.roomGe360Id]?.let { room ->
+                            room.updatedAt != binding.roomRevisionAt ||
+                                kotlin.math.abs(PlanWorkBindingV1.quantity(room, binding.surface) -
+                                    binding.quantityM2) > 0.01
+                        } ?: true
+                    }
+                    addView(TextView(this@FloorPlansActivity).apply {
+                        text = "${bindings.size} selezioni · " +
+                            (if (stale > 0) "${stale} da rivedere dopo modifiche al rilievo" else
+                                "geometria stanza invariata rispetto alla selezione") +
+                            " · preventivi non modificati"
+                        textSize = 11f
+                        setTextColor(Color.parseColor(if (stale > 0) "#B85700" else "#277A49"))
+                    })
+                }
             })
         }
     }
