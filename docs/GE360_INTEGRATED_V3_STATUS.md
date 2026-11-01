@@ -162,3 +162,27 @@ Codice su `feature/ge360-integrated-v3-20261101` soltanto. **NESSUNA BUILD, TEST
 - Gestione multi-database Rilievi/Preventivi: controllo revisione geometria prima del trasferimento, ma nessuna transazione distribuita; richiede collaudo.
 - Il registro riduce le modifiche accidentali ma NON è una firma digitale crittografica, un ledger antifrode o un computo metrico ufficiale. I backup JSON non sono autenticati con firma.
 - La logica generale degli editor legacy resta preesistente fuori dai percorsi metrici: ulteriori gate di optimistic locking/immutabilità sono previsti.
+
+
+## 1 novembre 2026 — Varianti metriche V3 (proposte non distruttive)
+
+**Stato: codice su feature branch, NON compilato/testato, senza APK/Actions/merge/deploy.**
+
+### Decisione GE360
+Una variante di metratura su un preventivo già inviato/accettato NON riscrive la vecchia riga, NON aggiorna automaticamente il totale, NON crea SAL/fatture/pagamenti. Il delta in m² e l'impatto in € calcolato con il prezzo storico sono **solo informativi**, anche quando negativi. Le verifiche tecniche restano separate da qualsiasi successiva approvazione contrattuale/economica.
+
+### Funzionalità introdotte
+- `MetricVariantV3.kt`: snapshot UUID della proposta con fonte metrica precedente e nuovo binding, plan/room/wall/work/surface, SHA-256 delle due revisioni, quantità precedente e nuova, apertura e detrazioni della nuova revisione, prezzo unitario precedente, stato `PROPOSTA` o `VERIFICATA_TECNICAMENTE`, motivazioni e tempi. Delta quantitativo con segno, delta € indicativo calcolato con BigDecimal senza toccare somme.
+- **Preventivi DB V2→V3**: nuove tabelle `estimate_metric_variants` e `estimate_metric_variant_events`, FK verso il preventivo, UUID stabili, unicità per vecchia voce e nuovo binding, audit append-only degli eventi proposta e verifica tecnica.
+- `EstimateStore.proposeMetricVariant()`: accetta solo una nuova selezione con hash diverso, stessa planimetria, stanza, superficie, eventuale singola parete e codice catalogo della precedente, provenienza V2 verificata, delta quantitativo non nullo e motivazione. Verifica che la revisione del preventivo e il prezzo storico non siano cambiati. Una proposta per voce originale alla volta, anche se il preventivo è già accettato; rifiuta preventivi Rifiutati. **La nuova selezione è controllata contro il Rilievo LIVE dalla UI prima della creazione, ma non esiste una transazione distribuita fra i due database.**
+- `EstimateStore.reviewMetricVariant()`: conferma soltanto la verifica tecnica con motivo, registrando un evento senza modificare le voci/prezzi/totali originali. Richiede corrispondenza del prezzo e dello stato di inclusione con lo snapshot proposto; se il preventivo cambia, rifiuta la conferma.
+- `FloorPlansActivity`: pulsante `NUOVA VARIANTE · CONFRONTA METRATURE`; cerca nuove selezioni geometriche con la stessa identità UUID della fonte importata; mostra quantità vecchia e nuova, aperture, prezzo precedente, detrazione manuale opzionale motivata e impatto indicativo prima del salvataggio.
+- `EstimatesActivity`: voce `Varianti di metratura` nella scheda Preventivo, elenco varianti, stato, delta con segno e storico; dialog per verifica tecnica motivata. Nessuna azione economica è collegata alla verifica tecnica.
+- Backup schema compatibile `ge360.preventivi.v1`: array facoltativi `metricVariants[]` e `metricVariantEvents[]`; restore transazionale con validazione delle origini V2 verificate, degli UUID e del prezzo/quantità di partenza. Esistenti backup senza nuovi array rimangono ammissibili.
+- Contratti JUnit aggiunti a `MetricVariantV3Test.kt` **senza eseguirli**.
+
+### Limiti deliberati / gate per prossima fase
+1. Nessun credito, extra economico, nuova voce prezzo, supplemento contrattuale, firma, SAL o fattura viene applicato. Il delta negativo è mostrato soltanto, perché il calcolo legacy `calculateItemTotal()` non ammette automaticamente importi negativi.
+2. Una variante per singola voce storica è ammessa, non una catena di infinite varianti sovrapposte. Servirà decidere approvazione/rifiuto/supersessione formale, autorizzazioni e successivi stati economici, senza doppio conteggio.
+3. UI di verifica tecnica in Preventivi mostra uno snapshot: chi conferma deve controllare effettivamente le nuove misure; non certifica che il Rilievo non sia cambiato successivamente.
+4. Eseguire (solo con autorizzazione) compilazione Android, test Kotlin, integrazione UI, migrazione SQLite V2→V3, backup restore/merge, rollback, edge cases cantiere facoltativo, status Preventivi e delta positivi/negativi. Nessuna delle verifiche è stata eseguita.
