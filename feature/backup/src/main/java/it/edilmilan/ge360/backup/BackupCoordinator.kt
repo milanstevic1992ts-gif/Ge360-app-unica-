@@ -531,6 +531,12 @@ class BackupCoordinator(private val context: Context) {
         require(lines.map { it.ge360Id }.distinct().size == lines.size) {
             "Righe V13 duplicate nel backup"
         }
+        val activeBusinessKeys = lines.filter { it.active }.map {
+            Triple(it.documentGe360Id, it.materialGe360Id, it.jobsiteGe360Id)
+        }
+        require(activeBusinessKeys.distinct().size == activeBusinessKeys.size) {
+            "Backup V13: attribuzioni attive duplicate"
+        }
         val scannerRows = JSONObject(archive.readText(file, "modules/scanner.json"))
             .getJSONArray("documents")
         val documents = (0 until scannerRows.length()).associate { i ->
@@ -569,7 +575,9 @@ class BackupCoordinator(private val context: Context) {
                 "Backup V13: PDF della fattura/DDT confermata assente dal pacchetto"
             }
         }
-        lines.forEach { row ->
+        // Voided historical rows may legitimately outlive their source PDF.
+        // Only ACTIVE attribution is required to have live referential proof.
+        lines.filter { it.active }.forEach { row ->
             val doc = documents[row.documentGe360Id]
                 ?: error("Backup V13: fattura/DDT senza documento Scanner")
             require(doc.first == row.documentKind) {

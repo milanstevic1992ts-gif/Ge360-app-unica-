@@ -136,15 +136,28 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
                 it.materialGe360Id == key.first &&
                     it.jobsiteGe360Id.orEmpty() == key.second
             }.maxByOrNull { it.confirmedAt }
-            val consumed = movements.filter {
-                it.jobsiteId == key.second && it.materialGe360Id == key.first &&
-                    it.type == MaterialStockMovement.TYPE_CONSUME &&
-                    it.unit.trim().equals(unit.trim(), ignoreCase = true)
-            }.sumOf { kotlin.math.abs(it.quantity) }
+            val scopedMovements = movements.filter {
+                it.jobsiteId == key.second && it.materialGe360Id == key.first
+            }
+            val comparison = MaterialVarianceRulesV1.compare(
+                materialGe360Id = key.first,
+                unit = unit,
+                plan = plan?.toQuantity(),
+                movements = scopedMovements,
+                jobsiteGe360Id = key.second.takeIf { it.isNotBlank() },
+                completeHistory = fullHistory
+            )
+            val consumed = comparison.observedConsumption
             val forecast = plan?.quantity?.let(::fmt) ?: "non registrato"
-            val remaining = if (fullHistory) plan?.let {
-                fmt(it.quantity - consumed) + " " + unit
-            } ?: "non calcolabile" else "non calcolabile (storico incompleto)"
+            val remaining = when (comparison.status) {
+                MaterialComparisonStatusV1.COMPARABLE ->
+                    fmt((plan?.quantity ?: 0.0) - consumed) + " " + unit
+                MaterialComparisonStatusV1.UNIT_MISMATCH ->
+                    "non calcolabile (unità discordanti)"
+                MaterialComparisonStatusV1.PARTIAL_HISTORY ->
+                    "non calcolabile (storico incompleto)"
+                MaterialComparisonStatusV1.NO_PLAN -> "non calcolabile (nessun piano)"
+            }
             val site = if (key.second.isBlank()) "Senza cantiere"
                 else jobs[key.second]?.displayTitle() ?: "Cantiere mancante"
             addCard(mat?.name ?: "Materiale mancante", site + " · " + unit,
