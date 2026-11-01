@@ -390,6 +390,7 @@ class EstimatesActivity : AppCompatActivity() {
     }
 
     private fun editItem(item: EstimateItem, done: () -> Unit) {
+        val measuredOrigin = MeasuredEstimateDraftV1.sourceOf(item)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(8), dp(18), dp(8))
@@ -431,6 +432,25 @@ class EstimatesActivity : AppCompatActivity() {
         }
         val included = CheckBox(this).apply { text = "Inclusa nel totale"; isChecked = item.included }
         val optional = CheckBox(this).apply { text = "Opzionale / fuori totale"; isChecked = item.optional }
+        val confirmedMeasuredPrice = CheckBox(this).apply {
+            text = "Confermo di aver ricontrollato sul rilievo quantità, detrazioni " +
+                "e prezzo prima di includere questa voce nel totale."
+        }
+        if (measuredOrigin != null) {
+            // Preserve the immutable source reference: changing scope/quantity requires
+            // removal and a new confirmation from the source floor plan.
+            room.isEnabled = false
+            quantity.isEnabled = false
+            unit.isEnabled = false
+            internalNote.isEnabled = false
+            root.addView(TextView(this).apply {
+                text = "VOCE IMPORTATA DAL RILIEVO · geometria e quantità sono " +
+                    "una fotografia confermata. Per cambiare i metri riparti dal rilievo; " +
+                    "controlla che muri e aperture siano ancora corretti."
+                textSize = 12f
+                setPadding(0, dp(8), 0, dp(8))
+            })
+        }
 
         listOf(
             "Lavorazione" to name,
@@ -447,6 +467,7 @@ class EstimatesActivity : AppCompatActivity() {
         root.addView(internalNote, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(82)))
         root.addView(included, lp52())
         root.addView(optional, lp52())
+        if (measuredOrigin != null) root.addView(confirmedMeasuredPrice)
 
         val isTechnical = item.priceListCode.startsWith(StandardWorkCatalog.PREFIX) ||
             item.priceListCode.startsWith(BathroomWorkCatalog.PREFIX) ||
@@ -460,16 +481,24 @@ class EstimatesActivity : AppCompatActivity() {
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (name.text.toString().isBlank()) { name.error = "Nome obbligatorio"; return@setOnClickListener }
+                if (measuredOrigin != null && included.isChecked &&
+                    !optional.isChecked && !confirmedMeasuredPrice.isChecked) {
+                    Toast.makeText(this, "Conferma le misure prima di attivare la voce nel totale",
+                        Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
                 item.name = name.text.toString().trim()
                 item.category = category.text.toString().trim().ifBlank { "Personalizzate" }
                 item.room = room.text.toString().trim()
-                item.quantity = parseAmount(quantity.text.toString()).coerceAtLeast(0.0)
-                item.unit = unit.selectedItem.toString()
+                if (measuredOrigin == null)
+                    item.quantity = parseAmount(quantity.text.toString()).coerceAtLeast(0.0)
+                if (measuredOrigin == null) item.unit = unit.selectedItem.toString()
                 item.unitPrice = parseAmount(price.text.toString()).coerceAtLeast(0.0)
                 item.priceMode = if (item.unit in listOf("corpo", "forfait")) "body" else "unit"
                 item.section = section.selectedItem.toString()
                 item.description = description.text.toString().trim()
-                item.internalNote = internalNote.text.toString().trim()
+                if (measuredOrigin == null)
+                    item.internalNote = internalNote.text.toString().trim()
                 item.included = included.isChecked
                 item.optional = optional.isChecked
                 item.total = calculateItemTotal(item)
