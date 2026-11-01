@@ -150,6 +150,17 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createWallsTable(db)
         if (oldVersion < 3) createBindingsTable(db)
+        else if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE floor_plan_work_bindings ADD COLUMN geometry_fingerprint TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE floor_plan_work_bindings ADD COLUMN wall_ge360_id TEXT NOT NULL DEFAULT ''")
+            db.execSQL("DROP INDEX IF EXISTS idx_bindings_no_duplicate")
+            createBindingIndexesV4(db)
+        }
+    }
+
+    private fun createBindingIndexesV4(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_bindings_plan ON floor_plan_work_bindings(plan_ge360_id)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_v4_unique ON floor_plan_work_bindings(plan_ge360_id,room_ge360_id,estimate_ge360_id,work_code,surface,room_revision_at,wall_ge360_id)")
     }
 
     private fun createBindingsTable(db: SQLiteDatabase) {
@@ -162,10 +173,11 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
             surface TEXT NOT NULL,
             quantity_m2 REAL NOT NULL,
             room_revision_at INTEGER NOT NULL,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            geometry_fingerprint TEXT NOT NULL DEFAULT '',
+            wall_ge360_id TEXT NOT NULL DEFAULT ''
         )""")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_bindings_plan ON floor_plan_work_bindings(plan_ge360_id)")
-        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_no_duplicate ON floor_plan_work_bindings(plan_ge360_id, room_ge360_id, estimate_ge360_id, work_code, surface, room_revision_at)")
+        createBindingIndexesV4(db)
     }
 
     private fun createWallsTable(db: SQLiteDatabase) {
@@ -199,7 +211,9 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
                 surface = c.getString(c.getColumnIndexOrThrow("surface")),
                 quantityM2 = c.getDouble(c.getColumnIndexOrThrow("quantity_m2")),
                 roomRevisionAt = c.getLong(c.getColumnIndexOrThrow("room_revision_at")),
-                createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"))
+                createdAt = c.getLong(c.getColumnIndexOrThrow("created_at")),
+                geometryFingerprint = c.getString(c.getColumnIndexOrThrow("geometry_fingerprint")),
+                wallGe360Id = c.getString(c.getColumnIndexOrThrow("wall_ge360_id")).ifBlank { null }
             )
         }
         return result
@@ -211,6 +225,8 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         put("work_code", b.workCode); put("surface", b.surface)
         put("quantity_m2", b.quantityM2); put("room_revision_at", b.roomRevisionAt)
         put("created_at", b.createdAt)
+        put("geometry_fingerprint", b.geometryFingerprint)
+        put("wall_ge360_id", b.wallGe360Id.orEmpty())
     }
 
     fun addWorkBindings(rows: List<PlanWorkBindingV1>) {
@@ -223,16 +239,20 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
                 require(get(b.planGe360Id) != null) { "Rilievo non trovato" }
                 val room = rooms(b.planGe360Id).singleOrNull { it.ge360Id == b.roomGe360Id }
                     ?: error("Ambiente non trovato")
+                require(b.geometryFingerprint.isNotBlank()) {
+                    "Selezione senza impronta geometrica: ricalcola dal rilievo"
+                }
                 require(room.updatedAt == b.roomRevisionAt &&
-                    kotlin.math.abs(PlanWorkBindingV1.quantity(room, b.surface) - b.quantityM2) < 0.01) {
-                    "Misure cambiate: ricontrollare la selezione"
+                    PlanGeometryQuantitiesV2.matches(b, room, walls(room.ge360Id))) {
+                    "Stanza, muri o aperture modificati: ricontrollare le superfici"
                 }
                 require(workBindings(b.planGe360Id).none { old ->
                     old.roomGe360Id == b.roomGe360Id &&
                         old.estimateGe360Id == b.estimateGe360Id &&
                         old.workCode == b.workCode && old.surface == b.surface &&
-                        old.roomRevisionAt == b.roomRevisionAt
-                }) { "Questa lavorazione e superficie sono già collegate nella revisione corrente" }
+                        old.wallGe360Id.orEmpty() == b.wallGe360Id.orEmpty() &&
+                        old.geometryFingerprint == b.geometryFingerprint
+                }) { "Questa lavorazione è già collegata alla medesima geometria" }
                 db.insertOrThrow("floor_plan_work_bindings", null, bindingValues(b))
             }
             db.setTransactionSuccessful()
@@ -662,7 +682,7 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
 
     companion object {
         private const val DB_NAME = "ge360_rilievi.db"
-        private const val DB_VERSION = 3
+        private const val DB_VERSION = 4
         const val BACKUP_SCHEMA = "ge360.planimetrie.v1"
     }
 }
