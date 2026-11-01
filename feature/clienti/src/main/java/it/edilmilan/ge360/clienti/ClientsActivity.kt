@@ -296,6 +296,50 @@ class ClientsActivity : AppCompatActivity() {
             }
         }
 
+        body.addView(sectionTitle("Cronologia operativa · fatti registrati"))
+        body.addView(TextView(this).apply {
+            text = "Richieste, promesse, sopralluoghi e problemi documentati. " +
+                "Nessun evento modifica automaticamente il punteggio del cliente."
+            textSize = 12f
+            setPadding(0, dp(5), 0, dp(8))
+        })
+        body.addView(MaterialButton(this).apply {
+            text = "+ REGISTRA INTERAZIONE"
+            setOnClickListener { showFactualEventDialog(client) }
+        })
+        val factualEvents = store.factualTimeline(client.ge360Id, 20)
+        if (factualEvents.isEmpty()) {
+            body.addView(TextView(this).apply {
+                text = "Nessuna interazione operativa registrata."
+                textSize = 13f
+            })
+        } else {
+            val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+            factualEvents.forEach { event ->
+                body.addView(TextView(this).apply {
+                    text = buildString {
+                        append(event.kind)
+                        append(" · ")
+                        append(df.format(Date(event.occurredAt)))
+                        append("\n")
+                        append(event.description)
+                        append("\nFonte: ")
+                        append(event.source)
+                        if (event.nextActionDate.isNotBlank()) {
+                            append(" · Prossima azione: ")
+                            append(event.nextActionDate)
+                        }
+                        if (!event.jobsiteGe360Id.isNullOrBlank()) {
+                            append("\nCantiere UUID: ")
+                            append(event.jobsiteGe360Id)
+                        }
+                    }
+                    textSize = 13f
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                })
+            }
+        }
+
         body.addView(sectionTitle("Azioni"))
         val actions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         actions.addView(MaterialButton(this).apply {
@@ -326,6 +370,72 @@ class ClientsActivity : AppCompatActivity() {
             .setView(ScrollView(this).apply { addView(body) })
             .setPositiveButton("Chiudi") { _, _ -> loadClients() }
             .show()
+    }
+
+    private fun showFactualEventDialog(client: ClientRecord) {
+        if (client.ge360Id.isBlank()) {
+            Toast.makeText(this, "Salva prima l'anagrafica cliente", Toast.LENGTH_LONG).show()
+            return
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        val kind = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ClientsActivity,
+                android.R.layout.simple_spinner_dropdown_item, ClientFactualEventV1.KINDS)
+        }
+        val source = Spinner(this).apply {
+            adapter = ArrayAdapter(this@ClientsActivity,
+                android.R.layout.simple_spinner_dropdown_item, ClientFactualEventV1.SOURCES)
+        }
+        val description = EditText(this).apply {
+            hint = "Che cosa ha chiesto o comunicato il cliente? Quale impegno è stato preso?"
+            minLines = 3
+            maxLines = 6
+            gravity = Gravity.TOP
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        val followUpDate = EditText(this).apply {
+            hint = "Prossima azione AAAA-MM-GG (facoltativa)"
+            isSingleLine = true
+        }
+        form.addView(TextView(this).apply { text = "EVENTO OSSERVATO" })
+        form.addView(kind)
+        form.addView(TextView(this).apply { text = "FONTE" })
+        form.addView(source)
+        form.addView(description)
+        form.addView(followUpDate)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Aggiungi alla cronologia")
+            .setMessage("Annota fatti e comunicazioni, non valutazioni della personalità.")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("REGISTRA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    val event = ClientFactualEventV1.newManual(
+                        clientGe360Id = client.ge360Id,
+                        kind = kind.selectedItem.toString(),
+                        description = description.text.toString(),
+                        source = source.selectedItem.toString(),
+                        nextActionDate = followUpDate.text.toString()
+                    )
+                    store.addFactualEvent(event)
+                }.onSuccess {
+                    dialog.dismiss()
+                    loadClients()
+                    backupAfterChange()
+                    Toast.makeText(this, "Evento registrato. Riapri la scheda per vedere lo storico aggiornato.",
+                        Toast.LENGTH_LONG).show()
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Evento non salvato", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showSignalDialog(clientId: Long, signal: String) {
