@@ -737,6 +737,225 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         } finally { db.endTransaction() }
     }
 
+    fun agreementAttachments(estimateGe360Id: String): List<MetricAgreementAttachmentV5> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val list = mutableListOf<MetricAgreementAttachmentV5>()
+        readableDatabase.query("estimate_agreement_attachments", arrayOf("data_json"),
+            "estimate_id=?", arrayOf(estimate.id.toString()), null, null,
+            "created_at ASC").use { c ->
+            while (c.moveToNext()) list +=
+                MetricAgreementAttachmentV5.fromJson(JSONObject(c.getString(0)))
+        }
+        return list
+    }
+
+    fun agreementCorrections(estimateGe360Id: String): List<MetricAgreementCorrectionV5> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val list = mutableListOf<MetricAgreementCorrectionV5>()
+        readableDatabase.query("estimate_agreement_corrections", arrayOf("data_json"),
+            "estimate_id=?", arrayOf(estimate.id.toString()), null, null,
+            "created_at ASC").use { c ->
+            while (c.moveToNext()) list +=
+                MetricAgreementCorrectionV5.fromJson(JSONObject(c.getString(0)))
+        }
+        return list
+    }
+
+    fun agreementCorrectionEvents(estimateGe360Id: String):
+        List<MetricAgreementCorrectionEventV5> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val list = mutableListOf<MetricAgreementCorrectionEventV5>()
+        readableDatabase.query("estimate_agreement_correction_events",
+            arrayOf("data_json"), "estimate_id=?", arrayOf(estimate.id.toString()),
+            null, null, "occurred_at ASC").use { c ->
+            while (c.moveToNext()) list +=
+                MetricAgreementCorrectionEventV5.fromJson(JSONObject(c.getString(0)))
+        }
+        return list
+    }
+
+    fun attachAgreementFile(
+        estimateGe360Id: String,
+        economicsGe360Id: String,
+        correctionGe360Id: String,
+        uri: Uri
+    ): MetricAgreementAttachmentV5 {
+        val quote = getByGe360Id(estimateGe360Id) ?: error("Preventivo non presente")
+        val economic = metricVariantEconomics(estimateGe360Id)
+            .singleOrNull { it.ge360Id == economicsGe360Id }
+            ?: error("Variante economica non trovata")
+        require(quote.status != EstimateStatuses.REJECTED) {
+            "Non aggiungere documenti a un preventivo rifiutato"
+        }
+        if (correctionGe360Id.isNotBlank()) {
+            require(agreementCorrections(estimateGe360Id).any {
+                it.ge360Id == correctionGe360Id &&
+                    it.economicsGe360Id == economicsGe360Id
+            }) { "Rettifica non trovata nella stessa proposta economica" }
+        }
+        val copied = MetricAgreementFilesV5.copyFromPicker(
+            appContext, uri, quote.ge360Id, economic.ge360Id, correctionGe360Id
+        )
+        val db = writableDatabase
+        try {
+            db.beginTransaction()
+            try {
+                require(getByGe360Id(quote.ge360Id)?.id == quote.id &&
+                    metricVariantEconomics(quote.ge360Id).any {
+                        it.ge360Id == economic.ge360Id
+                    }) { "Preventivo cambiato durante l'allegato" }
+                if (correctionGe360Id.isNotBlank()) require(
+                    agreementCorrections(quote.ge360Id).any {
+                        it.ge360Id == correctionGe360Id &&
+                            it.economicsGe360Id == economicsGe360Id
+                    }
+                ) { "Rettifica cancellata durante la selezione" }
+                check(copied.valid() && MetricAgreementFilesV5.existsAndMatches(
+                    appContext, copied
+                ))
+                db.insertOrThrow("estimate_agreement_attachments", null,
+                    attachmentValues(quote.id, copied))
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+        } catch (error: Throwable) {
+            MetricAgreementFilesV5.fileFor(appContext, copied).delete()
+            throw error
+        }
+        return copied
+    }
+
+    private fun verifiedEvidence(
+        quoteId: String, economicId: String, correctionId: String
+    ): Boolean = agreementAttachments(quoteId).any {
+        it.economicsGe360Id == economicId &&
+            it.correctionGe360Id == correctionId &&
+            MetricAgreementFilesV5.existsAndMatches(appContext, it)
+    }
+
+    fun proposeAgreementCorrection(
+        estimateGe360Id: String,
+        economicsGe360Id: String,
+        correctedSignedAmount: Double,
+        reason: String
+    ): MetricAgreementCorrectionV5 {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val quote = getByGe360Id(estimateGe360Id) ?: error("Preventivo non trovato")
+            require(quote.status != EstimateStatuses.REJECTED) {
+                "Preventivo rifiutato"
+            }
+            val original = metricVariantEconomics(quote.ge360Id)
+                .singleOrNull { it.ge360Id == economicsGe360Id }
+                ?: error("Accordo economico non trovato")
+            require(original.valid() &&
+                original.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
+                "Rettifica possibile solo dopo annotazione di un accordo esterno"
+            }
+            require(agreementCorrections(quote.ge360Id).none {
+                it.economicsGe360Id == economicsGe360Id
+            }) { "Rettifica già proposta: non generare doppie revisioni" }
+            val correction = MetricAgreementCorrectionV5(
+                estimateGe360Id = quote.ge360Id,
+                economicsGe360Id = original.ge360Id,
+                priorSignedAmountEuro = original.proposedSignedAmountEuro,
+                correctedSignedAmountEuro = correctedSignedAmount,
+                reason = reason.trim()
+            )
+            require(correction.valid()) {
+                "Importo diverso, stesso segno (extra/riduzione) e motivo obbligatorio"
+            }
+            db.insertOrThrow("estimate_agreement_corrections", null,
+                correctionValues(quote.id, correction))
+            val event = MetricAgreementCorrectionEventV5(
+                estimateGe360Id = quote.ge360Id,
+                correctionGe360Id = correction.ge360Id,
+                action = "CORRECTION_PROPOSED",
+                signedAmountEuro = correction.correctedSignedAmountEuro,
+                reason = correction.reason
+            )
+            db.insertOrThrow("estimate_agreement_correction_events", null,
+                correctionEventValues(quote.id, event))
+            db.setTransactionSuccessful()
+            return correction
+        } finally { db.endTransaction() }
+    }
+
+    fun attestAgreementCorrection(
+        estimateGe360Id: String,
+        correctionGe360Id: String,
+        externalReference: String,
+        agreementDateIso: String,
+        note: String,
+        expresslyConfirmed: Boolean
+    ): MetricAgreementCorrectionV5 {
+        require(expresslyConfirmed) { "Conferma esplicita necessaria" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val quote = getByGe360Id(estimateGe360Id) ?: error("Preventivo non trovato")
+            require(quote.status != EstimateStatuses.REJECTED) { "Preventivo rifiutato" }
+            val correction = agreementCorrections(quote.ge360Id)
+                .singleOrNull { it.ge360Id == correctionGe360Id }
+                ?: error("Rettifica inesistente")
+            require(correction.valid() &&
+                correction.status == MetricAgreementCorrectionV5.STATUS_PROPOSED) {
+                "Rettifica già annotata o non valida"
+            }
+            val economic = metricVariantEconomics(quote.ge360Id)
+                .singleOrNull { it.ge360Id == correction.economicsGe360Id }
+                ?: error("Origine economica mancante")
+            require(economic.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED &&
+                kotlin.math.abs(economic.proposedSignedAmountEuro -
+                    correction.priorSignedAmountEuro) < 0.001) {
+                "L'accordo originale non corrisponde alla rettifica"
+            }
+            require(verifiedEvidence(quote.ge360Id, economic.ge360Id, correction.ge360Id)) {
+                "Allegare un PDF, JPG o PNG verificabile alla rettifica prima di annotarla"
+            }
+            val updated = correction.copy(
+                status = MetricAgreementCorrectionV5.STATUS_ATTESTED,
+                agreementReference = externalReference.trim(),
+                agreementDateIso = agreementDateIso.trim(),
+                evidenceNote = note.trim(),
+                attestedAt = maxOf(System.currentTimeMillis(), correction.proposedAt + 1)
+            )
+            require(updated.valid()) {
+                "Riferimento, data ISO e motivazione della nuova accettazione obbligatori"
+            }
+            val affected = db.update("estimate_agreement_corrections",
+                correctionValues(quote.id, updated),
+                "ge360_id=? AND status=?", arrayOf(
+                    correction.ge360Id, MetricAgreementCorrectionV5.STATUS_PROPOSED
+                ))
+            check(affected == 1) { "Rettifica già cambiata durante il salvataggio" }
+            val event = MetricAgreementCorrectionEventV5(
+                estimateGe360Id = quote.ge360Id,
+                correctionGe360Id = updated.ge360Id,
+                action = "CORRECTION_ATTESTED",
+                signedAmountEuro = updated.correctedSignedAmountEuro,
+                reason = updated.evidenceNote
+            )
+            db.insertOrThrow("estimate_agreement_correction_events", null,
+                correctionEventValues(quote.id, event))
+            db.setTransactionSuccessful()
+            return updated
+        } finally { db.endTransaction() }
+    }
+
+    /** Display only. Supersede earlier amount exactly once, never add both. */
+    fun effectiveAgreedVariantsEuro(estimateGe360Id: String): Double {
+        val corrections = agreementCorrections(estimateGe360Id)
+            .filter { it.status == MetricAgreementCorrectionV5.STATUS_ATTESTED }
+            .associateBy { it.economicsGe360Id }
+        return metricVariantEconomics(estimateGe360Id)
+            .filter { it.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED }
+            .sumOf { economics ->
+                corrections[economics.ge360Id]?.correctedSignedAmountEuro
+                    ?: economics.proposedSignedAmountEuro
+            }
+    }
+
     /**
      * Migrate old note-only links conservatively. They retain legacy status and
      * cannot be priced as verified without a fresh operator-reviewed binding.
