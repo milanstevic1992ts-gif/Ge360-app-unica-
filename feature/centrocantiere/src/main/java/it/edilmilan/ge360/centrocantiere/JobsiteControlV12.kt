@@ -4,6 +4,10 @@ import android.content.Context
 import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
 import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceStoreV13
 import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceRulesV13
+import it.edilmilan.ge360.attrezzi.MaterialCostStoreV15
+import it.edilmilan.ge360.attrezzi.MaterialCostRulesV15
+import it.edilmilan.ge360.attrezzi.MaterialPlanRevisionV1
+import it.edilmilan.ge360.attrezzi.MaterialBudgetRevisionV15
 import it.edilmilan.ge360.attrezzi.MaterialPlanStore
 import it.edilmilan.ge360.attrezzi.MaterialStockMovement
 import it.edilmilan.ge360.attrezzi.MaterialVarianceRulesV1
@@ -215,6 +219,68 @@ internal object JobsiteControlV12 {
                     else Level.INFO,
                     Action.EVIDENCE)
             } finally { ledger.close(); documents.close(); inventory.close() }
+        }
+
+        capture("Budget e costi materiali", Action.EVIDENCE) {
+            val ledger = MaterialDocumentEvidenceStoreV13(context)
+            val prices = MaterialCostStoreV15(context)
+            val docs = DocumentStore(context)
+            val plans = MaterialPlanStore(context)
+            val inventory = MaterialInventoryStore(context)
+            try {
+                val lines = ledger.forJobsite(id)
+                val documentMap = docs.list().associateBy { it.ge360Id }
+                val materialMap = inventory.list().associateBy { it.ge360Id }
+                val validInvoiceIds = lines.filter { line ->
+                    val doc = documentMap[line.documentGe360Id]
+                    val material = materialMap[line.materialGe360Id]
+                    line.documentKind == "FATTURA" &&
+                        doc != null && doc.type.equals("FATTURA", ignoreCase = true) &&
+                        (doc.jobsiteId.isBlank() || doc.jobsiteId == id) &&
+                        doc.pdfPath.isNotBlank() && File(doc.pdfPath).isFile &&
+                        material?.unit?.equals(line.unit, ignoreCase = true) == true
+                }.map { it.ge360Id }.toSet()
+                val costs = prices.invoiceCosts().filter { it.active }
+                val currentPlans = plans.all().filter { it.jobsiteGe360Id == id }
+                    .groupBy { it.materialGe360Id }.values.mapNotNull { versions ->
+                        versions.maxWithOrNull(compareBy<MaterialPlanRevisionV1> {
+                            it.confirmedAt
+                        }.thenBy { it.ge360Id })
+                    }
+                val budgets = prices.budgets()
+                var totalBudget = 0L
+                var budgeted = 0
+                currentPlans.forEach { plan ->
+                    val budget = budgets.filter { it.planRevisionGe360Id == plan.ge360Id }
+                        .maxWithOrNull(compareBy<MaterialBudgetRevisionV15> {
+                            it.confirmedAt
+                        }.thenBy { it.ge360Id })
+                    if (budget != null) {
+                        totalBudget = Math.addExact(totalBudget,
+                            MaterialCostRulesV15.plannedNetCents(plan, budget))
+                        budgeted++
+                    }
+                }
+                val trustedCosts = costs.filter { it.invoiceLineGe360Id in validInvoiceIds }
+                val documentedNet = trustedCosts.fold(0L) { sum, c ->
+                    Math.addExact(sum, c.netCents)
+                }
+                val invoiceCount = lines.count { it.documentKind == "FATTURA" }
+                val coverageCount = trustedCosts.map { it.invoiceLineGe360Id }.distinct().size
+                Signal("Budget e costi materiali",
+                    "$coverageCount/$invoiceCount righe fattura valorizzate",
+                    "Imponibile documentato: " + MaterialCostRulesV15.euro(documentedNet) +
+                        " · budget confermato: " +
+                        (if (budgeted > 0) MaterialCostRulesV15.euro(totalBudget)
+                         else "non registrato") +
+                        " (" + budgeted + "/" + currentPlans.size + " piani)" +
+                        " · scostamento complessivo non certificato",
+                    if (invoiceCount > coverageCount ||
+                        currentPlans.size > budgeted) Level.ATTENZIONE else Level.INFO,
+                    Action.EVIDENCE)
+            } finally {
+                ledger.close(); prices.close(); docs.close(); plans.close(); inventory.close()
+            }
         }
 
         capture("Documenti", Action.DOCUMENTS) {
