@@ -52,6 +52,7 @@ object JobsiteDelaySignals {
         }
         if (state.progressPercent == null) missing += "Avanzamento percentuale non registrato"
         if (materialDataMissing) missing += "Riepilogo materiali non disponibile"
+        if (!state.workflowAvailable) missing += "Checklist cantiere non disponibile"
         missing += "Durate e dipendenze delle lavorazioni non pianificate: impossibile stimare una nuova fine"
 
         val reasons = mutableListOf<String>()
@@ -78,7 +79,7 @@ object JobsiteDelaySignals {
             daysLeft != null && daysLeft <= 7 && (obstacle || state.openWork > 0 || state.progressPercent == null) ->
                 JobsiteDelayAssessment.Level.HIGH
             obstacle || (daysLeft != null && daysLeft <= 7) -> JobsiteDelayAssessment.Level.ATTENTION
-            deadline == null || materialDataMissing || state.progressPercent == null ->
+            deadline == null || materialDataMissing || !state.workflowAvailable || state.progressPercent == null ->
                 JobsiteDelayAssessment.Level.UNKNOWN
             else -> JobsiteDelayAssessment.Level.OBSERVE
         }
@@ -93,6 +94,7 @@ object JobsiteDelaySignals {
             deadline == null -> "Imposta una data di fine realistica nella scheda cantiere"
             level == JobsiteDelayAssessment.Level.HIGH || level == JobsiteDelayAssessment.Level.ATTENTION ->
                 "Confronta le lavorazioni aperte con i giorni rimasti"
+            !state.workflowAvailable -> "Apri la checklist del cantiere e verifica le lavorazioni"
             state.progressPercent == null -> "Aggiorna l'avanzamento della scheda cantiere"
             else -> "Monitora il programma: assenza di blocchi noti non garantisce la consegna"
         }

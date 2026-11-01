@@ -22,11 +22,12 @@ data class WeeklyJobHealth(
     val openWork: Int,
     val blockedWork: Int,
     val doneWork: Int,
-    val progressPercent: Int?
+    val progressPercent: Int?,
+    val workflowAvailable: Boolean
 ) {
     val needsReview: Boolean
-        get() = (resources?.missing ?: 0) > 0 ||
-            (resources?.openRequests ?: 0) > 0 || blockedWork > 0
+        get() = resources == null || !workflowAvailable ||
+            (resources.missing > 0) || (resources.openRequests > 0) || blockedWork > 0
 }
 
 data class WeeklyStaffConflict(
@@ -97,9 +98,9 @@ object WeeklySitePlanner {
                 val summary = runCatching { tools.summary(job.ge360Id) }
                     .onFailure { warnings += "Materiali non leggibili per " + job.displayTitle() }
                     .getOrNull()
-                val tasks = runCatching { workflow.tasks(job.ge360Id) }
+                val taskResult = runCatching { workflow.tasks(job.ge360Id) }
                     .onFailure { warnings += "Lavorazioni non leggibili per " + job.displayTitle() }
-                    .getOrDefault(emptyList())
+                val tasks = taskResult.getOrDefault(emptyList())
                 WeeklyJobHealth(
                     job, summary,
                     tasks.count { it.status in setOf(WorkflowStatuses.TODO, WorkflowStatuses.IN_PROGRESS, WorkflowStatuses.BLOCKED) },
@@ -107,7 +108,8 @@ object WeeklySitePlanner {
                     tasks.count { it.status == WorkflowStatuses.DONE },
                     runCatching { jobs.progressSummary(job.ge360Id)?.percent }
                         .onFailure { warnings += "Avanzamento non leggibile per " + job.displayTitle() }
-                        .getOrNull()
+                        .getOrNull(),
+                    taskResult.isSuccess
                 )
             }
         } finally {
