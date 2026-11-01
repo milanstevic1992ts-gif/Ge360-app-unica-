@@ -6,6 +6,7 @@ import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.cantieri.JobsiteProgressTrend
+import it.edilmilan.ge360.cantieri.ProgressFinishAssessment
 import it.edilmilan.ge360.centrocantiere.JobsiteWorkflowStore
 import it.edilmilan.ge360.centrocantiere.WorkflowStatuses
 import it.edilmilan.ge360.giornata.DailyStore
@@ -25,7 +26,8 @@ data class WeeklyJobHealth(
     val doneWork: Int,
     val progressPercent: Int?,
     val workflowAvailable: Boolean,
-    val progressHistory: JobsiteProgressTrend?
+    val progressHistory: JobsiteProgressTrend?,
+    val finishScenarios: ProgressFinishAssessment?
 ) {
     val needsReview: Boolean
         get() = resources == null || !workflowAvailable ||
@@ -114,6 +116,15 @@ object WeeklySitePlanner {
                     taskResult.isSuccess,
                     runCatching { jobs.progressTrend(job.ge360Id) }
                         .onFailure { warnings += "Storico avanzamento non leggibile per " + job.displayTitle() }
+                        .getOrNull(),
+                    runCatching {
+                        jobs.progressForecast(job.ge360Id, hasUnresolvedBlockers =
+                            (summary?.missing ?: 0) > 0 ||
+                            (summary?.openRequests ?: 0) > 0 ||
+                            tasks.any { it.status == WorkflowStatuses.BLOCKED } ||
+                            job.status == JobsiteStore.STATUS_PAUSED ||
+                            summary == null || taskResult.isFailure)
+                    }.onFailure { warnings += "Scenario non leggibile per " + job.displayTitle() }
                         .getOrNull()
                 )
             }

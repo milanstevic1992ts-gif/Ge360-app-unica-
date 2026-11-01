@@ -12,7 +12,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import java.time.LocalDate
-import java.security.MessageDigest
 import kotlin.math.roundToInt
 
 
@@ -422,13 +421,8 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
                     )
                 }
             }.toString()
-            // Identity and weight define whether two overall percentages are comparable.
-            val canonical = phases.sortedBy { it.ge360Id }.joinToString("|") {
-                it.ge360Id + ":" + it.weight
-            }
-            val fingerprint = MessageDigest.getInstance("SHA-256")
-                .digest(canonical.toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            // Same fingerprint as the forecasting gate: immutable phase identity and weight.
+            val fingerprint = ProgressScenarioForecast.fingerprint(phases)
             val result = JobsiteProgressSnapshot(
                 ge360Id = UUID.randomUUID().toString(),
                 jobsiteId = jobsiteId,
@@ -465,6 +459,23 @@ class JobsiteStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
 
     fun progressTrend(jobsiteId: String): JobsiteProgressTrend =
         JobsiteProgressHistory.analyze(progressSnapshots(jobsiteId))
+
+    /**
+     * Read-only, conditional scenarios. No DB writes, auto-created measurements
+     * or changes to the customer's contractual deadline.
+     */
+    fun progressForecast(
+        jobsiteId: String,
+        hasUnresolvedBlockers: Boolean = false
+    ): ProgressFinishAssessment {
+        val job = getByGe360Id(jobsiteId) ?: error("Cantiere non trovato")
+        return ProgressScenarioForecast.evaluate(
+            snapshots = progressSnapshots(jobsiteId, 2000),
+            current = progressSummary(jobsiteId),
+            targetDateIso = job.targetEndDate,
+            hasUnresolvedBlockers = hasUnresolvedBlockers
+        )
+    }
 
     private fun allProgressSnapshots(): List<JobsiteProgressSnapshot> {
         val result = mutableListOf<JobsiteProgressSnapshot>()
