@@ -24,7 +24,7 @@ class BackupPassphraseStoreV8(context: Context) {
         "ge360_encrypted_backup_v8", Context.MODE_PRIVATE
     )
     private val alias = "ge360_backup_v8_local_wrap"
-    private val keystore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private val keystore by lazy { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }
 
     fun isEnabled(): Boolean = prefs.getBoolean("enabled", false)
 

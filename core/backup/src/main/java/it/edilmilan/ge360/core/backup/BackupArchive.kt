@@ -264,6 +264,14 @@ class BackupArchive(private val context: Context) {
                 requireNotNull(output) { "Destinazione backup non scrivibile" }
                 FileInputStream(file).use { input -> input.copyTo(output, 64 * 1024) }
             }
+            // A successful SAF write does not prove the provider saved the
+            // whole ciphertext: re-open and compare the complete SHA-256.
+            val sourceSha = sha256(FileInputStream(file))
+            val remoteSha = context.contentResolver.openInputStream(target.uri).use {
+                requireNotNull(it) { "Copia remota non rileggibile" }
+                sha256(it)
+            }
+            check(sourceSha == remoteSha) { "Copia di backup incompleta sulla destinazione" }
         } catch (error: Throwable) {
             target.delete() // Do not retain an incomplete remote ciphertext/ZIP.
             throw error
