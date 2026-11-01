@@ -18,6 +18,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -76,6 +78,7 @@ class JobsiteProgressActivity : AppCompatActivity() {
 
         root.addView(sectionTitle("Avanzamento reale", "Le fasi hanno un peso: GE360 calcola il completamento reale del cantiere.", 24))
         root.addView(progressSummaryCard(summary))
+        root.addView(progressHistoryCard(summary))
 
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -156,6 +159,121 @@ class JobsiteProgressActivity : AppCompatActivity() {
                 })
             })
         }
+    }
+
+    /**
+     * Measurements are recorded ONLY after the operator confirms.
+     * Changing a percentage never silently generates historical dates.
+     */
+    private fun progressHistoryCard(summary: JobsiteProgressSummary?): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(sectionTitle(
+                "Storico avanzamento",
+                "Misurazioni autentiche con data, pesi e dettaglio delle fasi. Non inventa il passato.",
+                18
+            ))
+            addView(actionCard(
+                "＋ REGISTRA RILEVAZIONE ORA",
+                if (summary == null) "Prima configura le fasi del cantiere"
+                else "Conferma il " + summary.percent + "% attuale; conserva data e fasi senza sovrascrivere il passato"
+            ) {
+                captureProgress()
+            })
+            val snapshots = runCatching { store.progressSnapshots(job.ge360Id, 12) }
+                .getOrElse {
+                    addView(text("Storico non leggibile; nessun dato è stato cancellato.", 12f, "#A85A00"))
+                    emptyList()
+                }
+            if (snapshots.isEmpty()) {
+                addView(emptyCard("Nessuna rilevazione registrata finora. Il valore attuale NON è uno storico."))
+                return@apply
+            }
+            val trend = JobsiteProgressHistory.analyze(snapshots)
+            addView(space(10))
+            addView(whiteCard().apply {
+                addView(LinearLayout(this@JobsiteProgressActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(13), dp(14), dp(13))
+                    addView(text(
+                        snapshots.size.toString() + " rilevazioni recenti · " +
+                            trend.observedDays + " giorni distinti",
+                        13f, "#17191C", bold = true
+                    ))
+                    if (trend.deltaPoints != null) {
+                        val signed = if (trend.deltaPoints > 0) "+" else ""
+                        addView(text(
+                            "Variazione osservata: " + signed + trend.deltaPoints + " punti percentuali",
+                            17f, if (trend.deltaPoints < 0) "#A85A00" else "#277A49", bold = true
+                        ))
+                        addView(text(
+                            "Tra " + trend.firstDate + " e " + trend.lastDate +
+                                " · media osservata " +
+                                String.format(Locale.ITALY, "%.2f", trend.pointsPerDay ?: 0.0) +
+                                " punti/giorno (non una previsione)",
+                            11f, "#62686E"
+                        ))
+                    }
+                    addView(text(trend.explanation, 11f, "#62686E"))
+                })
+            })
+            snapshots.take(8).forEachIndexed { i, entry ->
+                if (i > 0) addView(space(6))
+                val stamp = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+                    .format(Date(entry.capturedAt))
+                addView(whiteCard().apply {
+                    addView(LinearLayout(this@JobsiteProgressActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(14), dp(11), dp(14), dp(11))
+                        addView(text(
+                            stamp + "  ·  " + entry.percent + "%",
+                            15f, "#17191C", bold = true
+                        ))
+                        addView(text(
+                            entry.phaseCount.toString() + " fasi · peso " + entry.totalWeight +
+                                " · stato rilevato: " + entry.jobsiteStatus,
+                            11f, "#62686E"
+                        ))
+                        if (entry.targetEndDate.isNotBlank()) addView(text(
+                            "Fine prevista alla rilevazione: " + entry.targetEndDate,
+                            11f, "#62686E"
+                        ))
+                        if (entry.note.isNotBlank()) addView(text(entry.note, 12f, "#17191C"))
+                    })
+                })
+            }
+            if (snapshots.size > 8) addView(text(
+                "Mostrate le ultime 8 misurazioni. Le precedenti rimangono nel registro e nel backup.",
+                11f, "#62686E"
+            ))
+        }
+
+    private fun captureProgress() {
+        if (store.progressSummary(job.ge360Id) == null) {
+            toast("Prima crea e controlla almeno una fase")
+            return
+        }
+        val note = EditText(this).apply {
+            hint = "Nota per la rilevazione (facoltativa)"
+            minLines = 2
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Registrare lo stato di adesso?")
+            .setMessage("GE360 salva la percentuale pesata, le fasi e l'orario reali. " +
+                "La rilevazione sarà storica e non verrà sovrascritta dalle modifiche successive.")
+            .setView(dialogBox(note))
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("Registra") { _, _ ->
+                runCatching {
+                    store.captureProgressSnapshot(job.ge360Id, note.text.toString())
+                }.onSuccess { recorded ->
+                    toast("Rilevazione " + recorded.percent + "% salvata con data attuale")
+                    render()
+                }.onFailure { error ->
+                    toast(error.message ?: "Impossibile salvare la rilevazione")
+                }
+            }
+            .show()
     }
 
     private fun phaseCard(item: JobsiteProgressItem): View = whiteCard().apply {
