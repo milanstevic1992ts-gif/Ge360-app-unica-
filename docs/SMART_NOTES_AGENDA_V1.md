@@ -76,3 +76,25 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 - Le note storiche del Centro Cantiere restano nel loro archivio e sono visibili solo nel contesto del cantiere selezionato.
 - I task e le note privi di scadenza vengono etichettati "Senza data" e non compaiono nel calendario a giorni o nelle notifiche.
 - L'accesso apre la scheda del cantiere: azioni sulla checklist restano nel modulo proprietario.
+
+
+## Fase 4 — La mia giornata (sviluppo non collaudato)
+- Nuova Activity OperationalDayActivity, accessibile da Home protetta, Dashboard completa e sezione Altro.
+- Nessun archivio aggiuntivo: aggrega AgendaStore, AgendaSourceProjection e i promemoria del TodayDashboardView.
+- Le attività Agenda possono essere concluse dalla vista; gli elementi di Clienti, SAL, Checklist e promemoria Home restano in sola lettura e rimandano al proprietario.
+- Scadenze suddivise in DA RECUPERARE / OGGI / PROSSIMI SETTE GIORNI / PIÙ AVANTI / DA PIANIFICARE.
+- Distingue date senza ora da appuntamenti con orario: un SAL di oggi non è scaduto soltanto perché ora è dopo mezzanotte.
+- "Oggi", "7 giorni" e "Tutto" sono filtri visivi, non duplicano record né modificano date.
+- Appunti NOTE sono separati dai task, con accesso ai tre più recenti; le anteprime dei PRIVATI non rivelano il titolo.
+- Pulsanti rapidi per Note / Attività / Appuntamenti, e accesso a Ore/Squadra già presente.
+- Ogni AgendaEntry viene aperta direttamente tramite EXTRA_EDIT_ENTRY_ID; gli elementi di origine aprono la propria scheda.
+- I promemoria generali Home hanno identificativi WorkflowTask canonici e scadenze ISO salvate in templateId con prefisso "dashboard-reminder:". Non sono copiati in AgendaStore.
+- Nessuna modifica automatica ai clienti, ai SAL, alle checklist, ai timer, a JARVIS o al Data Hub.
+
+### Criticità da verificare prima di una release
+- Compilazione e runtime Android su dispositivo e legami tra moduli.
+- Controllare timing delle ricorrenze e limiti di visibilità delle note private.
+- Verificare che i promemoria Home DATE_ONLY non vengano classificati scaduti prima del giorno successivo.
+- Per un promemoria generale, il link apre la Home di origine; la modifica resta nel pannello promemoria.
+- Il nuovo schermo non sostituisce il registro ore e rapportini Giornata, che resta la fonte.
+- GitHub Actions, build, test, APK, merge e Debian non vengono eseguiti in questo incremento.

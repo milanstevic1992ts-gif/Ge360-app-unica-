@@ -88,6 +88,20 @@
             android:layout_marginTop="18dp"
             android:orientation="vertical" />
 
+        <TextView
+            android:id="@+id/openOperationalDay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#EEF5FF"
+            android:gravity="center"
+            android:minHeight="48dp"
+            android:padding="12dp"
+            android:text="Apri La mia giornata · urgenze e impegni  ›"
+            android:textColor="#244F86"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
         <it.edilmilan.ge360.home.HomeJarvisChatView
             android:id="@+id/homeJarvisChat"
             android:layout_width="match_parent"

@@ -15,6 +15,8 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import it.edilmilan.ge360.agenda.AgendaActivity
 import it.edilmilan.ge360.agenda.AgendaEntry
+import it.edilmilan.ge360.agenda.OperationalDayActivity
+import it.edilmilan.ge360.giornata.DailyWorkActivity
 import it.edilmilan.ge360.cantieri.JobsitesActivity
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.jarvis.ProactiveAlertsActivity
@@ -97,6 +99,16 @@ class SafeHomeFragment : Fragment() {
             actionCard("06", "Nota veloce", "Scrivi senza scegliere cantiere") {
                 startActivity(Intent(context, AgendaActivity::class.java)
                     .putExtra(AgendaActivity.EXTRA_CREATE_KIND, AgendaEntry.NOTE))
+            }
+        ))
+
+        body.addView(space(10))
+        body.addView(actionRow(
+            actionCard("07", "La mia giornata", "Urgenze, impegni e attività") {
+                startActivity(Intent(context, OperationalDayActivity::class.java))
+            },
+            actionCard("08", "Ore / squadra", "Timer e rapportini") {
+                startActivity(Intent(context, DailyWorkActivity::class.java))
             }
         ))
 

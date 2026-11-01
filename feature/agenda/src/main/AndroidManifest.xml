@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application>
         <activity android:name=".AgendaActivity" android:exported="false" />
+        <activity android:name=".OperationalDayActivity" android:exported="false" />
         <receiver android:name=".AgendaReminderReceiver" android:exported="false" android:enabled="true">
             <intent-filter>
                 <action android:name="it.edilmilan.ge360.agenda.REMINDER_DUE" />

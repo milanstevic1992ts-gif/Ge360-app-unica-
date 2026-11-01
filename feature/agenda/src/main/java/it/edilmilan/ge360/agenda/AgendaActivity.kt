@@ -61,9 +61,18 @@ class AgendaActivity : AppCompatActivity() {
         if (hasContext) filter = "Collegati"
         setContentView(buildScreen())
         refresh()
-        if (savedInstanceState == null && intent.getStringExtra(EXTRA_CREATE_KIND) in
-            setOf(AgendaEntry.NOTE, AgendaEntry.TASK, AgendaEntry.EVENT)) {
-            edit(newEntry(intent.getStringExtra(EXTRA_CREATE_KIND)!!))
+        if (savedInstanceState == null) {
+            val kind = intent.getStringExtra(EXTRA_CREATE_KIND).orEmpty()
+            val uuid = intent.getStringExtra(EXTRA_EDIT_ENTRY_ID).orEmpty()
+            when {
+                kind in setOf(AgendaEntry.NOTE, AgendaEntry.TASK, AgendaEntry.EVENT) ->
+                    edit(newEntry(kind))
+                uuid.isNotBlank() -> {
+                    val item = runCatching { store.list().firstOrNull { it.id == uuid } }.getOrNull()
+                    if (item == null) message("Appunto non disponibile nell'archivio locale")
+                    else edit(item)
+                }
+            }
         }
     }
 
@@ -611,6 +620,7 @@ class AgendaActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_CREATE_KIND = Ge360Contracts.EXTRA_AGENDA_CREATE_KIND
+        const val EXTRA_EDIT_ENTRY_ID = "ge360.agenda.edit_entry_id"
         private const val REQUEST_NOTIFICATIONS = 7004
     }
 }

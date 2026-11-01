@@ -17,6 +17,7 @@ import it.edilmilan.ge360.agenda.AgendaActivity
 import it.edilmilan.ge360.agenda.AgendaCalendar
 import it.edilmilan.ge360.agenda.AgendaEntry
 import it.edilmilan.ge360.agenda.AgendaStore
+import it.edilmilan.ge360.agenda.OperationalDayActivity
 import it.edilmilan.ge360.attrezzi.ToolsHubActivity
 import it.edilmilan.ge360.backup.BackupActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
@@ -66,6 +67,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         Ge360Module("clienti", "Clienti", "CRM, contatti, temperatura e follow-up", enabled = true),
         Ge360Module("cantieri", "Cantieri", "Centro operativo di ogni lavoro", enabled = true),
         Ge360Module("giornata", "Giornata", "Timer ore, costo manodopera e rapportino quotidiano", enabled = true),
+        Ge360Module("piano-giornata", "La mia giornata", "Urgenze, appuntamenti e promemoria riuniti", enabled = true),
         Ge360Module("agenda", "Note e Agenda", "Promemoria, attività, calendario e appunti offline", enabled = true),
         Ge360Module("preventivi", "Preventivi", "Prezzario, lavorazioni, totali e margine con ore reali", enabled = true),
         Ge360Module("spese", "Spese", "Entrate, uscite, costi e saldo per cantiere", enabled = true),
@@ -119,6 +121,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
         view.findViewById<TextView>(R.id.openJobsites).setOnClickListener { openModule("cantieri") }
         view.findViewById<TextView>(R.id.openExpenses).setOnClickListener { openModule("spese") }
+        view.findViewById<TextView>(R.id.openOperationalDay).setOnClickListener { openModule("piano-giornata") }
 
         renderModules(view)
         refreshDashboard()
@@ -1038,6 +1041,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         val target = when (id) {
             "clienti" -> ClientsActivity::class.java
             "agenda" -> AgendaActivity::class.java
+            "piano-giornata" -> OperationalDayActivity::class.java
             "cantieri" -> JobsitesActivity::class.java
             "giornata" -> DailyWorkActivity::class.java
             "preventivi" -> EstimatesActivity::class.java
