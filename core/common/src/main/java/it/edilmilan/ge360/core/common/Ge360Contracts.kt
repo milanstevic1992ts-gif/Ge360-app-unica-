@@ -19,6 +19,10 @@ object Ge360Contracts {
     const val EXTRA_JOBSITE_ID = "ge360_jobsite_id"
     const val EXTRA_JOBSITE_CODE = "ge360_jobsite_code"
 
+    // Agenda context uses existing canonical UUID extras.
+    const val EXTRA_AGENDA_CREATE_KIND = "ge360.agenda.create_kind"
+    const val EXTRA_AGENDA_CONTEXT_LABEL = "ge360.agenda.context_label"
+
     const val ACTION_OPEN_CLIENT = "it.edilmilan.ge360.action.OPEN_CLIENT"
     const val ACTION_OPEN_JOBSITES = "it.edilmilan.ge360.action.OPEN_JOBSITES"
     const val ACTION_OPEN_JOBSITE = "it.edilmilan.ge360.action.OPEN_JOBSITE"
