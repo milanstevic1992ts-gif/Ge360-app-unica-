@@ -248,6 +248,13 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 append(state.openWork).append(" lavorazioni aperte")
                 append(" · ").append(state.doneWork).append(" completate (stato attuale)")
                 state.progressPercent?.let { append(" · avanzamento attuale ").append(it).append("%") }
+                state.progressHistory?.let { trend ->
+                    append("\nStorico: ").append(trend.observations).append(" rilevazioni · ")
+                        .append(trend.observedDays).append(" giorni osservati")
+                    if (trend.deltaPoints != null) append(" · ")
+                        .append(if (trend.deltaPoints > 0) "+" else "")
+                        .append(trend.deltaPoints).append(" punti (non previsione)")
+                }
                 model.execution?.byJob?.get(state.job.ge360Id)?.let { labor ->
                     append("\nOre settimana: ").append(hours(labor.plannedMinutes))
                         .append(" previste · ").append(hours(labor.recordedMinutes))

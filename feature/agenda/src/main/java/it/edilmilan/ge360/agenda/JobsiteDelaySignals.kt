@@ -52,6 +52,12 @@ object JobsiteDelaySignals {
             else "Data di fine prevista non valida"
         }
         if (state.progressPercent == null) missing += "Avanzamento percentuale non registrato"
+        val history = state.progressHistory
+        when {
+            history == null -> missing += "Storico datato di avanzamento non leggibile"
+            history.observedDays < 2 -> missing += "Servono almeno due rilevazioni autentiche in giorni distinti"
+            history.deltaPoints == null -> missing += "Storico con fasi/pesi non omogenei: percentuali non confrontabili"
+        }
         if (materialDataMissing) missing += "Riepilogo materiali non disponibile"
         if (!state.workflowAvailable) missing += "Checklist cantiere non disponibile"
         missing += "Durate e dipendenze delle lavorazioni non pianificate: impossibile stimare una nuova fine"
@@ -69,6 +75,10 @@ object JobsiteDelaySignals {
         if (job.status == JobsiteStore.STATUS_PAUSED) reasons += "Cantiere attualmente sospeso"
         if (state.progressPercent != null) reasons += "Avanzamento registrato: " + state.progressPercent + "% (dato attuale)"
         if (state.openWork > 0) reasons += state.openWork.toString() + " lavorazioni attualmente aperte"
+        if (history?.deltaPoints != null) reasons +=
+            "Rilevazioni datate: " + (if (history.deltaPoints > 0) "+" else "") +
+                history.deltaPoints.toString() + " punti tra " + history.firstDate +
+                " e " + history.lastDate + " (non una stima di fine)"
         // Staff evidence is displayed, but NEVER converted into delivery odds or an ETA.
         if (laborThisWeek != null) {
             if (laborThisWeek.closedPlannedMinutes > 0L || laborThisWeek.closedRecordedMinutes > 0L) {
