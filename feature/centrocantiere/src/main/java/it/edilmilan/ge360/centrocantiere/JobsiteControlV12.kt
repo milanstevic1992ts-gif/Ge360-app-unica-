@@ -11,6 +11,7 @@ import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.cantieri.JobsiteMilestone
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.CompensationAccrualStatus
+import it.edilmilan.ge360.giornata.CompensationPaymentKind
 import it.edilmilan.ge360.giornata.CompensationStore
 import it.edilmilan.ge360.giornata.DailyStore
 import it.edilmilan.ge360.preventivi.EstimateStore
@@ -37,7 +38,7 @@ internal object JobsiteControlV12 {
         val action: Action = Action.NONE
     )
 
-    enum class Action { NONE, WORK, MATERIALS, DOCUMENTS, LABOR, COSTS, ESTIMATES }
+    enum class Action { NONE, WORK, MATERIALS, DOCUMENTS, LABOR, COMPENSATIONS, COSTS, ESTIMATES }
 
     data class Pulse(val jobsiteId: String, val at: Long, val signals: List<Signal>) {
         val issues: Int get() = signals.count { it.level == Level.ATTENZIONE || it.level == Level.CRITICO }
@@ -175,10 +176,13 @@ internal object JobsiteControlV12 {
                 val missingScans = scans.count { it.pdfPath.isNotBlank() && !File(it.pdfPath).isFile }
                 val missingFiles = files.count { it.filePath.isNotBlank() && !File(it.filePath).isFile }
                 val missing = missingScans + missingFiles
+                val notLinked = scans.count { it.pdfPath.isBlank() } +
+                    files.count { it.filePath.isBlank() }
                 Signal("Documenti", "${scans.size + files.size} schede collegate",
-                    "$missing file locali non trovati · ${gallery.summary(id).total} foto registrate" +
-                        " · verifica distinta da obblighi documentali di cantiere",
-                    if (missing > 0) Level.ATTENZIONE else Level.INFO,
+                    "$missing file locali non trovati · $notLinked senza percorso allegato" +
+                        " · ${gallery.summary(id).total} foto registrate" +
+                        " · non certifica gli obblighi documentali",
+                    if (missing > 0 || notLinked > 0) Level.ATTENZIONE else Level.INFO,
                     Action.DOCUMENTS)
             } finally { docs.close(); archive.close(); gallery.close() }
         }
@@ -192,13 +196,18 @@ internal object JobsiteControlV12 {
                 val agreementIds = scopedAgreements.map { it.ge360Id }.toSet()
                 val accruals = comp.accruals().filter { it.agreementGe360Id in agreementIds &&
                     it.status == CompensationAccrualStatus.CONFIRMED }
+                val accrualIds = accruals.map { it.ge360Id }.toSet()
+                val events = comp.payments().filter { it.accrualGe360Id in accrualIds }
+                val recorded = events.count { it.kind == CompensationPaymentKind.PAYMENT }
+                val reversed = events.count { it.kind == CompensationPaymentKind.REVERSAL }
                 val unrated = people.count { it.hasMissingRate }
                 Signal("Collaboratori", "${people.size} persone con ore",
                     "${scopedAgreements.size} accordi compensi associati" +
                         " · ${accruals.size} maturati confermati" +
+                        " · $recorded pagamenti registrati ($reversed storni)" +
                         " · $unrated tariffe ore incomplete" +
-                        " · pagamenti non dedotti dalle ore",
-                    if (unrated > 0) Level.ATTENZIONE else Level.INFO, Action.LABOR)
+                        " · registrazioni non equiparate a movimenti bancari",
+                    if (unrated > 0) Level.ATTENZIONE else Level.INFO, Action.COMPENSATIONS)
             } finally { daily.close(); comp.close() }
         }
 
