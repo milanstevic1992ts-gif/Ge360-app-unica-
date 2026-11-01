@@ -286,3 +286,34 @@ Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file tem
 ### V7 robustezza archivio: nomi e indici
 - Il creatore ZIP usa un suffisso UUID breve oltre alla data/ora per non sovrascrivere un backup già esistente nello stesso secondo; riserva il percorso con `createNewFile()`. Nessuna modifica al riconoscimento `.ge360.zip` storico.
 - Il preflight ora rifiuta anche indici allegati o manifest di tipo JSON errato (non interpreta come assenza di documenti un array/stringa malevolo).
+
+
+## V8 — Cifratura backup e recupero con password (1 novembre 2026)
+
+**Stato: CODICE SU BRANCH, NON COMPILATO/TESTATO/COLLAUDATO/DISTRIBUITO.**
+
+### Scelte e implementazione reale
+- `EncryptedBackupV8.kt`: nuovo involucro versionato `GE360ENC` contenente ZIP GE360 già esistente; PBKDF2-HMAC-SHA256 (310.000 iterazioni, sale random 16 byte), AES-256-GCM (nonce random 12 byte, tag 128 bit), header autenticato via AAD. Le vecchie strutture ZIP/JSON non cambiano. Ogni ciphertext è un file `.ge360.enc`.
+- `BackupPassphraseStoreV8.kt`: attivazione **esplicita** dalla UI con password di almeno 12 caratteri, copia per backup automatici cifrata localmente tramite AES-GCM con chiave Android Keystore. La password di recupero non viene trasmessa, né memorizzata in chiaro nelle preferenze. La chiave Keystore non è sostitutiva della password conservata fuori dal telefono. Mancanza/corruzione della chiave locale = backup bloccato, **mai fallback non cifrato**.
+- `BackupArchive.create`: dopo attivazione l'originale ZIP viene costruito temporaneamente nella cache privata Android, verificato con i controlli ZIP e V7, cifrato prima della pubblicazione nella cartella backup e prima dell'eventuale copia Drive. Senza attivazione il percorso `.ge360.zip` legacy rimane attivo. Rotazione locale considera entrambi i formati.
+- `BackupCoordinator.importFromUri`: riconoscimento magic header, decrittazione in cache privata con verifica tag AES-GCM e controllo SHA dello ZIP, **prima** del restore o di mutazioni dei database; il chiamante elimina lo ZIP temporaneo al termine. Vecchi backup ZIP rimangono importabili senza password.
+- `BackupActivity`: attivazione cifratura in un passaggio con doppia immissione, avviso che la password è irrecuperabile, prompt password in apertura backup cifrato; backup automatici usano la passphrase custodita localmente. L'interfaccia distingue protetti/non protetti.
+- `BackupArchive.copyToSafRoot`: se V8 è attivo, vieta il caricamento accidentale di vecchi ZIP in chiaro su Drive/cartella persistente; per ogni copia SAF esegue una rilettura SHA-256 end-to-end e pulisce gli output parziali in caso di errore.
+- `EncryptedBackupV8Test.kt`: scenari di crittografia/autenticazione, password errata, tampering, header errato, sale/nonce casuali predisposti, **non eseguiti**. Dipendenza JUnit aggiunta al solo core backup.
+
+### Commit Android V8
+- `5ab23e289fe1a8ee2896f2a99133cba971ad6f6f`: motore AES-GCM e password locale protetta Keystore.
+- `7c97cd29cb129c04281e237b6625a004ad176716`: generazione cifrata e fail-closed automatico.
+- `b0c5ef056c3acba7521fef9e89b0217101e2c73e`: import/decrypt compatibile ZIP.
+- `cbc8607fcd2d3846f256d24b0307f09529703ca2`: UI setup e restore cifrato.
+- `06c662a21055795c4aa81025874404c9a77caaa4`: SAF policy per non copiare backup in chiaro dopo opt-in.
+- `14b48703062fbab21460e9bba62666e943ca7b23`: contratto crittografico JUnit scritto.
+- `b0872e00aa9062c3364aa411a22c91d07d6fe2b4`: Keystore lazy e rilettura SHA copia SAF.
+
+### Limiti e controlli necessari
+- **V8 è opt-in**, non migra né cancella i vecchi ZIP non cifrati. Se l'utente non attiva la cifratura, i nuovi backup seguono ancora il formato precedente. Avvertimento in UI.
+- Durante la generazione cifrata esiste temporaneamente un ZIP **in cache privata** del processo; in un crash del processo può restare un residuo fino a pulizia. Non dichiarare assenza completa di plaintext transitorio.
+- Il recupero su altro dispositivo richiede la password: un Keystore perso/disinstallazione app non è recuperabile da solo. Non esiste escrow, server KMS, rotazione password o recovery code indipendente.
+- Altri flussi (replica live cantieri, Scanner/Galleria fuori ZIP) non sono automaticamente cifrati dal formato V8.
+- Backup ZIP legacy non autenticati e payload dati modificati prima della cifratura restano un limite di autenticità: AES-GCM verifica la manipolazione del ciphertext, non la veridicità dei documenti originari.
+- QA richiesto **solo con autorizzazione**: build Android API 26–35, PBKDF2/Keystore dispositivi diversi, JobScheduler, SAF Google Drive, file grandi, low storage, cold-start, crash recovery, password Unicode, legacy ZIP, backup V8 da altro dispositivo, manifest/documenti V7 e restore compensativo cross-DB. Nessuna Actions, build, test, APK, merge o deploy avviata.
