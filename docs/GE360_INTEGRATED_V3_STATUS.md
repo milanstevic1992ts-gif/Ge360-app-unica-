@@ -317,3 +317,34 @@ Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file tem
 - Altri flussi (replica live cantieri, Scanner/Galleria fuori ZIP) non sono automaticamente cifrati dal formato V8.
 - Backup ZIP legacy non autenticati e payload dati modificati prima della cifratura restano un limite di autenticità: AES-GCM verifica la manipolazione del ciphertext, non la veridicità dei documenti originari.
 - QA richiesto **solo con autorizzazione**: build Android API 26–35, PBKDF2/Keystore dispositivi diversi, JobScheduler, SAF Google Drive, file grandi, low storage, cold-start, crash recovery, password Unicode, legacy ZIP, backup V8 da altro dispositivo, manifest/documenti V7 e restore compensativo cross-DB. Nessuna Actions, build, test, APK, merge o deploy avviata.
+
+
+## V9 — Recupero post-interruzione, pubblicazione backup e chiavi locali (1 novembre 2026)
+
+**Stato: CODICE SALVATO SU BRANCH, NON COMPILATO, NON TESTATO, NON COLLAUDATO E NON DISTRIBUITO.**
+
+### Flussi aggiornati
+1. `BackupScratchV9` esegue una pulizia prudente sul **cold start** dell'app prima di avviare lavori. Elimina solo nomi file temporanei GE360 con pattern verificati e backup `.partial` riconoscibili, mai ZIP/ENC completati né file di altri moduli. Il riepilogo `eliminati/non eliminati` viene mostrato in BackupActivity. Cancellazione best-effort: **non equivale a cancellazione crittografica su flash**.
+2. `BackupArchive.create` produce prima lo ZIP in cache privata (se protetto) o il file `.partial` nella propria cartella (legacy). Dopo verifica checksum/validazione V7 cifra (se attivo) verso `.ge360.enc.partial`, poi rende visibile il file finale soltanto al termine con `renameTo` nella stessa directory. In errore elimina i file di stage. La rotazione dei backup non include `.partial`. Il crash tra operazioni può lasciare residui temporanei recuperati al successivo avvio, senza scambiarli per backup riusciti.
+3. `BackupCoordinator.restoreSafetySnapshot`: risolve il bug di rollback V8. La copia locale di sicurezza può essere cifrata: usa in quel caso la passphrase locale custodita nel Keystore, verifica il tag AES-GCM decifrando in cache e solo dopo richiama l'import ZIP esistente; elimina il plaintext temporaneo e azzera il `CharArray`. Il rollback multi-store resta **compensativo**, non ACID.
+4. **Riparazione chiave locale dopo invalidazione Keystore**: `BackupActivity` richiede la selezione di un backup già cifrato e la password originale; `BackupArchive.recoverLocalKeyFromUri` autentica e verifica prima l'intero backup ZIP, quindi `BackupPassphraseStoreV8.rewrapAfterVerifiedArchive` genera un nuovo alias Android Keystore e conferma la transizione delle preferenze in modo atomico. La vecchia chiave viene rimossa solo dopo la conferma del nuovo stato. Password mai inviata a rete come credenziale, mai salvata in chiaro nelle SharedPreferences. Backup vecchi restano immutati e richiedono ciascuno la propria password originale.
+5. `BackupScratchV9Test` aggiunge contratti NON ESEGUITI per delimitare l'eliminazione dei file, incluse esclusioni per archivi completati, path traversal e nomi di altri moduli.
+
+### Commit Android
+- `4b67818b9651bb2b256e96ff3d1858e03c6ed05c` — scratch cleanup all'avvio e dipendenza esplicita dell'app da core backup.
+- `09f432dcb4d20c424258be885dbe1c34c5506235` — creazione con `.partial`, pubblicazione su nome definitivo solo a verifica completata.
+- `2fae5b4207983f3025a79e1986cfa0821fde9af4` — rollback autenticato da snapshot V8 cifrato.
+- `227702b688fe0c405c0f70bb9ff6485a969f465d` — nuova chiave Android Keystore con commit preferenze prima del cambio alias.
+- `84a8940e9585c2be96c8295df4b3dd02bf1ffa8d` — prova crittografica tramite archivio utente prima della riparazione.
+- `0df0ce64b81a8b2ee5e45cd649794f73bcea0fe2` — UI recupero chiave e visibilità della pulizia post-crash.
+- `68c9e6604c4970bc5298f7aaf0ed91ba68f89864` — contratti regex per la pulizia; solo codice.
+
+### Limiti e QA richiesti prima del collaudo
+- Non eseguiti gradle, test JUnit, emulatori, Actions, generazione APK, merge, deploy, script server o modifiche a Debian.
+- Nessuna garanzia di eliminazione fisica sicura dei file da memoria flash; in un crash restano possibili cache private in chiaro fino al cold start successivo, e l'OS può mantenere blocchi sottostanti.
+- Il `renameTo` nella stessa directory riduce i file parziali visibili, ma vanno ancora verificate le proprietà di durabilità su dispositivo/filesystem e la gestione storage pieno.
+- Recupero prova password richiede copia cifrata accessibile via selettore file e spazio temporaneo privato, non è un escrow centralizzato. Se la password manca, non è recuperabile dall'app.
+- Rollback fra database/moduli indipendenti resta best-effort, e i media Scanner/Galleria/Cartella Cantiere non sono coperti da una singola transazione ACID.
+- Necessari, **solo se autorizzati**, test con backup ZIP legacy, V8 cifrati, password errata, tag modificato, dispositivo senza Keystore originale, SAF Drive, restore fallito a metà, pieno disco, crash simulato dopo zip/temp e dopo rename, e confronto della completezza dei record.
+
+**Vincoli rispettati:** solo branch Android `feature/ge360-integrated-v3-20261101` e documentazione separata, Android main/backend Glass/Debian invariati. Nessuna affermazione di test superati.
