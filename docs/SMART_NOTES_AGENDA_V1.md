@@ -181,3 +181,33 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 6. Merge con stesso UUID e contenuto divergente: arresto e rollback, non sovrascrittura.
 7. DataHubSyncCoordinator continua a inviare solo Cantieri v2 senza history.
 8. Revisione UI smartphone, schermata dettagli, cronologia oltre 12/200 record, comportamento a cambio fuso.
+
+
+## Fase 9 — Motore scenari di completamento, condizionale e non probabilistico
+- Implementato in feature/cantieri/.../ProgressScenarioForecast.kt, senza nuovi DB, job schedulati, cloud, costi automatici o cambiamenti a scadenze e SAL.
+- Fonte canonica: JobsiteStore.progressSnapshots(jobsiteId) con data/percentuale/pesi reali; progressSummary per verificare che l'avanzamento attuale sia stato fotografato.
+- Gate prima di qualsiasi data: percentuale attuale sotto il 100%; nessuna data storica invalida/futura; ultima rilevazione non più vecchia di 14 giorni; attuale percentuale e firma delle fasi/pesi uguali all'ultima rilevazione.
+- Campione: blocco più recente di struttura invariata, massimo 8 giorni distinti all'interno degli ultimi 90 giorni. Minimo 3 giornate con almeno 7 giorni complessivi, incremento cumulativo di almeno 3 punti e progressi su almeno due intervalli; nessun regresso percentuale nel campione.
+- Media osservata = (ultima percentuale - prima percentuale) / giorni di calendario trascorsi. La media NON è produttività attestata, S-curve o velocità futura garantita.
+- Ripartenza delle ipotesi dal giorno odierno (non presume avanzamento non registrato dopo l'ultima cattura). Scenari lento/base/veloce al 75%, 100%, 125% di quella media: i fattori sono ipotesi esplorative e NON quantili, confidenza statistica o probabilità.
+- Giornate residue teoriche = arrotondamento per eccesso di (100 - percentuale attuale) / ritmo dello scenario. Scenari oltre 730 giorni non restituiscono date; nessuna estrapolazione arbitraria oltre due anni.
+- Quando la data target del cantiere è presente, UI mostra quanti giorni separano la data teorica dalla fine prevista, senza riscriverla.
+- Il pianificatore legge lavorazioni bloccate, richieste/materiali mancanti, sospensione e indisponibilità delle fonti: se esistono problemi, segnala esplicitamente che le date dipendono dal loro sblocco. Il pannello Avanzamento & SAL non legge gli altri archivi e invita a consultare il pianificatore per i blocchi.
+- La qualità del campione è una descrizione, non una percentuale di affidabilità. Per 5+ osservazioni, almeno 21 giorni e ultima cattura entro tre giorni: Storico più consistente (non probabilistico); altrimenti Preliminare.
+- Se lo stato attuale è al 100% fisico non simula date di consegna; indica che chiusura e consegna richiedono verifica distinta.
+- I segnali di ritardo possono citare lo scenario base, ma NON lo convertono da soli in livello di allerta. Le priorità continuano a derivare da scadenze e blocchi osservati.
+- Non pianifica automaticamente la squadra; non deduce ferie/meteo; usa giorni di calendario, non lavorativi; non prevede le durate o le dipendenze di ogni attività.
+- Entrambe le schermate (Avanzamento & SAL e Settimana cantieri) rimandano alle fonti originali; nessuna modifica a modello Data Hub, backup, PDF, main o Debian.
+- Nessuna compilazione, test, GitHub Action, APK o deploy eseguiti.
+
+### Verifiche da autorizzare prima della distribuzione
+1. Zero/una/due rilevazioni o tutte nello stesso giorno: nessuna data.
+2. Tre rilevazioni in almeno sette giorni, stesso UUID/peso fasi, crescita in due intervalli: tre ipotesi e formule leggibili.
+3. Modifica pesi/fasi o avanzamento dopo l'ultima cattura: blocco e invito a registrare nuovo snapshot.
+4. Rilevazione più vecchia di 14 giorni o data futura: nessuna data.
+5. Regresso percentuale o crescita in un solo intervallo: nessuna data.
+6. Cantiere con lavorazioni bloccate e materiali mancanti: date etichettate come condizionate allo sblocco.
+7. Scadenza assente: date teoriche possibili solo con storico sufficiente, ma nessun confronto al target.
+8. Data teorica oltre due anni: nessuna data.
+9. Stato 100%: non dedurre consegna.
+10. Riapertura del planner su settimane passate: non applicare ore storiche come ritmo della settimana corrente.
