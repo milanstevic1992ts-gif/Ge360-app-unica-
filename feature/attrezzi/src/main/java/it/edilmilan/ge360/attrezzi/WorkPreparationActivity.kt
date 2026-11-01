@@ -25,6 +25,7 @@ import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
+import it.edilmilan.ge360.core.common.Ge360Contracts
 import java.util.Locale
 
 class WorkPreparationActivity : AppCompatActivity() {
@@ -74,7 +75,7 @@ class WorkPreparationActivity : AppCompatActivity() {
         ))
 
         jobSpinner = Spinner(this)
-        installJobSpinner(null)
+        installJobSpinner(intent.getStringExtra(Ge360Contracts.EXTRA_JOBSITE_ID))
         root.addView(jobSpinner, lp52())
 
         status = TextView(this).apply {

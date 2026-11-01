@@ -375,11 +375,13 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         val destination = if (source.sourceType == AgendaSourceDeadline.CLIENT_FACT) {
             Intent().setClassName(packageName, "it.edilmilan.ge360.clienti.ClientsActivity")
                 .putExtra(Ge360Contracts.EXTRA_CLIENT_ID, source.clientGe360Id)
-        } else {
+        } else if (source.jobsiteGe360Id.isNotBlank()) {
             Intent(Ge360Contracts.ACTION_OPEN_JOBSITE).apply {
                 setPackage(packageName)
                 putExtra(Ge360Contracts.EXTRA_JOBSITE_ID, source.jobsiteGe360Id)
             }
+        } else {
+            Intent().setClassName(packageName, "it.edilmilan.ge360.MainActivity")
         }
         if (destination.resolveActivity(packageManager) != null) startActivity(destination)
         else toast("Scheda originale non disponibile")

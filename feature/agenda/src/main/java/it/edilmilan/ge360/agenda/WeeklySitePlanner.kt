@@ -118,7 +118,7 @@ object WeeklySitePlanner {
         val from = monday.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val until = monday.plusDays(7).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val occurrences = agenda.flatMap { AgendaCalendar.occurrences(it, from, until) }
-        val datedSources = sources.deadlines.filter { it.dateAt in from until until }
+        val datedSources = sources.deadlines.filter { it.dateAt >= from && it.dateAt < until }
         val conflicts = findConflicts(assignmentRows)
         val week = (0L..6L).map { offset ->
             val day = monday.plusDays(offset)

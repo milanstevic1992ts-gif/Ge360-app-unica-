@@ -89,7 +89,9 @@ class AgendaActivity : AppCompatActivity() {
     }
 
     private fun newEntry(kind: String) = AgendaEntry(
-        kind = kind, clientGe360Id = clientContext, jobsiteGe360Id = jobsiteContext
+        kind = kind, clientGe360Id = clientContext, jobsiteGe360Id = jobsiteContext,
+        dueAt = if (kind == AgendaEntry.NOTE) 0L
+            else intent.getLongExtra(EXTRA_INITIAL_DUE_AT, 0L).coerceAtLeast(0L)
     )
 
     // A client may own multiple jobsites: a jobsite view must not leak their other notes.
@@ -621,6 +623,7 @@ class AgendaActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_CREATE_KIND = Ge360Contracts.EXTRA_AGENDA_CREATE_KIND
         const val EXTRA_EDIT_ENTRY_ID = "ge360.agenda.edit_entry_id"
+        const val EXTRA_INITIAL_DUE_AT = "ge360.agenda.initial_due_at"
         private const val REQUEST_NOTIFICATIONS = 7004
     }
 }
