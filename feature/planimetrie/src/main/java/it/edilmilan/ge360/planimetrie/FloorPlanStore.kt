@@ -160,7 +160,7 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
 
     private fun createBindingIndexesV4(db: SQLiteDatabase) {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_bindings_plan ON floor_plan_work_bindings(plan_ge360_id)")
-        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_v4_unique ON floor_plan_work_bindings(plan_ge360_id,room_ge360_id,estimate_ge360_id,work_code,surface,room_revision_at,wall_ge360_id)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_v4_unique ON floor_plan_work_bindings(plan_ge360_id,room_ge360_id,estimate_ge360_id,work_code,surface,wall_ge360_id,geometry_fingerprint)")
     }
 
     private fun createBindingsTable(db: SQLiteDatabase) {
