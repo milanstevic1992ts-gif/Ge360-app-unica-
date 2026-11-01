@@ -468,9 +468,24 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
 
     fun delete(id: Long) { writableDatabase.delete("estimates", "id=?", arrayOf(id.toString())) }
     fun duplicate(source: EstimateRecord): EstimateRecord = source.copy(
-        id = 0, ge360Id = UUID.randomUUID().toString(), legacyId = "", number = "", status = EstimateStatuses.DRAFT,
+        id = 0, ge360Id = UUID.randomUUID().toString(), legacyId = "", number = "",
+        status = EstimateStatuses.DRAFT,
         createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis(),
-        items = source.items.map { it.copy(id = 0, ge360Id = UUID.randomUUID().toString(), estimateId = 0) }.toMutableList()
+        items = source.items.map { line ->
+            val measured = metricProvenance(line.ge360Id) != null ||
+                line.internalNote.contains(MeasuredEstimateDraftV1.SOURCE_MARKER)
+            line.copy(
+                id = 0, ge360Id = UUID.randomUUID().toString(), estimateId = 0,
+                unitPrice = if (measured) 0.0 else line.unitPrice,
+                included = if (measured) false else line.included,
+                internalNote = if (measured)
+                    "Copia informativa: la metratura deve essere nuovamente verificata nel rilievo"
+                else line.internalNote,
+                description = if (measured)
+                    line.description + "\n[METRATURA COPIATA DA RIVERIFICARE]"
+                else line.description
+            )
+        }.toMutableList()
     ).also { save(it) }
 
     fun priceList(query: String = ""): List<PriceEntry> {
@@ -494,9 +509,21 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
     }
 
     fun exportJson(): String = JSONObject().apply {
-        put("schema", "ge360.preventivi.v1"); put("exportedAt", System.currentTimeMillis())
-        put("estimates", JSONArray().apply { list().forEach { put(recordToJson(it)) } })
+        put("schema", "ge360.preventivi.v1")
+        put("exportedAt", System.currentTimeMillis())
+        val estimates = list()
+        put("estimates", JSONArray().apply { estimates.forEach { put(recordToJson(it)) } })
         put("priceList", JSONArray().apply { priceList().forEach { put(priceToJson(it)) } })
+        put("metricProvenance", JSONArray().apply {
+            estimates.forEach { estimate ->
+                metricSourcesForEstimateId(estimate.id).forEach { put(it.toJson()) }
+            }
+        })
+        put("metricReviewEvents", JSONArray().apply {
+            estimates.forEach { estimate ->
+                metricEvents(estimate.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
     }.toString(2)
 
     fun importJson(json: String, replaceAll: Boolean): Int {
