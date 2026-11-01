@@ -19,6 +19,6 @@ grep -q 'class DiagnosticsActivity' "$DIAG"
 grep -q 'DataHubSyncCoordinator.lastSuccessAt' "$DIAG"
 grep -q 'Ge360Application.lastCrash' "$DIAG"
 grep -q 'android:name=".DiagnosticsActivity"' "$MANIFEST"
-grep -q 'Tool("Stato GE360"' "$MORE"
+grep -Fq 'Tool("Centro diagnostico"' "$MORE"
 
 echo "Operational dashboard coverage: OK"

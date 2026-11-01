@@ -285,9 +285,10 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
                 state.progressHistory?.let { trend ->
                     append("\nStorico: ").append(trend.observations).append(" rilevazioni · ")
                         .append(trend.observedDays).append(" giorni osservati")
-                    if (trend.deltaPoints != null) append(" · ")
-                        .append(if (trend.deltaPoints > 0) "+" else "")
-                        .append(trend.deltaPoints).append(" punti (non previsione)")
+                    val deltaPoints = trend.deltaPoints
+                    if (deltaPoints != null) append(" · ")
+                        .append(if (deltaPoints > 0) "+" else "")
+                        .append(deltaPoints).append(" punti (non previsione)")
                 }
                 model.execution?.byJob?.get(state.job.ge360Id)?.let { labor ->
                     append("\nOre settimana: ").append(hours(labor.plannedMinutes))

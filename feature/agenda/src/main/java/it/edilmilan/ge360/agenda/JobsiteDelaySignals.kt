@@ -92,9 +92,10 @@ object JobsiteDelaySignals {
                     " (non consegna garantita)"
             }
         }
-        if (history?.deltaPoints != null) reasons +=
-            "Rilevazioni datate: " + (if (history.deltaPoints > 0) "+" else "") +
-                history.deltaPoints.toString() + " punti tra " + history.firstDate +
+        val deltaPoints = history?.deltaPoints
+        if (history != null && deltaPoints != null) reasons +=
+            "Rilevazioni datate: " + (if (deltaPoints > 0) "+" else "") +
+                deltaPoints.toString() + " punti tra " + history.firstDate +
                 " e " + history.lastDate + " (non una stima di fine)"
         // Staff evidence is displayed, but NEVER converted into delivery odds or an ETA.
         if (laborThisWeek != null) {

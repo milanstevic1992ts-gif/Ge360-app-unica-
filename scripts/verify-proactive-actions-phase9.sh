@@ -31,7 +31,7 @@ grep -Fq 'actionClient.prepare' "$activity"
 grep -Fq 'actionClient.approve' "$activity"
 grep -Fq 'actionClient.reject' "$activity"
 
-grep -Fq 'versionCode = 2125' "$gradle"
-grep -Fq 'versionName = "0.21.24"' "$gradle"
+grep -Fq 'versionCode = 2126' "$gradle"
+grep -Fq 'versionName = "0.21.25"' "$gradle"
 
 echo "Jarvis Proactive Actions Fase 9: contratto OK"

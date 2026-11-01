@@ -27,8 +27,8 @@ grep -Fq 'postDelayed' "$application"
 grep -Fq 'JARVIS PROATTIVO' "$home"
 grep -Fq 'ProactiveAlertsActivity::class.java' "$home"
 grep -Fq 'androidx.work:work-runtime-ktx:2.10.0' "$jarvis_gradle"
-grep -Fq 'versionCode = 2125' "$gradle"
-grep -Fq 'versionName = "0.21.24"' "$gradle"
+grep -Fq 'versionCode = 2126' "$gradle"
+grep -Fq 'versionName = "0.21.25"' "$gradle"
 
 if grep -Fq 'dryRun = false' "$proactive" || grep -Fq 'method = "POST"' "$proactive" || grep -Fq '/proposal' "$proactive"; then
   echo "Fase 8: il worker proattivo deve restare read-only anche dopo la Fase 9" >&2
