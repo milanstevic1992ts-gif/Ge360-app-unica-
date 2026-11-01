@@ -7,6 +7,7 @@ import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -35,6 +36,41 @@ object MetricAgreementFilesV5 {
             f.isFile && f.length() == record.sizeBytes &&
                 sha256(f) == record.sha256 && correctHeader(f, record.mimeType)
         }.getOrDefault(false)
+
+    /**
+     * Validate a ZIP entry against the *agreement metadata*, not just the ZIP
+     * manifest. Bounded streaming prevents untrusted backup entries expanding
+     * beyond the declared size. The caller owns/closes the InputStream.
+     *
+     * SHA-256 detects mismatches; it is NOT encryption or signer authentication.
+     */
+    fun matchesBackupStream(
+        record: MetricAgreementAttachmentV5,
+        input: InputStream
+    ): Boolean = runCatching {
+        require(record.valid())
+        val digest = MessageDigest.getInstance("SHA-256")
+        val prefix = ByteArray(8)
+        var prefixCount = 0
+        var total = 0L
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (read == 0) continue
+            total += read
+            if (total > record.sizeBytes || total > MAX_BYTES) return@runCatching false
+            val take = minOf(prefix.size - prefixCount, read)
+            if (take > 0) {
+                System.arraycopy(buffer, 0, prefix, prefixCount, take)
+                prefixCount += take
+            }
+            digest.update(buffer, 0, read)
+        }
+        total == record.sizeBytes &&
+            matchesHeader(prefix, prefixCount, record.mimeType) &&
+            digest.digest().joinToString("") { "%02x".format(it) } == record.sha256
+    }.getOrDefault(false)
 
     fun contentUri(context: Context, record: MetricAgreementAttachmentV5): Uri {
         require(existsAndMatches(context, record)) { "Allegato mancante o alterato" }
@@ -113,15 +149,19 @@ object MetricAgreementFilesV5 {
     private fun correctHeader(file: File, mime: String): Boolean {
         val prefix = ByteArray(8)
         val count = FileInputStream(file).use { it.read(prefix) }
-        if (count < 4) return false
+        return matchesHeader(prefix, count, mime)
+    }
+
+    private fun matchesHeader(prefix: ByteArray, count: Int, mime: String): Boolean {
         return when (mime) {
-            "application/pdf" -> prefix.take(5).toByteArray().contentEquals(
-                "%PDF-".toByteArray())
-            "image/jpeg" -> (prefix[0].toInt() and 255) == 255 &&
+            "application/pdf" -> count >= 5 &&
+                prefix.take(5).toByteArray().contentEquals("%PDF-".toByteArray())
+            "image/jpeg" -> count >= 3 &&
+                (prefix[0].toInt() and 255) == 255 &&
                 (prefix[1].toInt() and 255) == 216 &&
                 (prefix[2].toInt() and 255) == 255
-            "image/png" -> prefix.contentEquals(
-                byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10))
+            "image/png" -> count >= 8 &&
+                prefix.contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10))
             else -> false
         }
     }

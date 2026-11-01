@@ -78,7 +78,7 @@ class BackupActivity : AppCompatActivity() {
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(list)
         root.addView(TextView(this).apply {
-            text = "La copia di lavoro interna può sparire disinstallando l'app. Per un vero backup locale scegli una cartella del telefono: GE360 manterrà lì gli ultimi 10 ZIP. Il backup automatico giornaliero include tutti i dati, PDF e fotografie leggibili."
+            text = "I backup GE360 ZIP contengono dati di clienti e documenti leggibili: SHA-256 verifica l'integrità ma NON cifra i file. Proteggi l'accesso alla cartella del telefono e a Drive e non condividere gli ZIP. La copia interna può sparire disinstallando l'app. I backup automatici includono i PDF e le fotografie leggibili."
             textSize = 11f; setPadding(dp(2), dp(14), dp(2), 0)
         })
         return scroll

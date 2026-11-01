@@ -262,3 +262,20 @@ Una variante di metratura su un preventivo già inviato/accettato NON riscrive l
 - Contratti JUnit aggiornati per catene multiple, proposte pendenti e rigetto di predecessori mancanti. **Scritti, non eseguiti.**
 
 **Gate futuri:** test migrazione V5→V6 con backup reale (anche prove allegate), test merge/replaceAll, cattura errori in UI, ordine cronologico nei fusi/orologi diversi, compilazione e controllo privacy file solo dietro autorizzazione.
+
+
+## V7 — Allegati accordi: preflight e restore prudente (1 novembre 2026)
+
+**Stato: solo codice su feature branch, non compilato, non testato, non collaudato.**
+
+Problema osservato nel V5/V6: la verifica SHA-256 dello ZIP con il proprio manifest non dimostrava che i bytes di ogni PDF/JPG/PNG coincidessero con l'SHA-256 dichiarato nel registro accordi; tale controllo avveniva solo durante il restore, dopo mutazioni di altri moduli. Inoltre il restore eliminava il target esistente prima della verifica del nuovo file.
+
+Intervento V7:
+- `MetricAgreementFilesV5.matchesBackupStream` valida con lettura bounded (max 12 MiB), dimensione dichiarata, tipo reale PDF/JPEG/PNG e SHA-256 del documento in metadati, senza creare un nuovo archivio parallelo.
+- `BackupCoordinator.preflightAgreementEvidence` controlla tutti gli allegati **in ingresso**, i percorsi derivati da UUID e il manifest prima di eseguire modifiche a database/file e prima del backup di sicurezza. Un backup che contiene metadati dell'accordo ma manca dei file viene rifiutato.
+- In restore, estrazione in file temporaneo privato, seconda verifica SHA e header, spostamento provvisorio dell'eventuale copia precedente, installazione e ripristino della precedente in caso d'errore prima del completamento. Gli allegati già validi non sono riscritti. Il vecchio merge con un backup senza riferimenti a file conserva solo i documenti locali verificabili.
+- Avviso chiaro nella schermata Backup: ZIP e copie Drive non cifrati; SHA-256 non autentica il mittente e non rende riservato il contenuto. L'app aveva già `android:allowBackup="false"` e FileProvider non esportato, lasciati invariati.
+- Contratti JUnit scritti per header, bytes troncati, bytes aggiunti e digest errato. **Non eseguiti.**
+- Nessuna modifica Scanner/FIR, infrastruttura, fatture, contabilità, permessi esterni o sincronizzazioni.
+
+Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file temporanei residui possibili dopo interruzione brutale del processo, rollback fra diversi DB non ACID, il filesystem della Galleria e scanner ha protocolli separati, nessuna garanzia reale senza build/test/restore su dati sintetici autorizzati.

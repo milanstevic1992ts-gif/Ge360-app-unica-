@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.security.MessageDigest
 
 /** Contract scenarios prepared for later authorized QA; NOT executed here. */
 class MetricAgreementV5ContractTest {
@@ -117,6 +119,34 @@ class MetricAgreementV5ContractTest {
         assertTrue(runCatching {
             MetricAgreementRevisionChainV6.ordered(econ, listOf(second))
         }.isFailure)
+    }
+
+    @Test fun v7EvidenceStreamRejectsWrongDigestMissingBytesAndWrongFileHeader() {
+        val pdf = "%PDF-1.7\\nprivate document".toByteArray(Charsets.UTF_8)
+        val hash = MessageDigest.getInstance("SHA-256").digest(pdf)
+            .joinToString("") { "%02x".format(it) }
+        val attachment = MetricAgreementAttachmentV5(
+            estimateGe360Id = "quote-01",
+            economicsGe360Id = "commercial-01",
+            fileName = "accordo.pdf",
+            mimeType = "application/pdf",
+            sizeBytes = pdf.size.toLong(),
+            sha256 = hash
+        )
+        assertTrue(MetricAgreementFilesV5.matchesBackupStream(
+            attachment, ByteArrayInputStream(pdf)))
+        assertFalse(MetricAgreementFilesV5.matchesBackupStream(
+            attachment.copy(sha256 = "0".repeat(64)), ByteArrayInputStream(pdf)))
+        assertFalse(MetricAgreementFilesV5.matchesBackupStream(
+            attachment, ByteArrayInputStream(pdf.copyOf(pdf.size - 1))))
+        assertFalse(MetricAgreementFilesV5.matchesBackupStream(
+            attachment, ByteArrayInputStream(pdf + byteArrayOf(7))))
+        val misleading = "wrong header".toByteArray(Charsets.UTF_8)
+        val misleadingHash = MessageDigest.getInstance("SHA-256").digest(misleading)
+            .joinToString("") { "%02x".format(it) }
+        assertFalse(MetricAgreementFilesV5.matchesBackupStream(
+            attachment.copy(sizeBytes = misleading.size.toLong(), sha256 = misleadingHash),
+            ByteArrayInputStream(misleading)))
     }
 
     @Test fun auditMustBeTraceableAndNeverClaimPayment() {

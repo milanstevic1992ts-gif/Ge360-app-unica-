@@ -206,6 +206,9 @@ class BackupCoordinator(private val context: Context) {
         val manifest = archive.readManifest(file)
         require(manifest.optString("schema") == "ge360.backup.v1") { "Versione backup non supportata" }
         preflightRestore(file)
+        // Fail before ANY database or file mutation if the agreement evidence
+        // advertised by this archive disagrees with its V5/V6 metadata.
+        preflightAgreementEvidence(file, manifest)
 
         val counts = linkedMapOf<String, Int>()
         val warnings = mutableListOf<String>()
@@ -373,6 +376,43 @@ class BackupCoordinator(private val context: Context) {
         }
     }
 
+    /**
+     * All *incoming* agreement attachments must exist in the backup and match
+     * their own SHA/size/MIME before touching any local module database.
+     * Existing local attachments absent from older ZIPs remain checked during
+     * merge by restoreMetricAgreementFiles().
+     */
+    private fun preflightAgreementEvidence(file: File, manifest: JSONObject) {
+        val json = JSONObject(archive.readText(file, "modules/preventivi.json"))
+        val list = json.optJSONArray("metricAgreementAttachments") ?: JSONArray()
+        val map = manifest.optJSONObject("metricAgreementFiles") ?: JSONObject()
+        val ids = mutableSetOf<String>()
+        for (i in 0 until list.length()) {
+            val record = MetricAgreementAttachmentV5.fromJson(list.getJSONObject(i))
+            require(record.valid() && ids.add(record.ge360Id)) {
+                "Backup con documento di accordo duplicato o non valido"
+            }
+            val expected = "files/metric-agreements/" +
+                MetricAgreementFilesV5.fileFor(context, record).name
+            val actual = map.optString(record.ge360Id)
+            require(actual == expected) {
+                "File accordo mancante o percorso non coerente: ${record.fileName}"
+            }
+            val valid = archive.openEntry(file, actual).use { input ->
+                MetricAgreementFilesV5.matchesBackupStream(record, input)
+            }
+            require(valid) {
+                "Backup non ripristinabile: documento diverso dal registro SHA-256 (${record.fileName})"
+            }
+        }
+        val keys = map.keys()
+        while (keys.hasNext()) {
+            require(keys.next() in ids) {
+                "Manifest con allegato accordo senza metadati corrispondenti"
+            }
+        }
+    }
+
     private fun restoreMetricAgreementFiles(
         file: File, manifest: JSONObject, estimates: EstimateStore
     ) {
@@ -382,8 +422,8 @@ class BackupCoordinator(private val context: Context) {
                 val target = MetricAgreementFilesV5.fileFor(context, attachment)
                 val zipPath = paths.optString(attachment.ge360Id)
                 if (zipPath.isBlank()) {
-                    // Keep pre-existing evidence on a non-destructive import only if
-                    // its SHA is already correct. Otherwise reject incomplete ZIP.
+                    // Merge of old archives: existing attachments are retained
+                    // ONLY if their current bytes match the database snapshot.
                     require(MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
                         "Backup privo del file dell'accordo: ${attachment.fileName}"
                     }
@@ -395,19 +435,46 @@ class BackupCoordinator(private val context: Context) {
                     if (!MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
                         require(target.parentFile?.mkdirs() == true ||
                             target.parentFile?.isDirectory == true)
-                        val temp = File(target.parentFile,
-                            "${attachment.ge360Id}.restore-partial")
+                        val nonce = UUID.randomUUID().toString()
+                        val temp = File(target.parentFile, "${attachment.ge360Id}.$nonce.restore-partial")
+                        val previous = File(target.parentFile, "${attachment.ge360Id}.$nonce.restore-previous")
+                        var hadPrevious = false
+                        var installed = false
                         try {
                             archive.extractEntry(file, zipPath, temp)
-                            require(temp.isFile && temp.length() == attachment.sizeBytes)
-                            require(!target.exists() || target.delete())
+                            require(temp.isFile && temp.length() == attachment.sizeBytes &&
+                                FileInputStream(temp).use {
+                                    MetricAgreementFilesV5.matchesBackupStream(attachment, it)
+                                }) {
+                                "Documento di backup non corrisponde all'accordo"
+                            }
+                            if (target.exists()) {
+                                check(target.renameTo(previous)) {
+                                    "Impossibile custodire il documento precedente"
+                                }
+                                hadPrevious = true
+                            }
                             check(temp.renameTo(target)) {
-                                "Impossibile ripristinare copia privata accordo"
+                                "Impossibile installare il documento verificato"
                             }
-                            require(MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
-                                "SHA-256 dell'allegato non coincide con il registro"
+                            installed = true
+                            check(MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
+                                "Documento ripristinato non verificabile"
                             }
-                        } finally { temp.delete() }
+                            if (hadPrevious) check(previous.delete()) {
+                                "Impossibile eliminare la copia precedente riservata"
+                            }
+                        } catch (error: Throwable) {
+                            if (installed) check(target.delete()) {
+                                "Ripristino non completato: documento provvisorio da recuperare"
+                            }
+                            if (hadPrevious) check(previous.renameTo(target)) {
+                                "Ripristino non completato: documento precedente conservato in ${previous.name}"
+                            }
+                            throw error
+                        } finally {
+                            temp.delete()
+                        }
                     }
                 }
             }
