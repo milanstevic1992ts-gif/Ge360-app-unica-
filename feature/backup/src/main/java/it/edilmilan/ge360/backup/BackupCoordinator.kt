@@ -499,7 +499,22 @@ class BackupCoordinator(private val context: Context) {
     private fun preflightMaterialEvidenceV13(file: File, replaceAll: Boolean) {
         val json = runCatching {
             archive.readText(file, "modules/material-evidence-v13.json")
-        }.getOrNull() ?: return // historical backups did not contain V13
+        }.getOrNull()
+        if (json == null) {
+            // A replace-all with old Scanner data could leave modern invoice
+            // allocations referring to PDFs that disappeared from the archive.
+            // Abort BEFORE mutation instead of silently orphaning evidence.
+            if (replaceAll) {
+                val current = MaterialDocumentEvidenceStoreV13(context)
+                try {
+                    require(current.all().none { it.active }) {
+                        "Backup legacy senza V13: ripristino Sostituisci bloccato. " +
+                            "Esportare prima un backup aggiornato o usare Unisci."
+                    }
+                } finally { current.close() }
+            }
+            return
+        }
         val stockJson = archive.readText(file, "modules/material-inventory-v2.json")
         val planJson = archive.readText(file, "modules/material-plans-v1.json")
         require(JSONObject(stockJson).optString("schema") == "ge360.materials.v2" &&
