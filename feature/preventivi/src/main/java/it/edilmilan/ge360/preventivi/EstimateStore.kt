@@ -748,6 +748,16 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 metricEvents(estimate.ge360Id).forEach { put(it.toJson()) }
             }
         })
+        put("metricVariants", JSONArray().apply {
+            estimates.forEach { estimate ->
+                metricVariants(estimate.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
+        put("metricVariantEvents", JSONArray().apply {
+            estimates.forEach { estimate ->
+                metricVariantEvents(estimate.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
     }.toString(2)
 
     /**
@@ -772,6 +782,26 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         require(eventRows.all { it.valid() } &&
             eventRows.distinctBy { it.ge360Id }.size == eventRows.size) {
             "Storico metrico non valido nel backup"
+        }
+        val variantRows = if (!native) emptyList() else root.optJSONArray("metricVariants")
+            ?.let { a -> (0 until a.length()).map { MetricVariantV3.fromJson(a.getJSONObject(it)) } }
+            ?: emptyList()
+        val variantEventRows = if (!native) emptyList() else root.optJSONArray("metricVariantEvents")
+            ?.let { a -> (0 until a.length()).map { MetricVariantEventV3.fromJson(a.getJSONObject(it)) } }
+            ?: emptyList()
+        require(variantRows.all { it.valid() } &&
+            variantRows.distinctBy { it.ge360Id }.size == variantRows.size &&
+            variantRows.distinctBy {
+                it.estimateGe360Id to it.candidateBindingGe360Id
+            }.size == variantRows.size &&
+            variantRows.distinctBy {
+                it.estimateGe360Id to it.previousItemGe360Id
+            }.size == variantRows.size) {
+            "Varianti duplicate o non valide nel backup"
+        }
+        require(variantEventRows.all { it.valid() } &&
+            variantEventRows.distinctBy { it.ge360Id }.size == variantEventRows.size) {
+            "Eventi varianti duplicati o non validi"
         }
         val db = writableDatabase
         db.beginTransaction()
@@ -814,6 +844,44 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 else require(existing == event) {
                     "UUID evento metrico presente con dati divergenti"
                 }
+            }
+            variantRows.forEach { variant ->
+                val estimate = getByGe360Id(variant.estimateGe360Id)
+                    ?: error("Variante senza preventivo")
+                val source = metricProvenance(variant.previousItemGe360Id)
+                    ?: error("Variante senza origine precedente")
+                require(source.estimateGe360Id == variant.estimateGe360Id &&
+                    source.sourceBindingGe360Id == variant.previousBindingGe360Id &&
+                    source.geometryFingerprint == variant.previousFingerprint &&
+                    source.planGe360Id == variant.planGe360Id &&
+                    source.roomGe360Id == variant.roomGe360Id &&
+                    source.workCode == variant.workCode &&
+                    source.surface == variant.surface &&
+                    source.wallGe360Id.orEmpty() == variant.wallGe360Id.orEmpty()) {
+                    "Variante incoerente con la fonte originale"
+                }
+                val current = metricVariants(estimate.ge360Id)
+                    .singleOrNull { it.ge360Id == variant.ge360Id }
+                if (current == null) db.insertOrThrow("estimate_metric_variants",
+                    null, variantValues(estimate.id, variant))
+                else require(current == variant) {
+                    "Conflitto UUID variante tra archivio locale e backup"
+                }
+            }
+            variantEventRows.forEach { event ->
+                val quote = getByGe360Id(event.estimateGe360Id)
+                    ?: error("Evento variante senza preventivo")
+                require(metricVariants(quote.ge360Id).any {
+                    it.ge360Id == event.variantGe360Id
+                }) { "Evento variante privo del relativo snapshot" }
+                val current = db.query("estimate_metric_variant_events", arrayOf("event_json"),
+                    "ge360_id=?", arrayOf(event.ge360Id), null, null, null, "1").use { c ->
+                        if (c.moveToFirst()) MetricVariantEventV3.fromJson(
+                            JSONObject(c.getString(0))) else null
+                    }
+                if (current == null) db.insertOrThrow("estimate_metric_variant_events",
+                    null, variantEventValues(quote.id, event))
+                else require(current == event) { "Conflitto UUID evento variante" }
             }
             // Recreate missing historical note-only sources as *unverified*.
             backfillLegacyMetricNotes(db)
