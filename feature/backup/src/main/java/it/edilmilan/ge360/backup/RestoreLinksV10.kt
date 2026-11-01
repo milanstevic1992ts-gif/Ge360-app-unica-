@@ -105,10 +105,10 @@ internal object RestoreLinksV10 {
             each(rows) { job(it.optString("jobsiteId")) }
         }
 
-        uniqueIds(documents, "Documenti Scanner")
+        uniqueIds(documents, "Documenti Scanner", allowBlank = true)
         each(documents) { job(it.optString("jobsite_id")) }
 
-        uniqueIds(photos, "Fotografie")
+        uniqueIds(photos, "Fotografie", allowBlank = true)
         each(photos) { job(it.optString("jobsiteId")) }
 
         plans?.let { rows ->
@@ -116,7 +116,7 @@ internal object RestoreLinksV10 {
                 job(it.optString("jobsiteId"))
                 estimate(it.optString("estimateId"))
             }
-            plansJson.optJSONArray("workBindings")?.let { bindings ->
+            plansJson?.optJSONArray("workBindings")?.let { bindings ->
                 uniqueIds(bindings, "Collegamenti rilievi")
                 each(bindings) { binding ->
                     val planId = binding.optString("planGe360Id")
@@ -141,9 +141,9 @@ internal object RestoreLinksV10 {
         snapshot.jobsiteArchive?.let { json ->
             val root = JSONObject(json)
             val files = root.getJSONArray("files")
-            val memos = root.getJSONArray("memos")
-            uniqueIds(files, "Documenti cantiere")
-            uniqueIds(memos, "Note cantiere")
+            val memos = root.optJSONArray("memos") ?: JSONArray()
+            uniqueIds(files, "Documenti cantiere", allowBlank = true)
+            uniqueIds(memos, "Note cantiere", allowBlank = true)
             each(files) { job(it.optString("jobsiteId")) }
             each(memos) { job(it.optString("jobsiteId")) }
         }
