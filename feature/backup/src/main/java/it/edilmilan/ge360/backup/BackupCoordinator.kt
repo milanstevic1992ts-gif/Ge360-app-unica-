@@ -6,6 +6,7 @@ import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
 import it.edilmilan.ge360.attrezzi.MaterialPlanStore
 import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceStoreV13
+import it.edilmilan.ge360.attrezzi.MaterialReconciliationRulesV14
 import it.edilmilan.ge360.attrezzi.CustomWorkPackStore
 import it.edilmilan.ge360.attrezzi.VanPreparationStore
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -530,6 +531,37 @@ class BackupCoordinator(private val context: Context) {
         }
         require(lines.map { it.ge360Id }.distinct().size == lines.size) {
             "Righe V13 duplicate nel backup"
+        }
+        // V14: a match only certifies an operator-confirmed overlap between
+        // two original V13 lines; no double-counted invoice/DDT quantities.
+        val matchesArray = evidence.optJSONArray("reconciliations") ?: JSONArray()
+        val incomingMatches = (0 until matchesArray.length()).map {
+            MaterialDocumentEvidenceStoreV13.matchFromJson(matchesArray.getJSONObject(it))
+        }
+        require(incomingMatches.map { it.ge360Id }.distinct().size == incomingMatches.size) {
+            "Backup V14: UUID riconciliazioni duplicati"
+        }
+        val locallyExistingLines = if (replaceAll) emptyList() else {
+            val store = MaterialDocumentEvidenceStoreV13(context)
+            try { store.all() } finally { store.close() }
+        }
+        val locallyExistingMatches = if (replaceAll) emptyList() else {
+            val store = MaterialDocumentEvidenceStoreV13(context)
+            try { store.matches() } finally { store.close() }
+        }
+        val availableLines = (locallyExistingLines + lines).associateBy { it.ge360Id }
+            .values.toList()
+        val accumulated = locallyExistingMatches.toMutableList()
+        incomingMatches.forEach { match ->
+            val existing = locallyExistingMatches.firstOrNull { it.ge360Id == match.ge360Id }
+            if (existing != null) require(existing == match) {
+                "Backup V14: UUID riconciliazione già presente ma divergente"
+            } else {
+                if (match.active) {
+                    MaterialReconciliationRulesV14.validate(availableLines, accumulated, match)
+                }
+                accumulated += match
+            }
         }
         val activeBusinessKeys = lines.filter { it.active }.map {
             Triple(it.documentGe360Id, it.materialGe360Id, it.jobsiteGe360Id)
