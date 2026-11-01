@@ -6,6 +6,8 @@ import it.edilmilan.ge360.attrezzi.ToolsStore
 import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
 import it.edilmilan.ge360.attrezzi.MaterialPlanStore
 import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceStoreV13
+import it.edilmilan.ge360.attrezzi.MaterialCostStoreV15
+import it.edilmilan.ge360.attrezzi.MaterialCostRulesV15
 import it.edilmilan.ge360.attrezzi.MaterialReconciliationRulesV14
 import it.edilmilan.ge360.attrezzi.CustomWorkPackStore
 import it.edilmilan.ge360.attrezzi.VanPreparationStore
@@ -82,6 +84,7 @@ class BackupCoordinator(private val context: Context) {
         val inventory = MaterialInventoryStore(context)
         val materialPlans = MaterialPlanStore(context)
         val materialEvidence = MaterialDocumentEvidenceStoreV13(context)
+        val materialCosts = MaterialCostStoreV15(context)
         val customWorkPacks = CustomWorkPackStore(context)
         val vanPreparations = VanPreparationStore(context)
         val gallery = GalleryStore(context)
@@ -106,6 +109,7 @@ class BackupCoordinator(private val context: Context) {
                 "modules/material-inventory-v2.json" to inventory.exportJson(),
                 "modules/material-plans-v1.json" to materialPlans.exportJson(),
                 "modules/material-evidence-v13.json" to materialEvidence.exportJson(),
+                "modules/material-cost-v15.json" to materialCosts.exportJson(),
                 "modules/attrezzi-custom-packs.json" to customWorkPacks.exportJson(),
                 "modules/furgone.json" to vanPreparations.exportJson(),
                 "modules/galleria.json" to gallery.exportJson(),
@@ -198,11 +202,12 @@ class BackupCoordinator(private val context: Context) {
             ) { candidate ->
                 preflightAgreementEvidence(candidate, archive.readManifest(candidate))
                 preflightMaterialEvidenceV13(candidate, replaceAll = true)
+                preflightMaterialCostsV15(candidate, replaceAll = true)
             }
             val driveDone = copyToDrive && archive.driveReady() && runCatching { archive.copyToDrive(info.file) }.isSuccess
             return CreateResult(info, driveDone, galleryIncluded, gallerySkipped, scannerFiles)
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, customWorkPacks, vanPreparations, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, materialCosts, customWorkPacks, vanPreparations, gallery)
         }
     }
 
@@ -274,7 +279,10 @@ class BackupCoordinator(private val context: Context) {
         // strict policy prevent recovery of the operator's safety snapshot.
         val linkReport = if (guardRollback) preflightCrossModuleLinks(file, replaceAll)
             else null
-        if (guardRollback) preflightMaterialEvidenceV13(file, replaceAll)
+        if (guardRollback) {
+            preflightMaterialEvidenceV13(file, replaceAll)
+            preflightMaterialCostsV15(file, replaceAll)
+        }
 
         val counts = linkedMapOf<String, Int>()
         val warnings = mutableListOf<String>()
@@ -306,6 +314,7 @@ class BackupCoordinator(private val context: Context) {
         val inventory = MaterialInventoryStore(context)
         val materialPlans = MaterialPlanStore(context)
         val materialEvidence = MaterialDocumentEvidenceStoreV13(context)
+        val materialCosts = MaterialCostStoreV15(context)
         val customWorkPacks = CustomWorkPackStore(context)
         val vanPreparations = VanPreparationStore(context)
         val gallery = GalleryStore(context)
@@ -388,6 +397,9 @@ class BackupCoordinator(private val context: Context) {
             optionalModule("modules/material-evidence-v13.json")?.let {
                 counts["Fatture DDT materiali"] = materialEvidence.importJson(it, replaceAll)
             } ?: run { warnings += "Backup legacy senza attribuzioni V13: registro locale conservato." }
+            optionalModule("modules/material-cost-v15.json")?.let {
+                counts["Costi materiali V15"] = materialCosts.importJson(it, replaceAll)
+            } ?: run { warnings += "Backup legacy senza costi V15: registro locale conservato." }
 
             val firJson = runCatching { archive.readText(file, "modules/fir.json") }.getOrNull()
             if (firJson != null) counts["FIR"] = fir.importJson(firJson, replaceAll)
@@ -412,7 +424,7 @@ class BackupCoordinator(private val context: Context) {
             }
             throw error
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, customWorkPacks, vanPreparations, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, materialCosts, customWorkPacks, vanPreparations, gallery)
         }
     }
 
@@ -497,6 +509,120 @@ class BackupCoordinator(private val context: Context) {
      * a real Scanner FATTURA/DDT, stock material and optional jobsite, with the
      * source document kind and material unit unchanged. OCR text is NEVER proof.
      */
+    /**
+     * V15: validate money-only evidence against the EXACT canonical V13 invoice
+     * line and confirmed plan revision before any destructive restore/import.
+     * Avoid treating a corrupt declared module as an older unsupported backup.
+     */
+    private fun preflightMaterialCostsV15(file: File, replaceAll: Boolean) {
+        val path = "modules/material-cost-v15.json"
+        val manifest = archive.readManifest(file)
+        val declaredModules = manifest.optJSONArray("modules")
+        val declared = declaredModules?.let { arr ->
+            (0 until arr.length()).any { arr.optString(it) == path }
+        } == true
+        val json = runCatching { archive.readText(file, path) }.getOrNull()
+        if (json == null) {
+            require(!declared) { "Backup dichiara costi materiali V15 illeggibili" }
+            if (replaceAll) {
+                val local = MaterialCostStoreV15(context)
+                try {
+                    require(local.invoiceCosts().isEmpty() && local.budgets().isEmpty()) {
+                        "Backup senza V15: Sostituisci rifiutato per preservare prezzi e budget storici"
+                    }
+                } finally { local.close() }
+            }
+            return
+        }
+        val root = JSONObject(json)
+        require(root.optString("schema") == MaterialCostStoreV15.SCHEMA) {
+            "Formato prezzi V15 non riconosciuto"
+        }
+        val invoiceRows = root.getJSONArray("invoiceCosts")
+        val budgetRows = root.getJSONArray("budgets")
+        val incomingCosts = (0 until invoiceRows.length()).map {
+            MaterialCostStoreV15.costFromJson(invoiceRows.getJSONObject(it))
+        }
+        val incomingBudgets = (0 until budgetRows.length()).map {
+            MaterialCostStoreV15.budgetFromJson(budgetRows.getJSONObject(it))
+        }
+        require(incomingCosts.map { it.ge360Id }.distinct().size == incomingCosts.size &&
+            incomingBudgets.map { it.ge360Id }.distinct().size == incomingBudgets.size) {
+            "Backup V15 con UUID duplicati"
+        }
+        val evidence = JSONObject(archive.readText(file, "modules/material-evidence-v13.json"))
+        val v13 = evidence.getJSONArray("lines")
+        val evidenceLines = (0 until v13.length()).map {
+            MaterialDocumentEvidenceStoreV13.parse(v13.getJSONObject(it))
+        }.associateBy { it.ge360Id }.toMutableMap()
+        val planRoot = JSONObject(archive.readText(file, "modules/material-plans-v1.json"))
+        val revisions = planRoot.getJSONArray("revisions")
+        val plans = (0 until revisions.length()).associate { i ->
+            val x = revisions.getJSONObject(i)
+            x.getString("ge360Id") to x
+        }.toMutableMap()
+        if (!replaceAll) {
+            val localEvidence = MaterialDocumentEvidenceStoreV13(context)
+            val localPlans = MaterialPlanStore(context)
+            try {
+                localEvidence.all().forEach { evidenceLines.putIfAbsent(it.ge360Id, it) }
+                localPlans.all().forEach { plan ->
+                    plans.putIfAbsent(plan.ge360Id, JSONObject()
+                        .put("ge360Id", plan.ge360Id)
+                        .put("materialGe360Id", plan.materialGe360Id)
+                        .put("jobsiteGe360Id", plan.jobsiteGe360Id.orEmpty())
+                        .put("unit", plan.unit).put("quantity", plan.quantity))
+                }
+            } finally { closeAll(localEvidence, localPlans) }
+        }
+        incomingCosts.filter { it.active }.forEach { cost ->
+            val line = evidenceLines[cost.invoiceLineGe360Id]
+                ?: error("V15: importo con riga fattura V13 inesistente")
+            require(line.active && line.documentKind == "FATTURA") {
+                "V15: importo collegato a riga annullata o non fattura"
+            }
+        }
+        incomingBudgets.forEach { budget ->
+            val plan = plans[budget.planRevisionGe360Id]
+                ?: error("V15: revisione piano budget mancante")
+            require(plan.optString("materialGe360Id") == budget.materialGe360Id &&
+                plan.optString("jobsiteGe360Id") == budget.jobsiteGe360Id &&
+                plan.optString("unit").trim().equals(budget.unit.trim(), ignoreCase = true)) {
+                "V15: piano, materiale, cantiere o unità budget discordanti"
+            }
+            require(plan.getDouble("quantity").isFinite()) { "Quantità budget non valida" }
+            val qty = plan.getDouble("quantity")
+            require(qty >= 0) { "Quantità budget negativa" }
+            val cents = java.math.BigDecimal.valueOf(qty)
+                .multiply(java.math.BigDecimal.valueOf(budget.unitNetCents))
+                .setScale(0, java.math.RoundingMode.HALF_UP)
+                .longValueExact()
+            require(cents >= 0) { "Budget V15 numericamente non valido" }
+        }
+        // Validate merge collision and single active price per invoice line
+        // without writing any record before the restore safety snapshot.
+        val localStore = if (replaceAll) null else MaterialCostStoreV15(context)
+        try {
+            val existingCosts = localStore?.invoiceCosts().orEmpty()
+            val existingBudgets = localStore?.budgets().orEmpty()
+            incomingCosts.forEach { row ->
+                existingCosts.singleOrNull { it.ge360Id == row.ge360Id }?.let {
+                    require(it == row) { "V15: UUID costo già presente ma diverso" }
+                }
+            }
+            incomingBudgets.forEach { row ->
+                existingBudgets.singleOrNull { it.ge360Id == row.ge360Id }?.let {
+                    require(it == row) { "V15: UUID budget già presente ma diverso" }
+                }
+            }
+            val effective = (existingCosts + incomingCosts)
+                .associateBy { it.ge360Id }.values.filter { it.active }
+            require(effective.map { it.invoiceLineGe360Id }.distinct().size == effective.size) {
+                "V15: prezzi attivi duplicati per la stessa riga"
+            }
+        } finally { localStore?.close() }
+    }
+
     private fun preflightMaterialEvidenceV13(file: File, replaceAll: Boolean) {
         val evidencePath = "modules/material-evidence-v13.json"
         val declaredModules = archive.readManifest(file).optJSONArray("modules")
