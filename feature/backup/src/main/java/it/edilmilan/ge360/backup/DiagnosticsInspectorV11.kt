@@ -12,6 +12,11 @@ import it.edilmilan.ge360.galleria.GalleryArchive
 import it.edilmilan.ge360.giornata.DailyStore
 import it.edilmilan.ge360.spese.FinanceStore
 import it.edilmilan.ge360.attrezzi.ToolsStore
+import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceStoreV13
+import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
+import it.edilmilan.ge360.attrezzi.MaterialPlanStore
+import it.edilmilan.ge360.attrezzi.MaterialCostStoreV15
+import it.edilmilan.ge360.attrezzi.MaterialIntegrityV10V15
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.planimetrie.FloorPlanStore
 import it.edilmilan.ge360.preventivi.EstimateStore
@@ -113,6 +118,62 @@ object DiagnosticsInspectorV11 {
         }
         capture("Attrezzi / materiali") {
             val s = ToolsStore(app); try { s.exportJson() } finally { s.close() }
+        }
+
+        // Consolidation V10–V15: explicit, read-only cross-ledger inspection.
+        // This is not a financial audit or certification of document authenticity.
+        runCatching {
+            val source = MaterialDocumentEvidenceStoreV13(app)
+            val materials = MaterialInventoryStore(app)
+            val plans = MaterialPlanStore(app)
+            val costs = MaterialCostStoreV15(app)
+            val documents = DocumentStore(app)
+            val worksites = JobsiteStore(app)
+            try {
+                val summary = MaterialIntegrityV10V15.inspect(
+                    lines = source.all(),
+                    matches = source.matches(),
+                    costs = costs.invoiceCosts(),
+                    budgets = costs.budgets(),
+                    plans = plans.all(),
+                    documents = documents.list().map { doc ->
+                        MaterialIntegrityV10V15.DocumentRef(
+                            id = doc.ge360Id,
+                            kind = doc.type,
+                            jobsiteId = doc.jobsiteId,
+                            accessiblePdf = doc.pdfPath.isNotBlank() &&
+                                File(doc.pdfPath).isFile
+                        )
+                    },
+                    materialUnits = materials.list().associate { it.ge360Id to it.unit },
+                    jobsiteIds = worksites.list().map { it.ge360Id }.toSet()
+                )
+                add("Materiali", "Provenienza V10–V15",
+                    when {
+                        summary.totalProblems > 0 -> Level.ERRORE
+                        summary.unvaluedInvoices > 0 || summary.oldPlanBudgets > 0 ->
+                            Level.ATTENZIONE
+                        summary.checkedNothing -> Level.INFO
+                        else -> Level.OK
+                    },
+                    "${summary.validSourceLines}/${summary.activeSourceLines} righe documentali verificate" +
+                        " · ${summary.matchProblems}/${summary.activeMatches} abbinamenti incoerenti" +
+                        " · ${summary.costProblems}/${summary.activeCosts} importi non verificabili" +
+                        " · ${summary.budgetProblems}/${summary.budgetRevisions} budget incoerenti" +
+                        " · ${summary.unvaluedInvoices} fatture prive di importo" +
+                        " · ${summary.oldPlanBudgets} budget di piani superati",
+                    if (summary.totalProblems > 0 ||
+                        summary.unvaluedInvoices > 0 || summary.oldPlanBudgets > 0)
+                        "Apri Materiali → Acquisti documentati; non cancellare i record storici"
+                    else "")
+            } finally {
+                source.close(); materials.close(); plans.close()
+                costs.close(); documents.close(); worksites.close()
+            }
+        }.onFailure {
+            add("Materiali", "Provenienza V10–V15", Level.ERRORE,
+                "Uno o più registri materiali non sono leggibili o verificabili",
+                "Conserva il backup e controlla gli archivi; non riparare automaticamente")
         }
 
         if (listOf(clients, jobs, estimates, scanner, gallery).all { it != null }) {
