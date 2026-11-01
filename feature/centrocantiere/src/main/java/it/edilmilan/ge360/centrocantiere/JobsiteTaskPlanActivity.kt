@@ -14,7 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
+import android.graphics.drawable.GradientDrawable
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.core.common.Ge360Contracts
@@ -115,7 +115,6 @@ class JobsiteTaskPlanActivity : AppCompatActivity() {
                 12f, "#626A71"
             ))
             if (report.possibleFinish != null) {
-                body.addView(label("", 1f, "#626A71"))
                 addView(label(
                     "Fine teorica del piano: " + report.possibleFinish,
                     16f, "#237B47", true
@@ -294,19 +293,17 @@ class JobsiteTaskPlanActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun card() = MaterialCardView(this).apply {
-        radius = dp(16).toFloat()
-        cardElevation = 0f
-        strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#DDE1E5")
-        setCardBackgroundColor(Color.WHITE)
+    private fun card() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(13), dp(14), dp(13))
+        background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), Color.parseColor("#DDE1E5"))
+        }
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(9) }
-        addView(LinearLayout(this@JobsiteTaskPlanActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(13), dp(14), dp(13))
-        })
     }
 
     private fun label(value: String, size: Float, color: String, bold: Boolean = false) =

@@ -17,6 +17,7 @@ import it.edilmilan.ge360.attrezzi.MaterialsActivity
 import it.edilmilan.ge360.attrezzi.MaterialEvidenceActivityV13
 import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
+import it.edilmilan.ge360.cantieri.JobsiteProgressActivity
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.core.common.Ge360Contracts
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
@@ -135,6 +136,10 @@ class JobsiteHubActivity : AppCompatActivity() {
         body.addView(actionRow(
             ActionSpec("✅", "Cronologia / lavori", "Checklist, fasi e attività registrate") { openContext(JobsiteCenterActivity::class.java) },
             ActionSpec("👷", "Ore / manodopera", "Calendario, operatori e costo per giornata") { openContext(JobsiteLaborActivity::class.java) }
+        ))
+        body.addView(actionRow(
+            ActionSpec("🗓", "Piano lavorazioni", "Durate, dipendenze e sequenza del cantiere") { openContext(JobsiteTaskPlanActivity::class.java) },
+            ActionSpec("📈", "Avanzamento & SAL", "Fasi fisiche, storico, scenari e acconti") { openContext(JobsiteProgressActivity::class.java) }
         ))
         body.addView(actionRow(
             ActionSpec("🧰", "Attrezzi / materiali", "Preparazione del lavoro") { openContext(WorkPreparationActivity::class.java) },

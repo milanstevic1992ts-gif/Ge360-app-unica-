@@ -8,6 +8,9 @@
             android:initOrder="90" />
 
         <activity
+            android:name=".JobsiteTaskPlanActivity"
+            android:exported="false" />
+        <activity
             android:name=".JobsiteCenterActivity"
             android:exported="false" />
         <activity

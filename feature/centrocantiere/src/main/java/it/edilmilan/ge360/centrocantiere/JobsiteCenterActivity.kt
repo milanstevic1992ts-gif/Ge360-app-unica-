@@ -151,6 +151,9 @@ class JobsiteCenterActivity : AppCompatActivity() {
             addView(actionButton("MODELLO") { showTemplateDialog() }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(5); marginEnd = dp(5) })
             addView(actionButton("PREVENTIVO") { showEstimateImport() }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(5) })
         })
+        body.addView(actionButton("🗓 PIANO LAVORAZIONI · DURATE E DIPENDENZE") {
+            openContext(JobsiteTaskPlanActivity::class.java)
+        }, full(dp(50)))
         checklistContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(checklistContainer)
 
