@@ -148,6 +148,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         db.execSQL("CREATE INDEX idx_est_client ON estimates(client_id, updated_at DESC)")
         db.execSQL("CREATE INDEX idx_est_items ON estimate_items(estimate_id, id)")
         createMetricTables(db)
+        createMetricVariantTables(db)
         seedPriceList(db)
     }
 
@@ -157,6 +158,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             createMetricTables(db)
             backfillLegacyMetricNotes(db)
         }
+        if (oldVersion < 3) createMetricVariantTables(db)
     }
 
     private fun createMetricTables(db: SQLiteDatabase) {
@@ -181,6 +183,49 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         )""")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_metric_events_est ON estimate_metric_events(estimate_id, occurred_at)")
     }
+
+    private fun createMetricVariantTables(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_metric_variants (
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            previous_item_ge360_id TEXT NOT NULL,
+            candidate_binding_ge360_id TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(estimate_id, candidate_binding_ge360_id),
+            UNIQUE(estimate_id, previous_item_ge360_id),
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_variants_est ON estimate_metric_variants(estimate_id,created_at)")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_metric_variant_events (
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            variant_ge360_id TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            occurred_at INTEGER NOT NULL,
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_variant_events_est ON estimate_metric_variant_events(estimate_id,occurred_at)")
+    }
+
+    private fun variantValues(id: Long, value: MetricVariantV3) = ContentValues().apply {
+        put("ge360_id", value.ge360Id)
+        put("estimate_id", id)
+        put("previous_item_ge360_id", value.previousItemGe360Id)
+        put("candidate_binding_ge360_id", value.candidateBindingGe360Id)
+        put("snapshot_json", value.toJson().toString())
+        put("status", value.status)
+        put("created_at", value.createdAt)
+    }
+    private fun variantEventValues(id: Long, event: MetricVariantEventV3) =
+        ContentValues().apply {
+            put("ge360_id", event.ge360Id)
+            put("estimate_id", id)
+            put("variant_ge360_id", event.variantGe360Id)
+            put("event_json", event.toJson().toString())
+            put("occurred_at", event.occurredAt)
+        }
 
     private fun metricSourceValues(estimateId: Long, data: MetricProvenanceV2) =
         ContentValues().apply {
@@ -697,6 +742,6 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         val UNITS=listOf("corpo","m²","ml","cad.","ora","giornata","forfait")
         val SECTIONS=listOf("Bagno","Resto della casa","Esterni","Opere extra")
         private const val DB_NAME="ge360_preventivi.db"
-        private const val DB_VERSION=2
+        private const val DB_VERSION=3
     }
 }
