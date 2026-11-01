@@ -186,3 +186,29 @@ Una variante di metratura su un preventivo già inviato/accettato NON riscrive l
 2. Una variante per singola voce storica è ammessa, non una catena di infinite varianti sovrapposte. Servirà decidere approvazione/rifiuto/supersessione formale, autorizzazioni e successivi stati economici, senza doppio conteggio.
 3. UI di verifica tecnica in Preventivi mostra uno snapshot: chi conferma deve controllare effettivamente le nuove misure; non certifica che il Rilievo non sia cambiato successivamente.
 4. Eseguire (solo con autorizzazione) compilazione Android, test Kotlin, integrazione UI, migrazione SQLite V2→V3, backup restore/merge, rollback, edge cases cantiere facoltativo, status Preventivi e delta positivi/negativi. Nessuna delle verifiche è stata eseguita.
+
+
+## 1 novembre 2026 — Variante economica V4: extra, riduzioni, accordi annotati
+
+**Stato:** codice implementato su feature branch Android; nessun Android build, test, APK, GitHub Actions, merge, deploy o cambiamento del server Debian. Marketing in pausa.
+
+### Principi di salvaguardia
+- Distingue `variante tecnica verificata`, `proposta economica` e `accordo esterno annotato`: sono tre eventi diversi. Il cliente **non viene contattato** dall'app in questa fase. Nessun documento o firma viene acquisito/validato automaticamente. La casella dell'operatore attesta soltanto di aver verificato altrove l'accordo.
+- L'importo **non viene aggiunto al preventivo originario**, né a registri di pagamenti, crediti, fatture, SAL o contabilità. Anche i saldi mostrati sono riepiloghi informativi degli accordi annotati, non importi contabilizzati. I prezzi storici non vengono alterati.
+- Per ogni `variantGe360Id` una sola proposta economica, ricondotta alla stessa `previousItemGe360Id`; una lavorazione originale deve essere realmente **inclusa e prezzata** prima che il suo delta diventi proposta economica. Gli incrementi di quantità sono `LAVORO_AGGIUNTIVO` (importo positivo), le riduzioni `RIDUZIONE` (importo negativo), senza utilizzare l'esistente `calculateItemTotal` che non è progettato per righe a valore negativo.
+- Importo proposto a `PREZZO_AL_M2` oppure `IMPORTO_A_CORPO`: importo `BigDecimal` arrotondato al centesimo; le detrazioni di quantità sono già incorporate nel `MetricVariantV3`. Nessun tariffario né IVA applicati automaticamente.
+- Un accordo esterno può essere annotato solo dopo la proposta, con **riferimento testuale almeno 8 caratteri, data yyyy-MM-dd non futura, nota di verifica almeno 8 caratteri e conferma esplicita**. Il riferimento è solo descrittivo, non allega o autentica la prova.
+
+### Codice introdotto
+- `feature/preventivi/.../MetricVariantEconomicsV4.kt`: snapshot commerciale, due modalità prezzo, segno contabile proposto, status `PROPOSTA_ECONOMICA` / `ACCORDO_ANNOTATO`, DTO audit `ECONOMIC_PROPOSAL` / `AGREEMENT_ATTESTED`, JSON roundtrip. Non è un titolo di credito.
+- `EstimateStore.kt` schema `ge360_preventivi.db` V3→V4, tabelle `estimate_metric_economics` e `estimate_metric_economics_events`. Snapshot collegato a preventivo e UUID variante, chiave `UNIQUE(estimate_id,variant_ge360_id)`; eventi con UUID e storico append-only. Migrazione V1/V2/V3→V4 additiva.
+- DAO `proposeMetricVariantEconomics()`, `attestMetricVariantAgreement()`, `metricVariantEconomics()`, `metricVariantEconomicEvents()`. Operazioni SQLite atomiche, verificano variante già verificata, voce storica inclusa e prezzata, stato non Rifiutato, quantità e prezzo originali invariati, unicità della proposta.
+- `EstimateStore.save()` blocca modifiche a prezzo/inclusione della voce originale dopo proposta e un nuovo inserimento manuale per stesso codice+ambiente che sovrapporrebbe la variante. `delete()` blocca eliminazione ordinaria del preventivo se contiene varianti, per non perdere lo storico involontariamente.
+- UI `EstimatesActivity`: accesso da `Varianti di metratura` → `APRI ECONOMIA` dopo la verifica tecnica; form proposta con modalità, prezzo e motivo; form annotazione accordo con riferimento, data, descrizione evidenza e checkbox. Riepilogo **separato** degli extra, riduzioni, proposte in attesa e saldo informativo degli accordi annotati; non integra il totale preventivo.
+- Export/import JSON schema compatibile `ge360.preventivi.v1` arricchito con array `metricVariantEconomics[]` e `metricVariantEconomicsEvents[]`. Restore transazionale, verifica UUID, importo firmato, relazione con variante tecnicamente verificata, origine della voce e audit coerente. Vecchi backup senza array nuovi restano accettati.
+- `MetricVariantEconomicsV4Test.kt`: casi di regressione positivi, riduzioni negative, prova esterna obbligatoria, integrità importi e audit. **Sorgenti solo scritte; NON eseguite.**
+
+### Da completare prima della messa in produzione
+1. Collegare/verificare gli allegati fisici della prova (email/PDF/firma) con autorizzazioni e privacy appropriate. Per ora viene annotato **solo il riferimento**.
+2. Realizzare iter contrattuale formale (proposta al cliente, accettazione, eventuale revoca/nuova versione, trattamento IVA e segno negativo, contabilità e fatturazione), senza presumere che l'attestazione manuale equivalga a consenso.
+3. QA SQLite V1→V4, esportazione/ripristino, concorrenza, collisioni/sovrapposizioni e comportamento UI. Nessuna verifica eseguibile effettuata in questo incremento; main non toccato.
