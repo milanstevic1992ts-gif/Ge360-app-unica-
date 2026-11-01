@@ -222,16 +222,27 @@ class EstimatesActivity : AppCompatActivity() {
                 } ?: " · senza proposta economica")
         }
         AlertDialog.Builder(this).setTitle("Varianti · preventivo invariato")
-            .setMessage(overview)
             .setItems(labels.toTypedArray()) { _, position ->
                 reviewMetricVariant(estimateGe360Id, variants[position])
             }
-            .setNeutralButton("STORICO") { _, _ ->
+            .setNeutralButton("RIEPILOGO") { _, _ ->
                 val events = store.metricVariantEvents(estimateGe360Id)
-                textDialog("Cronologia varianti", events.joinToString("\n\n") { event ->
+                val history = events.joinToString("\n\n") { event ->
                     event.action + " · " + event.variantGe360Id.take(8) + "\n" +
                         event.reason
-                }.ifBlank { "Nessun evento" })
+                }.ifBlank { "Nessun evento" }
+                val commercialEvents = store.metricVariantEconomicEvents(estimateGe360Id)
+                    .joinToString("\n\n") { event ->
+                        event.action + " · " + event.economicsGe360Id.take(8) +
+                            " · " + String.format(Locale.ITALY, "%+.2f €",
+                                event.signedAmountEuro) +
+                            (if (event.evidenceReference.isNotBlank())
+                                " · " + event.evidenceReference else "") +
+                            "\n" + event.reason
+                    }.ifBlank { "Nessun evento" }
+                textDialog("Riepilogo varianti e accordi",
+                    overview + "\n\nSTORICO TECNICO\n" + history +
+                        "\n\nSTORICO ECONOMICO\n" + commercialEvents)
             }
             .setNegativeButton("Chiudi", null)
             .show()
