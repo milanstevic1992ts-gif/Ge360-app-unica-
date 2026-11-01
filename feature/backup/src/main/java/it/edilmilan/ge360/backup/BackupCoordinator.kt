@@ -257,11 +257,15 @@ class BackupCoordinator(private val context: Context) {
         preflightAgreementEvidence(file, manifest)
         // V10: check the UUID graph BEFORE saving clients, jobs, estimates,
         // documents or taking a destructive path through the module importers.
-        val linkReport = preflightCrossModuleLinks(file, replaceAll)
+        // During emergency rollback, restore the PREVIOUS state even if it
+        // already contained historical or dangling links; never let a new
+        // strict policy prevent recovery of the operator's safety snapshot.
+        val linkReport = if (guardRollback) preflightCrossModuleLinks(file, replaceAll)
+            else null
 
         val counts = linkedMapOf<String, Int>()
         val warnings = mutableListOf<String>()
-        if (linkReport.historicalLinksSkipped > 0) {
+        if (linkReport != null && linkReport.historicalLinksSkipped > 0) {
             warnings += "Controllo riferimenti V10: ${linkReport.historicalLinksSkipped} collegamenti storici senza UUID canonico non reinterpretati automaticamente."
         }
         val safety = if (guardRollback) {
