@@ -113,7 +113,8 @@ class MetricAgreementV5ContractTest {
         val econ = agreedEconomic()
         val first = correction(105.0).copy(proposedAt = 200)
         val second = correction(95.0).copy(
-            ge360Id = java.util.UUID.randomUUID().toString(), proposedAt = 202)
+            ge360Id = java.util.UUID.randomUUID().toString(),
+            priorSignedAmountEuro = 105.0, proposedAt = 202)
         assertTrue(runCatching {
             MetricAgreementRevisionChainV6.ordered(econ, listOf(first, second))
         }.isFailure)
