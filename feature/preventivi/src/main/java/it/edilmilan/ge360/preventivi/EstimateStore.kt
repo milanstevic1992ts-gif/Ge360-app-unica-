@@ -498,6 +498,178 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         } finally { db.endTransaction() }
     }
 
+    fun metricVariantEconomics(estimateGe360Id: String): List<MetricVariantEconomicsV4> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val out = mutableListOf<MetricVariantEconomicsV4>()
+        readableDatabase.query("estimate_metric_economics", arrayOf("data_json"),
+            "estimate_id=?", arrayOf(estimate.id.toString()), null, null,
+            "proposed_at DESC").use { c ->
+            while (c.moveToNext()) out +=
+                MetricVariantEconomicsV4.fromJson(JSONObject(c.getString(0)))
+        }
+        return out
+    }
+
+    fun metricVariantEconomicEvents(estimateGe360Id: String):
+        List<MetricVariantEconomicsEventV4> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val out = mutableListOf<MetricVariantEconomicsEventV4>()
+        readableDatabase.query("estimate_metric_economics_events",
+            arrayOf("event_json"), "estimate_id=?", arrayOf(estimate.id.toString()),
+            null, null, "occurred_at DESC").use { c ->
+            while (c.moveToNext()) out +=
+                MetricVariantEconomicsEventV4.fromJson(JSONObject(c.getString(0)))
+        }
+        return out
+    }
+
+    /**
+     * New addendum proposal, not a quote change. A technical variant can have
+     * exactly one proposed commercial adjustment: no duplicated extras/credits.
+     */
+    fun proposeMetricVariantEconomics(
+        estimateGe360Id: String,
+        variantGe360Id: String,
+        expectedEstimateUpdatedAt: Long,
+        mode: String,
+        priceEuro: Double,
+        reason: String
+    ): MetricVariantEconomicsV4 {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val quote = getByGe360Id(estimateGe360Id) ?: error("Preventivo non trovato")
+            require(quote.updatedAt == expectedEstimateUpdatedAt) {
+                "Preventivo modificato: riaprire la proposta economica"
+            }
+            require(quote.status != EstimateStatuses.REJECTED) {
+                "Non proporre accordi su un preventivo rifiutato"
+            }
+            val variant = metricVariants(estimateGe360Id)
+                .singleOrNull { it.ge360Id == variantGe360Id }
+                ?: error("La variante tecnica non esiste")
+            require(variant.valid() &&
+                variant.status == MetricVariantV3.STATUS_TECH_REVIEWED) {
+                "Serve prima la verifica tecnica delle quantità"
+            }
+            val source = metricSourcesForEstimateId(quote.id)
+                .singleOrNull { it.itemGe360Id == variant.previousItemGe360Id }
+                ?: error("Fonte metratura originale non disponibile")
+            require(source.trust == MetricProvenanceV2.TRUST_VERIFIED &&
+                source.sourceBindingGe360Id == variant.previousBindingGe360Id &&
+                source.geometryFingerprint == variant.previousFingerprint) {
+                "Origine non verificata o modificata"
+            }
+            val item = quote.items.singleOrNull {
+                it.ge360Id == variant.previousItemGe360Id
+            } ?: error("Voce del preventivo originale mancante")
+            require(kotlin.math.abs(item.quantity - variant.previousQuantityM2) < 0.001 &&
+                kotlin.math.abs(item.unitPrice - variant.priorUnitPrice) < 0.001 &&
+                (item.included && !item.optional) == variant.priorIncluded) {
+                "Quantità o prezzo storico cambiati: ripetere la proposta"
+            }
+            require(metricVariantEconomics(estimateGe360Id).none {
+                it.variantGe360Id == variantGe360Id ||
+                    it.sourceItemGe360Id == variant.previousItemGe360Id
+            }) { "Una proposta economica è già registrata per questa variazione" }
+            val economics = MetricVariantEconomicsV4.create(
+                variant, mode, priceEuro, reason
+            )
+            require(economics.valid() &&
+                economics.estimateGe360Id == quote.ge360Id)
+            db.insertOrThrow("estimate_metric_economics", null,
+                economicValues(quote.id, economics))
+            val event = MetricVariantEconomicsEventV4(
+                economicsGe360Id = economics.ge360Id,
+                estimateGe360Id = quote.ge360Id,
+                action = "ECONOMIC_PROPOSAL",
+                signedAmountEuro = economics.proposedSignedAmountEuro,
+                reason = economics.proposalReason
+            )
+            check(event.valid())
+            db.insertOrThrow("estimate_metric_economics_events", null,
+                economicEventValues(quote.id, event))
+            db.setTransactionSuccessful()
+            return economics
+        } finally { db.endTransaction() }
+    }
+
+    /**
+     * Manual attestation of evidence held outside this app. Does not assert
+     * that the attachment was retrieved or digitally signed.
+     */
+    fun attestMetricVariantAgreement(
+        estimateGe360Id: String,
+        economicsGe360Id: String,
+        externalReference: String,
+        agreementDateIso: String,
+        evidenceNote: String,
+        expresslyConfirmed: Boolean
+    ): MetricVariantEconomicsV4 {
+        require(expresslyConfirmed) { "Occorre confermare di aver verificato l'accordo esterno" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val quote = getByGe360Id(estimateGe360Id) ?: error("Preventivo non presente")
+            require(quote.status != EstimateStatuses.REJECTED) {
+                "Preventivo rifiutato: accordo non registrabile"
+            }
+            val current = metricVariantEconomics(estimateGe360Id)
+                .singleOrNull { it.ge360Id == economicsGe360Id }
+                ?: error("Proposta economica non trovata")
+            require(current.valid() &&
+                current.status == MetricVariantEconomicsV4.STATUS_PROPOSED) {
+                "Proposta economica già annotata o non valida"
+            }
+            val variant = metricVariants(estimateGe360Id)
+                .singleOrNull { it.ge360Id == current.variantGe360Id }
+                ?: error("Variante tecnica non disponibile")
+            require(variant.valid() &&
+                variant.status == MetricVariantV3.STATUS_TECH_REVIEWED &&
+                variant.previousItemGe360Id == current.sourceItemGe360Id &&
+                kotlin.math.abs(variant.deltaQuantityM2() - current.deltaM2) < 0.001) {
+                "Variante tecnica diversa dalla proposta economica"
+            }
+            val item = quote.items.singleOrNull {
+                it.ge360Id == current.sourceItemGe360Id
+            } ?: error("Voce originale non disponibile")
+            require(kotlin.math.abs(item.quantity - variant.previousQuantityM2) < 0.001 &&
+                kotlin.math.abs(item.unitPrice - variant.priorUnitPrice) < 0.001 &&
+                (item.included && !item.optional) == variant.priorIncluded) {
+                "Condizioni del preventivo originale cambiate: rivedere l'accordo"
+            }
+            val updated = current.copy(
+                status = MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED,
+                externalAgreementReference = externalReference.trim(),
+                externalAgreementDate = agreementDateIso.trim(),
+                evidenceNote = evidenceNote.trim(),
+                attestedAt = maxOf(System.currentTimeMillis(), current.proposedAt + 1)
+            )
+            require(updated.valid()) {
+                "Riferimento accordo, data ISO yyyy-MM-dd e nota di verifica obbligatori"
+            }
+            val touched = db.update("estimate_metric_economics",
+                economicValues(quote.id, updated),
+                "ge360_id=? AND status=?", arrayOf(
+                    current.ge360Id, MetricVariantEconomicsV4.STATUS_PROPOSED
+                ))
+            check(touched == 1) { "Accordo già modificato da altra schermata" }
+            val event = MetricVariantEconomicsEventV4(
+                economicsGe360Id = updated.ge360Id,
+                estimateGe360Id = quote.ge360Id,
+                action = "AGREEMENT_ATTESTED",
+                signedAmountEuro = updated.proposedSignedAmountEuro,
+                evidenceReference = updated.externalAgreementReference,
+                reason = updated.evidenceNote
+            )
+            check(event.valid())
+            db.insertOrThrow("estimate_metric_economics_events", null,
+                economicEventValues(quote.id, event))
+            db.setTransactionSuccessful()
+            return updated
+        } finally { db.endTransaction() }
+    }
+
     /**
      * Migrate old note-only links conservatively. They retain legacy status and
      * cannot be priced as verified without a fresh operator-reviewed binding.
