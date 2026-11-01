@@ -50,7 +50,7 @@ data class WeeklyPlannerSnapshot(
     val people: List<PersonnelRecord>,
     val days: List<WeeklyPlannerDay>,
     val conflicts: List<WeeklyStaffConflict>,
-    val execution: WeeklyExecutionSnapshot,
+    val execution: WeeklyExecutionSnapshot?,
     val warnings: List<String>
 ) {
     val assignmentCount get() = days.sumOf { it.assignments.size }
@@ -127,8 +127,10 @@ object WeeklySitePlanner {
         val occurrences = agenda.flatMap { AgendaCalendar.occurrences(it, from, until) }
         val datedSources = sources.deadlines.filter { it.dateAt >= from && it.dateAt < until }
         val conflicts = findConflicts(assignmentRows)
-        val execution = WeeklyExecutionComparison.load(context, monday, assignmentRows)
-        warnings.addAll(execution.warnings)
+        val execution = runCatching { WeeklyExecutionComparison.load(context, monday, assignmentRows) }
+            .onFailure { warnings += "Consuntivo ore non disponibile: consultare Giornata" }
+            .getOrNull()
+        warnings.addAll(execution?.warnings.orEmpty())
         val week = (0L..6L).map { offset ->
             val day = monday.plusDays(offset)
             WeeklyPlannerDay(
