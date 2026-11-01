@@ -48,3 +48,27 @@ Il branch integrato contiene integralmente il nuovo nucleo Compensi e i file Mat
 6. Compilare i moduli Kotlin e verificare la UI su emulator/dispositivo **solo su autorizzazione**.
 
 **Stato:** CODICE_SU_BRANCH. Non è una versione collaudata. Nessuna Actions, build, APK o deploy avviata da questa fase.
+
+
+## Incremento CRM e Rilievi — 1 novembre 2026
+
+Stato: **codice salvato sul branch integrato; nessuna build, test, APK, merge, deploy o modifica Debian.**
+
+### Clienti — cronologia fattuale
+- `ClientStore.kt`: migrazione additiva database Clienti v1→v2; nuova tabella `factual_client_timeline` con UUID stabile dell'evento e del cliente, cantiere opzionale, fonte, data, tipo, descrizione, prossima azione.
+- `ClientFactualTimeline.kt`: tipi di evento osservabili e convalida data ISO; niente diagnosi, valutazione di personalità, scoring automatico o nuovo punteggio «polso».
+- `ClientsActivity.kt`: cronologia leggibile e inserimento manuale con tipo evento, fonte, testo, data prossima azione.
+- `ClientStore.exportJson/importJson`: nuovo array `factualTimeline` opzionale dentro il backup Clienti e lo snapshot `clienti` Data Hub; rifiuto di conflitti con UUID già presente e dati diversi; backup precedente senza timeline lascia gli eventi attuali inalterati, senza inventarne.
+- `ClientFactualTimelineTest.kt`: regressioni predisposte ma non eseguite.
+- **Limite:** selezione del cantiere per evento non ancora nella UI Clienti, perché `feature:cantieri` dipende da `feature:clienti`: introdurre la dipendenza inversa creerebbe un ciclo Gradle. Il modello include comunque `jobsiteGe360Id?` per la futura associazione nel livello app.
+
+### Rilievi → Preventivi — selezione senza pricing automatico
+- `PlanWorkBinding.kt`: proiezione immutabile con UUID rilievo/ambiente/preventivo, codice lavorazione esistente, superficie pavimento/soffitto/pareti e quantità in m² come fotografia alla selezione, revisione del dato stanza.
+- `FloorPlanStore.kt`: migrazione additiva db Planimetrie v2→v3, salvataggio di selezioni multistanza in transazione e `workBindings[]` nell'export/import `ge360.planimetrie.v1`. I backup precedenti restano accettati senza cancellare automaticamente il registro di selezioni.
+- `FloorPlansActivity.kt`: pulsante di selezione per rilievo, scelta preventivo già esistente (UUID), voci catalogo m², pavimento/soffitto/pareti, checklist multipla ambienti. Nessuna modifica a `EstimateStore` o listino, nessuna riga/prezzo creati automaticamente.
+- Se un ambiente viene modificato dopo la selezione il collegamento appare **da rivedere** in scheda, senza alterare quantità/pricing precedenti.
+- `PlanWorkBindingTest.kt`: casi regressione preparati, NON eseguiti.
+
+**Limiti tecnici dichiarati:** `FloorPlanRoom.wallArea()` può fornire una superficie lorda; non certifica automaticamente detrazioni aperture, singole facce o geometrie irregolari complesse. La sola `room.updatedAt` non intercetta necessariamente ogni modifica a muri, aperture o geometria esterna: serve in futuro un fingerprint di geometria canonica/versionata prima di abilitare produzione di computi o preventivi. Il salvataggio associa dati ma non certifica metri né prezzi. L'import storico Planimetrie non è attualmente una transazione ACID globale su tutti i record. Nessun merge verso `main`.
+
+Prossimo gate: revisione statica mirata del codice/compilazione quando autorizzata; test restore versioni vecchie/nuove e il passaggio planimetria→quantità sotto vincoli geometrici e di prezzo.
