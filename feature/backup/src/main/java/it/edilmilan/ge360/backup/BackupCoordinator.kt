@@ -266,7 +266,9 @@ class BackupCoordinator(private val context: Context) {
             val estimatesJson = remapEstimateClientIds(archive.readText(file, "modules/preventivi.json"), clientIds)
             // Metadata of agreements is imported first; every file must then be
             // restored from a ZIP entry and SHA-256 verified before continuing.
-            counts["Preventivi"] = estimates.importJson(estimatesJson, replaceAll)
+            counts["Preventivi"] = estimates.importJson(
+                estimatesJson, replaceAll, allowEvidenceBytesFromZip = true
+            )
             restoreMetricAgreementFiles(file, manifest, estimates)
 
             val roomsJson = runCatching { archive.readText(file, "modules/preventivi-rooms.json") }.getOrNull()
@@ -386,9 +388,10 @@ class BackupCoordinator(private val context: Context) {
                         "Backup privo del file dell'accordo: ${attachment.fileName}"
                     }
                 } else {
-                    require(zipPath.startsWith("files/metric-agreements/") &&
-                        zipPath.substringAfterLast('/').substringBefore('.') ==
-                            attachment.ge360Id) { "Percorso allegato non attendibile" }
+                    val exactPath = "files/metric-agreements/" + target.name
+                    require(zipPath == exactPath) {
+                        "Percorso allegato non attendibile o formato differente"
+                    }
                     if (!MetricAgreementFilesV5.existsAndMatches(context, attachment)) {
                         require(target.parentFile?.mkdirs() == true ||
                             target.parentFile?.isDirectory == true)
