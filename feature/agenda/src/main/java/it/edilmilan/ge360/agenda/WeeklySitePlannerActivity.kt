@@ -141,6 +141,11 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         items.addView(header("DAL " + monday.format(shortDate) + " AL " +
             monday.plusDays(6).format(shortDate)))
         val warnings = model.warnings
+        // Current factual signals are independent of the historical/future week selected.
+        val assessed = model.jobs.map { state -> state to JobsiteDelaySignals.evaluate(state) }
+            .sortedWith(compareBy<Pair<WeeklyJobHealth, JobsiteDelayAssessment>> { it.second.level.order }
+                .thenBy { it.first.job.displayTitle() })
+        val assessedByJob = assessed.associate { it.first.job.ge360Id to it.second }
         val plannedHours = model.days.flatMap { it.assignments }.sumOf { it.plannedMinutes } / 60.0
         items.addView(info(
             model.assignmentCount.toString() + " assegnazioni · " +
@@ -148,6 +153,38 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
             model.appointmentCount.toString() + " appuntamenti · " +
                 model.openIssues + " cantieri da verificare · " +
                 model.conflicts.size + " sovrapposizioni"
+        ))
+        items.addView(header("SEGNALI DI RITARDO · STATO ATTUALE"))
+        val critical = assessed.count { it.second.level == JobsiteDelayAssessment.Level.OVERDUE }
+        val high = assessed.count { it.second.level == JobsiteDelayAssessment.Level.HIGH }
+        val incomplete = assessed.count { it.second.level == JobsiteDelayAssessment.Level.UNKNOWN }
+        items.addView(info(
+            critical.toString() + " fini previste superate · " + high +
+                " attenzioni alte · " + incomplete + " con dati da completare",
+            "Analisi di oggi, anche se stai navigando un'altra settimana. Non è una previsione di data o una probabilità."
+        ))
+        if (assessed.isEmpty()) items.addView(hint(
+            "Nessun cantiere attivo da analizzare. Consulta la scheda Cantieri."
+        ))
+        val urgent = assessed.filter { it.second.level in setOf(
+            JobsiteDelayAssessment.Level.OVERDUE, JobsiteDelayAssessment.Level.HIGH,
+            JobsiteDelayAssessment.Level.ATTENTION
+        ) }
+        urgent.take(5).forEach { (state, alert) ->
+            items.addView(rowCard(
+                state.job.displayTitle() + " · " + alert.level.title,
+                alert.reasons.take(2).joinToString(" · ").ifBlank { "Dati da verificare" } +
+                    "\nProssima azione: " + alert.suggestedAction,
+                if (alert.level == JobsiteDelayAssessment.Level.OVERDUE) 0xFFFFE7DD.toInt()
+                else 0xFFFFF2E9.toInt(),
+                onOpen = { openJobsite(state.job) }
+            ))
+        }
+        if (urgent.size > 5) items.addView(hint(
+            "Altri " + (urgent.size - 5) + " cantieri con segnali da verificare: vedi le schede sotto."
+        ))
+        if (urgent.isEmpty() && assessed.isNotEmpty()) items.addView(hint(
+            "Nessuna scadenza superata o criticità alta nota. Non significa che la data di consegna sia garantita."
         ))
         val comparison = model.execution
         if (comparison == null) {
@@ -189,12 +226,19 @@ class WeeklySitePlannerActivity : AppCompatActivity() {
         model.days.forEach { day -> renderDay(day, model) }
 
         items.addView(header("PREPARAZIONE CANTIERI"))
-        val relevantJobs = model.jobs.sortedWith(
-            compareByDescending<WeeklyJobHealth> { it.needsReview }
-                .thenBy { it.job.displayTitle() }
-        )
+        val relevantJobs = assessed.map { it.first }
         relevantJobs.forEach { state ->
+            val risk = assessedByJob[state.job.ge360Id]
             val details = buildString {
+                if (risk != null) {
+                    append("SCADENZA: ").append(risk.level.title)
+                    val keyReasons = risk.reasons.filterNot { it.startsWith("Avanzamento registrato:") }
+                    if (keyReasons.isNotEmpty()) append(" · ").append(keyReasons.take(3).joinToString(" · "))
+                    append("\nCosa fare: ").append(risk.suggestedAction)
+                    if (risk.missingEvidence.size > 1) append("\nDati mancanti: ")
+                        .append(risk.missingEvidence.take(2).joinToString("; "))
+                    append("\n")
+                }
                 append(state.openWork).append(" lavorazioni aperte")
                 append(" · ").append(state.doneWork).append(" completate (stato attuale)")
                 state.progressPercent?.let { append(" · avanzamento attuale ").append(it).append("%") }
