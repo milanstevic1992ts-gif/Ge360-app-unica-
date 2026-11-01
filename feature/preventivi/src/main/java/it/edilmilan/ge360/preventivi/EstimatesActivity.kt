@@ -559,6 +559,139 @@ class EstimatesActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    /** A correction changes the *effective preview*, never historical agreement rows. */
+    private fun proposeAgreementCorrection(
+        quoteId: String, economics: MetricVariantEconomicsV4
+    ) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(12))
+        }
+        root.addView(TextView(this).apply {
+            text = "Accordo precedente: " +
+                String.format(Locale.ITALY, "%+.2f €",
+                    economics.proposedSignedAmountEuro) +
+                "\nLa nuova cifra deve mantenere il segno: un extra resta extra, " +
+                "una riduzione resta riduzione. Se devi cambiare tipologia " +
+                "occorre un nuovo iter contrattuale, non una rettifica."
+            textSize = 14f
+        })
+        val amount = amountField(economics.proposedSignedAmountEuro,
+            "Nuovo importo complessivo con segno €", signed = true)
+        val reason = EditText(this).apply {
+            hint = "Motivo della rettifica (obbligatorio)"
+            minLines = 2
+        }
+        val confirm = CheckBox(this).apply {
+            text = "Confermo: salvo una PROPOSTA di rettifica, non sostituisco " +
+                "la prova originale e non modifico contabilità, SAL o preventivo."
+        }
+        root.addView(amount)
+        root.addView(reason)
+        root.addView(confirm)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Proponi rettifica economica")
+            .setView(ScrollView(this).apply { addView(root) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("SALVA RETTIFICA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    require(confirm.isChecked) { "Conferma obbligatoria" }
+                    store.proposeAgreementCorrection(
+                        quoteId, economics.ge360Id,
+                        parseAmount(amount.text.toString()),
+                        reason.text.toString().trim()
+                    )
+                }.onSuccess {
+                    dialog.dismiss()
+                    toast("Rettifica proposta, importo precedente conservato")
+                    showAgreementCorrection(quoteId, economics, it)
+                }.onFailure { toast(it.message ?: "Rettifica non consentita") }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showAgreementCorrection(
+        quoteId: String,
+        economic: MetricVariantEconomicsV4,
+        correction: MetricAgreementCorrectionV5
+    ) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(12))
+        }
+        root.addView(TextView(this).apply {
+            text = "STATO: ${correction.status}\n" +
+                "Accordo originario: " + String.format(Locale.ITALY, "%+.2f €",
+                    correction.priorSignedAmountEuro) + "\n" +
+                "Importo rettificato: " + String.format(Locale.ITALY, "%+.2f €",
+                    correction.correctedSignedAmountEuro) + "\n" +
+                "Differenza rispetto all'accordo: " +
+                String.format(Locale.ITALY, "%+.2f €", correction.adjustmentEuro()) +
+                "\nMotivo: ${correction.reason}\n" +
+                (if (correction.status == MetricAgreementCorrectionV5.STATUS_ATTESTED)
+                    "\nRiferimento: ${correction.agreementReference}\n" +
+                        "Data: ${correction.agreementDateIso}\n" +
+                        "Verifica: ${correction.evidenceNote}\n"
+                else "Rettifica ancora NON attestata: vale l'accordo precedente.\n") +
+                "\nNessuna somma verrà modificata nel preventivo o nella contabilità."
+            textSize = 14f
+        })
+        addAgreementFiles(root, quoteId, economic.ge360Id, correction.ge360Id)
+        if (correction.status == MetricAgreementCorrectionV5.STATUS_ATTESTED) {
+            AlertDialog.Builder(this).setTitle("Rettifica annotata")
+                .setView(ScrollView(this).apply { addView(root) })
+                .setPositiveButton("Chiudi", null).show()
+            return
+        }
+        val reference = EditText(this).apply {
+            hint = "Riferimento documento della rettifica"
+            isSingleLine = true
+        }
+        val date = EditText(this).apply {
+            hint = "Data dell'accordo rettificato yyyy-MM-dd"
+            setText(java.time.LocalDate.now().toString())
+            isSingleLine = true
+        }
+        val note = EditText(this).apply {
+            hint = "Come è stata verificata l'approvazione della rettifica?"
+            minLines = 2
+        }
+        val confirm = CheckBox(this).apply {
+            text = "Ho controllato un nuovo accordo esterno e allegato il PDF " +
+                "o la foto corrispondente. Annoto solo la prova, non genero " +
+                "firma digitale, credito, SAL o fattura."
+        }
+        root.addView(reference)
+        root.addView(date)
+        root.addView(note)
+        root.addView(confirm)
+        val dialog = AlertDialog.Builder(this).setTitle("Annota accordo rettificato")
+            .setView(ScrollView(this).apply { addView(root) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("CONFERMA RETTIFICA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    store.attestAgreementCorrection(
+                        quoteId, correction.ge360Id,
+                        reference.text.toString(), date.text.toString(),
+                        note.text.toString(), confirm.isChecked
+                    )
+                }.onSuccess {
+                    dialog.dismiss()
+                    toast("Nuovo accordo annotato. Originale mantenuto nello storico.")
+                    showAgreementCorrection(quoteId, economic, it)
+                }.onFailure { toast(it.message ?: "Annotazione non consentita") }
+            }
+        }
+        dialog.show()
+    }
+
     private fun editHeader(source: EstimateRecord) {
         val r = source.copy(items = source.items.map { it.copy() }.toMutableList())
         val clientRows = clients.search()
