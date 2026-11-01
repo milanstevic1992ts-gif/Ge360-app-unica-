@@ -13,6 +13,10 @@ import android.widget.TextView
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.agenda.AgendaActivity
+import it.edilmilan.ge360.agenda.AgendaCalendar
+import it.edilmilan.ge360.agenda.AgendaEntry
+import it.edilmilan.ge360.agenda.AgendaStore
 import it.edilmilan.ge360.attrezzi.ToolsHubActivity
 import it.edilmilan.ge360.backup.BackupActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
@@ -62,6 +66,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         Ge360Module("clienti", "Clienti", "CRM, contatti, temperatura e follow-up", enabled = true),
         Ge360Module("cantieri", "Cantieri", "Centro operativo di ogni lavoro", enabled = true),
         Ge360Module("giornata", "Giornata", "Timer ore, costo manodopera e rapportino quotidiano", enabled = true),
+        Ge360Module("agenda", "Note e Agenda", "Promemoria, attività, calendario e appunti offline", enabled = true),
         Ge360Module("preventivi", "Preventivi", "Prezzario, lavorazioni, totali e margine con ore reali", enabled = true),
         Ge360Module("spese", "Spese", "Entrate, uscite, costi e saldo per cantiere", enabled = true),
         Ge360Module("scanner", "Scanner", "PDF, OCR locale e passaggio diretto a Spese", enabled = true),
@@ -181,6 +186,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             else append(" · situazione regolare")
         }
 
+        renderAgendaSummary(root)
         renderKpis(root, active, totalIncome, monthExpense, projectMargin, activeSnapshots)
         renderPriorityJobs(root, snapshots)
         renderAlerts(root, snapshots, businessRows)
@@ -274,6 +280,42 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
 
         return Health("OK", "#277A49", "#EDF8F1", "Costi e scadenze sotto controllo")
+    }
+
+    /** Optional summary in the full dashboard, never in the protected bootstrap Home. */
+    private fun renderAgendaSummary(root: View) {
+        val container = root.findViewById<LinearLayout>(R.id.agendaTodayContainer)
+        container.removeAllViews()
+        val rows = runCatching { AgendaStore(requireContext()).list() }.getOrElse {
+            container.addView(createAlertCard(
+                "Agenda da verificare", "I dati locali non sono stati modificati. Apri Note e Agenda per maggiori dettagli.",
+                "agenda", "#FFF4E8"))
+            return
+        }
+        val now = System.currentTimeMillis()
+        val todayEnd = AgendaCalendar.nextDay(now)
+        val due = rows.filter {
+            it.kind != AgendaEntry.NOTE && !it.completed && it.dueAt > 0 && it.dueAt < todayEnd
+        }.sortedBy { it.dueAt }
+        container.addView(sectionLead("Note e Agenda", if (due.isEmpty())
+            "Niente in scadenza oggi · apri per scrivere una nota" else
+            due.size.toString() + " impegni da seguire oggi o in ritardo"))
+        if (due.isEmpty()) {
+            container.addView(createAlertCard(
+                "Apri la tua agenda", "Nuove note, sopralluoghi e attività in un solo posto.",
+                "agenda", "#EEF5FF"))
+        } else {
+            due.take(3).forEach { item ->
+                container.addView(createAlertCard(
+                    if (item.scope == AgendaEntry.PRIVATE) "Promemoria privato" else item.title,
+                    if (item.dueAt < now) "Da controllare · già in scadenza" else
+                        SimpleDateFormat("HH:mm", Locale.ITALY).format(Date(item.dueAt)),
+                    "agenda", if (item.priority == AgendaEntry.HIGH) "#FFF4E8" else "#EEF5FF"))
+            }
+            if (due.size > 3) container.addView(createAlertCard(
+                "Altri impegni", (due.size - 3).toString() + " attività o appuntamenti da vedere",
+                "agenda", "#EEF5FF"))
+        }
     }
 
     private fun renderKpis(
@@ -995,6 +1037,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private fun openModule(id: String) {
         val target = when (id) {
             "clienti" -> ClientsActivity::class.java
+            "agenda" -> AgendaActivity::class.java
             "cantieri" -> JobsitesActivity::class.java
             "giornata" -> DailyWorkActivity::class.java
             "preventivi" -> EstimatesActivity::class.java

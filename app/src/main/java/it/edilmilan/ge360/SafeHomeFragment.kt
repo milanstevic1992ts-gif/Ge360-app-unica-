@@ -13,6 +13,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import it.edilmilan.ge360.agenda.AgendaActivity
+import it.edilmilan.ge360.agenda.AgendaEntry
 import it.edilmilan.ge360.cantieri.JobsitesActivity
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.jarvis.ProactiveAlertsActivity
@@ -84,6 +86,17 @@ class SafeHomeFragment : Fragment() {
             },
             actionCard("04", "Spese", "Entrate, uscite e costi") {
                 startActivity(Intent(context, ExpensesActivity::class.java))
+            }
+        ))
+
+        body.addView(space(10))
+        body.addView(actionRow(
+            actionCard("05", "Agenda", "Oggi, settimana e mese") {
+                startActivity(Intent(context, AgendaActivity::class.java))
+            },
+            actionCard("06", "Nota veloce", "Scrivi senza scegliere cantiere") {
+                startActivity(Intent(context, AgendaActivity::class.java)
+                    .putExtra(AgendaActivity.EXTRA_CREATE_KIND, AgendaEntry.NOTE))
             }
         ))
 

@@ -81,6 +81,13 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp" />
 
+        <LinearLayout
+            android:id="@+id/agendaTodayContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical" />
+
         <it.edilmilan.ge360.home.HomeJarvisChatView
             android:id="@+id/homeJarvisChat"
             android:layout_width="match_parent"
