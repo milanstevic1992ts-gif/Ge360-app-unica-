@@ -153,6 +153,8 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         else if (oldVersion < 4) {
             db.execSQL("ALTER TABLE floor_plan_work_bindings ADD COLUMN geometry_fingerprint TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE floor_plan_work_bindings ADD COLUMN wall_ge360_id TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE floor_plan_work_bindings ADD COLUMN gross_m2 REAL NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE floor_plan_work_bindings ADD COLUMN opening_deductions_m2 REAL NOT NULL DEFAULT 0")
             db.execSQL("DROP INDEX IF EXISTS idx_bindings_no_duplicate")
             createBindingIndexesV4(db)
         }
@@ -175,7 +177,9 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
             room_revision_at INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
             geometry_fingerprint TEXT NOT NULL DEFAULT '',
-            wall_ge360_id TEXT NOT NULL DEFAULT ''
+            wall_ge360_id TEXT NOT NULL DEFAULT '',
+            gross_m2 REAL NOT NULL DEFAULT 0,
+            opening_deductions_m2 REAL NOT NULL DEFAULT 0
         )""")
         createBindingIndexesV4(db)
     }
@@ -213,7 +217,9 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
                 roomRevisionAt = c.getLong(c.getColumnIndexOrThrow("room_revision_at")),
                 createdAt = c.getLong(c.getColumnIndexOrThrow("created_at")),
                 geometryFingerprint = c.getString(c.getColumnIndexOrThrow("geometry_fingerprint")),
-                wallGe360Id = c.getString(c.getColumnIndexOrThrow("wall_ge360_id")).ifBlank { null }
+                wallGe360Id = c.getString(c.getColumnIndexOrThrow("wall_ge360_id")).ifBlank { null },
+                grossM2 = c.getDouble(c.getColumnIndexOrThrow("gross_m2")),
+                openingDeductionsM2 = c.getDouble(c.getColumnIndexOrThrow("opening_deductions_m2"))
             )
         }
         return result
@@ -227,6 +233,8 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
         put("created_at", b.createdAt)
         put("geometry_fingerprint", b.geometryFingerprint)
         put("wall_ge360_id", b.wallGe360Id.orEmpty())
+        put("gross_m2", b.grossM2)
+        put("opening_deductions_m2", b.openingDeductionsM2)
     }
 
     fun addWorkBindings(rows: List<PlanWorkBindingV1>) {
