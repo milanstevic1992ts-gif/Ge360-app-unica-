@@ -1409,6 +1409,12 @@ class EstimatesActivity : AppCompatActivity() {
                     pendingEvidenceCorrection = ""
                 }
             REQ_EXPORT -> runCatching {
+                require(store.list().none {
+                    store.agreementAttachments(it.ge360Id).isNotEmpty()
+                }) {
+                    "Questo preventivo contiene PDF/foto di accordi: " +
+                        "esporta da Backup GE360 ZIP per non perdere gli allegati"
+                }
                 contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(store.exportJson()) }
                     ?: error("File non scrivibile")
             }.onSuccess { toast("Backup esportato") }.onFailure { toast(it.message ?: "Errore") }
