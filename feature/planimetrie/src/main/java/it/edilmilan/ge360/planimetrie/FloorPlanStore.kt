@@ -165,6 +165,7 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
             created_at INTEGER NOT NULL
         )""")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_bindings_plan ON floor_plan_work_bindings(plan_ge360_id)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_bindings_no_duplicate ON floor_plan_work_bindings(plan_ge360_id, room_ge360_id, estimate_ge360_id, work_code, surface, room_revision_at)")
     }
 
     private fun createWallsTable(db: SQLiteDatabase) {
@@ -226,6 +227,12 @@ class FloorPlanStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null
                     kotlin.math.abs(PlanWorkBindingV1.quantity(room, b.surface) - b.quantityM2) < 0.01) {
                     "Misure cambiate: ricontrollare la selezione"
                 }
+                require(workBindings(b.planGe360Id).none { old ->
+                    old.roomGe360Id == b.roomGe360Id &&
+                        old.estimateGe360Id == b.estimateGe360Id &&
+                        old.workCode == b.workCode && old.surface == b.surface &&
+                        old.roomRevisionAt == b.roomRevisionAt
+                }) { "Questa lavorazione e superficie sono già collegate nella revisione corrente" }
                 db.insertOrThrow("floor_plan_work_bindings", null, bindingValues(b))
             }
             db.setTransactionSuccessful()
