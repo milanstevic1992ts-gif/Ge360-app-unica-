@@ -58,6 +58,9 @@ class EstimatesActivity : AppCompatActivity() {
         jobsites = JobsiteStore(this)
         finances = FinanceStore(this)
         daily = DailyStore(this)
+        pendingEvidenceEstimate = savedInstanceState?.getString("pending_evidence_estimate").orEmpty()
+        pendingEvidenceEconomics = savedInstanceState?.getString("pending_evidence_economics").orEmpty()
+        pendingEvidenceCorrection = savedInstanceState?.getString("pending_evidence_correction").orEmpty()
         setContentView(buildScreen())
         refresh()
         if (savedInstanceState == null) {
@@ -65,6 +68,13 @@ class EstimatesActivity : AppCompatActivity() {
                 ?.let(store::getByGe360Id)
                 ?.let(::actions)
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("pending_evidence_estimate", pendingEvidenceEstimate)
+        outState.putString("pending_evidence_economics", pendingEvidenceEconomics)
+        outState.putString("pending_evidence_correction", pendingEvidenceCorrection)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
