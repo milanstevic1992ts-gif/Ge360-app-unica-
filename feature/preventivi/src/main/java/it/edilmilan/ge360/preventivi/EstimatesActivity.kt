@@ -670,7 +670,7 @@ class EstimatesActivity : AppCompatActivity() {
                     priceMode = x.priceMode
                 )
                 r.items += item
-                editItem(item, done)
+                editItem(item) { done() }
             }
             .setNegativeButton("Annulla", null)
             .show()
