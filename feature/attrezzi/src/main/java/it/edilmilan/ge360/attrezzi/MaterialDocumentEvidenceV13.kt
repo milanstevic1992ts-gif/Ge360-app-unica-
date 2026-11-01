@@ -203,6 +203,14 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
                 confirmedAt = System.currentTimeMillis()
             )
             MaterialReconciliationRulesV14.validate(lines, matches(), claim)
+            if (invoice.jobsiteGe360Id.isNotBlank()) {
+                val jobs = JobsiteStore(app)
+                try {
+                    require(jobs.list().any { it.ge360Id == invoice.jobsiteGe360Id }) {
+                        "Cantiere di riconciliazione non più presente"
+                    }
+                } finally { jobs.close() }
+            }
             db.insertOrThrow("invoice_ddt_matches", null, matchValues(claim))
             db.setTransactionSuccessful()
             return claim
@@ -273,15 +281,22 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
 
     /** No physical deletion; historical confirmed entry remains traceable. */
     fun void(ge360Id: String): Boolean {
-        val current = all().singleOrNull { it.ge360Id == ge360Id && it.active } ?: return false
-        require(matches().none { it.active &&
-            (it.invoiceLineGe360Id == ge360Id || it.ddtLineGe360Id == ge360Id) }) {
-            "Annullare prima le riconciliazioni attive di questa riga"
-        }
-        val count = writableDatabase.update("material_document_lines",
-            ContentValues().apply { put("voided_at", System.currentTimeMillis().coerceAtLeast(current.confirmedAt)) },
-            "ge360_id=? AND voided_at=0", arrayOf(ge360Id))
-        return count == 1
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val current = all().singleOrNull { it.ge360Id == ge360Id && it.active }
+                ?: return false
+            require(matches().none { it.active &&
+                (it.invoiceLineGe360Id == ge360Id || it.ddtLineGe360Id == ge360Id) }) {
+                "Annullare prima le riconciliazioni attive di questa riga"
+            }
+            val count = db.update("material_document_lines",
+                ContentValues().apply {
+                    put("voided_at", System.currentTimeMillis().coerceAtLeast(current.confirmedAt))
+                }, "ge360_id=? AND voided_at=0", arrayOf(ge360Id))
+            db.setTransactionSuccessful()
+            return count == 1
+        } finally { db.endTransaction() }
     }
 
     fun exportJson(): String = JSONObject()

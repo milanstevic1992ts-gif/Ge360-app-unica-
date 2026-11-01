@@ -498,10 +498,17 @@ class BackupCoordinator(private val context: Context) {
      * source document kind and material unit unchanged. OCR text is NEVER proof.
      */
     private fun preflightMaterialEvidenceV13(file: File, replaceAll: Boolean) {
-        val json = runCatching {
-            archive.readText(file, "modules/material-evidence-v13.json")
-        }.getOrNull()
+        val evidencePath = "modules/material-evidence-v13.json"
+        val declaredModules = archive.readManifest(file).optJSONArray("modules")
+        val declared = declaredModules?.let { modules ->
+            (0 until modules.length()).any { modules.optString(it) == evidencePath }
+        } == true
+        val attempted = runCatching { archive.readText(file, evidencePath) }
+        val json = attempted.getOrNull()
         if (json == null) {
+            require(!declared) {
+                "Backup dichiara modulo materiali V13, ma non è leggibile"
+            }
             // A replace-all with old Scanner data could leave modern invoice
             // allocations referring to PDFs that disappeared from the archive.
             // Abort BEFORE mutation instead of silently orphaning evidence.
