@@ -238,6 +238,13 @@ class FloorPlansActivity : AppCompatActivity() {
             }
         }
         form.addView(roomHeader)
+        form.addView(MaterialButton(this).apply {
+            text = "SELEZIONA / DESELEZIONA TUTTE LE STANZE"
+            setOnClickListener {
+                val checkAll = selectedRooms.any { !it.second.isChecked }
+                selectedRooms.forEach { it.second.isChecked = checkAll }
+            }
+        })
         form.addView(roomBox)
 
         val wallHeader = TextView(this).apply {
@@ -258,6 +265,14 @@ class FloorPlansActivity : AppCompatActivity() {
             }
         }
         form.addView(wallHeader)
+        val wallSelectAll = MaterialButton(this).apply {
+            text = "SELEZIONA / DESELEZIONA TUTTE LE PARETI"
+            setOnClickListener {
+                val checkAll = selectedWalls.any { !it.third.isChecked }
+                selectedWalls.forEach { it.third.isChecked = checkAll }
+            }
+        }
+        form.addView(wallSelectAll)
         form.addView(wallBox)
         val guide = TextView(this).apply {
             text = "Le pareti nette sottraggono solo aperture valide e non sovrapposte. " +
@@ -297,6 +312,7 @@ class FloorPlansActivity : AppCompatActivity() {
                 roomHeader.visibility = if (single) View.GONE else View.VISIBLE
                 roomBox.visibility = if (single) View.GONE else View.VISIBLE
                 wallHeader.visibility = if (single) View.VISIBLE else View.GONE
+                wallSelectAll.visibility = if (single) View.VISIBLE else View.GONE
                 wallBox.visibility = if (single) View.VISIBLE else View.GONE
                 preview.text = ""
             }
