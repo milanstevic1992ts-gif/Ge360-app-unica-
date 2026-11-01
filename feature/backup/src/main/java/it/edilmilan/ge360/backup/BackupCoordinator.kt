@@ -13,6 +13,7 @@ import it.edilmilan.ge360.core.backup.BackupArchive
 import it.edilmilan.ge360.core.backup.BackupEntrySource
 import it.edilmilan.ge360.core.backup.BackupFileInfo
 import it.edilmilan.ge360.core.backup.EncryptedBackupV8
+import it.edilmilan.ge360.core.backup.BackupPassphraseStoreV8
 import it.edilmilan.ge360.galleria.GalleryArchive
 import it.edilmilan.ge360.galleria.GalleryPhoto
 import it.edilmilan.ge360.galleria.GalleryStore
@@ -359,7 +360,9 @@ class BackupCoordinator(private val context: Context) {
             return RestoreResult(counts, scannerRestored.second, galleryRestored.second, warnings.distinct())
         } catch (error: Throwable) {
             if (guardRollback && safety != null) {
-                val rollback = runCatching { restoreInternal(safety.info.file, replaceAll = true, guardRollback = false) }
+                // Safety copy is encrypted after V8 opt-in; restoreInternal
+                // expects a checked ZIP, not the encrypted outer envelope.
+                val rollback = runCatching { restoreSafetySnapshot(safety.info.file) }
                 if (rollback.isFailure) {
                     throw IllegalStateException(
                         "Ripristino interrotto e rollback automatico fallito. Backup di sicurezza: ${safety.info.file.name}. Errore iniziale: ${error.message}. Errore rollback: ${rollback.exceptionOrNull()?.message}",
@@ -371,6 +374,30 @@ class BackupCoordinator(private val context: Context) {
             throw error
         } finally {
             closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
+        }
+    }
+
+    /**
+     * Used ONLY after a failed restore. Read the locally wrapped recovery
+     * password (not the password of the incoming foreign backup), authenticate
+     * the complete safety archive, and remove the temporary clear ZIP.
+     * Rollback still spans independent stores, therefore is compensating rather
+     * than an ACID transaction.
+     */
+    private fun restoreSafetySnapshot(file: File) {
+        if (!EncryptedBackupV8.isEncrypted(file)) {
+            restoreInternal(file, replaceAll = true, guardRollback = false)
+            return
+        }
+        val secret = BackupPassphraseStoreV8(context).readForBackup()
+        val plain = File(context.cacheDir,
+            "ge360-rollback-" + UUID.randomUUID().toString() + ".ge360.zip")
+        try {
+            EncryptedBackupV8.decrypt(file, plain, secret)
+            restoreInternal(plain, replaceAll = true, guardRollback = false)
+        } finally {
+            secret.fill('\u0000')
+            plain.delete()
         }
     }
 
