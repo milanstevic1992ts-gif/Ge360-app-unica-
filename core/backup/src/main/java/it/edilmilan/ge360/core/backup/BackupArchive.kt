@@ -245,6 +245,11 @@ class BackupArchive(private val context: Context) {
     }
 
     private fun copyToSafRoot(rootUri: Uri, file: File): Uri {
+        // Once protection is enabled never push an old cleartext ZIP to
+        // persistent/Drive storage accidentally through a manual copy action.
+        if (encryptionEnabled()) require(file.name.endsWith(".ge360.enc")) {
+            "Questo ZIP storico non è cifrato. Crea un nuovo backup V8 prima di copiarlo."
+        }
         val root = DocumentFile.fromTreeUri(context, rootUri) ?: error("Cartella backup non accessibile")
         val folder = root.findFile("GE360 BACKUP")?.takeIf { it.isDirectory }
             ?: root.createDirectory("GE360 BACKUP") ?: error("Impossibile creare GE360 BACKUP")
@@ -254,9 +259,14 @@ class BackupArchive(private val context: Context) {
         val mime = if (file.name.endsWith(".ge360.enc"))
             "application/octet-stream" else "application/zip"
         val target = folder.createFile(mime, file.name) ?: error("Impossibile creare backup")
-        context.contentResolver.openOutputStream(target.uri, "w").use { output ->
-            requireNotNull(output) { "Destinazione backup non scrivibile" }
-            FileInputStream(file).use { input -> input.copyTo(output, 64 * 1024) }
+        try {
+            context.contentResolver.openOutputStream(target.uri, "w").use { output ->
+                requireNotNull(output) { "Destinazione backup non scrivibile" }
+                FileInputStream(file).use { input -> input.copyTo(output, 64 * 1024) }
+            }
+        } catch (error: Throwable) {
+            target.delete() // Do not retain an incomplete remote ciphertext/ZIP.
+            throw error
         }
         rotateSaf(folder, 10)
         return target.uri
