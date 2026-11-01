@@ -838,6 +838,23 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 val sources = metricSourcesForEstimateId(record.id)
                 val lockedCommercialItems = metricVariantEconomics(current.ge360Id)
                     .map { it.sourceItemGe360Id }.toSet()
+                if (lockedCommercialItems.isNotEmpty()) {
+                    val priorItemIds = current.items.map { it.ge360Id }.toSet()
+                    val protectedScopes = sources.filter {
+                        it.itemGe360Id in lockedCommercialItems
+                    }
+                    record.items.filter { it.ge360Id !in priorItemIds }.forEach { newcomer ->
+                        require(protectedScopes.none { original ->
+                            newcomer.priceListCode == original.workCode &&
+                                newcomer.room.trim().equals(
+                                    original.roomSnapshot.trim(), ignoreCase = true
+                                )
+                        }) {
+                            "Possibile doppio conteggio: nuovo lavoro uguale ad una " +
+                                "variante economica già registrata. Usa il registro Varianti."
+                        }
+                    }
+                }
                 val hasLegacyWithoutSource = current.items.any {
                     it.internalNote.contains(MeasuredEstimateDraftV1.SOURCE_MARKER) &&
                         sources.none { origin -> origin.itemGe360Id == it.ge360Id }
