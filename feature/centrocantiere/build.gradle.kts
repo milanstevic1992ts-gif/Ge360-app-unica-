@@ -31,5 +31,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.10.0")
     implementation("com.google.android.material:material:1.12.0")
+    testImplementation("junit:junit:4.13.2")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
 }
