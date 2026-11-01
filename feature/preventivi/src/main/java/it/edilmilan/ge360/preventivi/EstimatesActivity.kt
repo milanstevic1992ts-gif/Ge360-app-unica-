@@ -194,11 +194,16 @@ class EstimatesActivity : AppCompatActivity() {
                 "Dal Rilievo seleziona una nuova revisione della stessa superficie.")
             return
         }
+        val economics = store.metricVariantEconomics(estimateGe360Id)
+            .associateBy { it.variantGe360Id }
         val labels = variants.map { v ->
+            val linked = economics[v.ge360Id]
             v.workCode + " · " + v.status + " · " +
                 String.format(Locale.ITALY, "%+.2f m²", v.deltaQuantityM2()) +
-                " · delta indicativo " +
-                String.format(Locale.ITALY, "%+.2f €", v.referenceDeltaEuro())
+                (linked?.let {
+                    " · " + it.status + " " +
+                        String.format(Locale.ITALY, "%+.2f €", it.proposedSignedAmountEuro)
+                } ?: " · senza proposta economica")
         }
         AlertDialog.Builder(this).setTitle("Varianti · preventivo invariato")
             .setItems(labels.toTypedArray()) { _, position ->
@@ -246,7 +251,10 @@ class EstimatesActivity : AppCompatActivity() {
             })
             AlertDialog.Builder(this).setTitle("Variante già verificata")
                 .setView(ScrollView(this).apply { addView(box) })
-                .setPositiveButton("Chiudi", null).show()
+                .setPositiveButton("APRI ECONOMIA") { _, _ ->
+                    openMetricVariantEconomics(estimateGe360Id, variant)
+                }
+                .setNegativeButton("Chiudi", null).show()
             return
         }
         val note = EditText(this).apply {
@@ -276,6 +284,168 @@ class EstimatesActivity : AppCompatActivity() {
                     toast("Verifica tecnica registrata; nessuna modifica agli importi")
                     showMetricVariants(estimateGe360Id)
                 }.onFailure { toast(it.message ?: "Verifica non salvata") }
+            }
+        }
+        dialog.show()
+    }
+
+    /** Commercial proposal and manual customer-evidence entry: separate from the quote. */
+    private fun openMetricVariantEconomics(
+        estimateGe360Id: String, variant: MetricVariantV3
+    ) {
+        val existing = store.metricVariantEconomics(estimateGe360Id)
+            .singleOrNull { it.variantGe360Id == variant.ge360Id }
+        if (existing != null) {
+            showMetricVariantEconomics(estimateGe360Id, existing)
+            return
+        }
+        if (variant.status != MetricVariantV3.STATUS_TECH_REVIEWED) {
+            toast("Serve prima la verifica tecnica delle quantità")
+            return
+        }
+        val quote = store.getByGe360Id(estimateGe360Id) ?: return
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(12))
+        }
+        box.addView(TextView(this).apply {
+            text = "Lavorazione: ${variant.workCode}\n" +
+                "Variazione: " +
+                String.format(Locale.ITALY, "%+.2f m²", variant.deltaQuantityM2()) +
+                "\nTipo: " +
+                (if (variant.deltaQuantityM2() > 0) "LAVORO AGGIUNTIVO" else "RIDUZIONE") +
+                "\nPrezzo storico (solo riferimento): " +
+                String.format(Locale.ITALY, "%.2f €/m²", variant.priorUnitPrice) +
+                "\nImporto indicativo con prezzo storico: " +
+                String.format(Locale.ITALY, "%+.2f €", variant.referenceDeltaEuro()) +
+                "\n\nIl prezzo concordabile può essere diverso da quello storico. " +
+                "Non viene aggiornato il totale del preventivo."
+            textSize = 14f
+        })
+        val modes = listOf(
+            "Prezzo €/m²" to MetricVariantEconomicsV4.MODE_UNIT,
+            "Importo a corpo €" to MetricVariantEconomicsV4.MODE_LUMP_SUM
+        )
+        val mode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@EstimatesActivity,
+                android.R.layout.simple_spinner_dropdown_item, modes.map { it.first })
+        }
+        val price = EditText(this).apply {
+            hint = "Prezzo unitario o importo a corpo, positivo €"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            isSingleLine = true
+        }
+        val reason = EditText(this).apply {
+            hint = "Motivo e contenuto della proposta economica"
+            minLines = 2
+        }
+        val confirm = CheckBox(this).apply {
+            text = "Confermo che si tratta solo di una proposta economica: " +
+                "nessun pagamento, addebito o modifica al preventivo originale."
+        }
+        box.addView(mode)
+        box.addView(price)
+        box.addView(reason)
+        box.addView(confirm)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Nuova proposta economica variante")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("REGISTRA PROPOSTA", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    require(confirm.isChecked) { "Confermare espressamente la proposta" }
+                    val value = parseAmount(price.text.toString())
+                    store.proposeMetricVariantEconomics(
+                        estimateGe360Id, variant.ge360Id, quote.updatedAt,
+                        modes[mode.selectedItemPosition].second, value,
+                        reason.text.toString().trim()
+                    )
+                }.onSuccess {
+                    dialog.dismiss()
+                    toast("Proposta economica registrata separatamente dal preventivo")
+                    showMetricVariantEconomics(estimateGe360Id, it)
+                }.onFailure { toast(it.message ?: "Proposta non registrata") }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showMetricVariantEconomics(
+        estimateGe360Id: String, economics: MetricVariantEconomicsV4
+    ) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(12))
+        }
+        box.addView(TextView(this).apply {
+            text = "Stato: ${economics.status}\n" +
+                "Categoria: " + (if (economics.kind == MetricVariantEconomicsV4.KIND_EXTRA)
+                    "LAVORO AGGIUNTIVO" else "RIDUZIONE") + "\n" +
+                "Differenza: " +
+                String.format(Locale.ITALY, "%+.2f m²", economics.deltaM2) + "\n" +
+                "Importo ${if (economics.status == MetricVariantEconomicsV4.STATUS_PROPOSED)
+                    "proposto" else "con accordo annotato"}: " +
+                String.format(Locale.ITALY, "%+.2f €", economics.proposedSignedAmountEuro) +
+                "\nMotivo: ${economics.proposalReason}" +
+                (if (economics.externalAgreementReference.isNotBlank())
+                    "\nRiferimento esterno: ${economics.externalAgreementReference}" +
+                        "\nData accordo: ${economics.externalAgreementDate}" +
+                        "\nAnnotazione: ${economics.evidenceNote}"
+                else "") +
+                "\n\nQuesta scheda NON modifica il totale del preventivo, " +
+                "non è una firma e non genera fatture."
+            textSize = 14f
+        })
+        if (economics.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED) {
+            AlertDialog.Builder(this).setTitle("Accordo esterno annotato")
+                .setView(ScrollView(this).apply { addView(box) })
+                .setPositiveButton("Chiudi", null).show()
+            return
+        }
+        val reference = EditText(this).apply {
+            hint = "Riferimento documentale esterno: email, protocollo, file"
+            isSingleLine = true
+        }
+        val date = EditText(this).apply {
+            hint = "Data dell'accordo YYYY-MM-DD"
+            setText(java.time.LocalDate.now().toString())
+            isSingleLine = true
+        }
+        val note = EditText(this).apply {
+            hint = "Dove si trova la prova e come è stata verificata"
+            minLines = 2
+        }
+        val confirm = CheckBox(this).apply {
+            text = "Ho effettivamente controllato un accordo esterno con il cliente, " +
+                "riferito a questo preciso importo. Sto annotando un'evidenza, " +
+                "non generando firma, fattura o pagamento."
+        }
+        box.addView(reference)
+        box.addView(date)
+        box.addView(note)
+        box.addView(confirm)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Annota accordo esterno")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setNegativeButton("Annulla", null)
+            .setPositiveButton("CONFERMA ANNOTAZIONE", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    store.attestMetricVariantAgreement(
+                        estimateGe360Id, economics.ge360Id,
+                        reference.text.toString(), date.text.toString(),
+                        note.text.toString(), confirm.isChecked
+                    )
+                }.onSuccess {
+                    dialog.dismiss()
+                    toast("Accordo esterno annotato: nessuna modifica a preventivo e contabilità")
+                    showMetricVariantEconomics(estimateGe360Id, it)
+                }.onFailure { toast(it.message ?: "Accordo non annotato") }
             }
         }
         dialog.show()
