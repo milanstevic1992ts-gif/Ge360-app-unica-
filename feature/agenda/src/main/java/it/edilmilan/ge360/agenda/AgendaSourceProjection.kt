@@ -35,6 +35,14 @@ data class AgendaSourceResult(
 )
 
 object AgendaSourceProjection {
+    private const val HOME_REMINDER_PREFIX = "dashboard-reminder:"
+    private const val GENERAL_REMINDER_SCOPE = "__ge360_home_general__"
+
+    // Home reminder dates are stored as ISO dates in WorkflowTask.templateId.
+    // These are date-only obligations: do not infer an appointment time.
+    private fun reminderDate(token: String): Long? =
+        if (token.startsWith(HOME_REMINDER_PREFIX)) day(token.removePrefix(HOME_REMINDER_PREFIX)) else null
+
     private fun day(date: String): Long? = runCatching {
         LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
     }.getOrNull()
@@ -115,12 +123,15 @@ object AgendaSourceProjection {
                             task.status in setOf(WorkflowStatuses.TODO, WorkflowStatuses.IN_PROGRESS, WorkflowStatuses.BLOCKED) &&
                             (jobsiteUuid.isNotBlank() || task.source == WorkflowSources.MANUAL)
                     }.forEach { task ->
+                        val dueDate = reminderDate(task.templateId)
                         rows += AgendaSourceDeadline(
                             key = "job-task:" + task.ge360Id,
                             sourceType = AgendaSourceDeadline.JOB_WORKFLOW_TASK,
                             title = task.title + " · " + job.displayTitle(),
-                            subtitle = "Checklist cantiere · " + task.status + " · nessuna data impostata",
-                            dateAt = 0L,
+                            subtitle = if (task.templateId.startsWith(HOME_REMINDER_PREFIX))
+                                "Promemoria Home · " + task.status + " · " + (if (dueDate == null) "senza data" else "data senza ora")
+                                else "Checklist cantiere · " + task.status + " · nessuna data impostata",
+                            dateAt = dueDate ?: 0L,
                             clientGe360Id = job.clientGe360Id,
                             jobsiteGe360Id = job.ge360Id
                         )
@@ -138,11 +149,24 @@ object AgendaSourceProjection {
                         )
                     }
                 }
+                workflow.tasks(GENERAL_REMINDER_SCOPE).filter { task ->
+                    task.ge360Id.isNotBlank() && task.templateId.startsWith(HOME_REMINDER_PREFIX) &&
+                        task.status in setOf(WorkflowStatuses.TODO, WorkflowStatuses.IN_PROGRESS, WorkflowStatuses.BLOCKED)
+                }.forEach { task ->
+                    val dueDate = reminderDate(task.templateId)
+                    rows += AgendaSourceDeadline(
+                        key = "job-task:" + task.ge360Id,
+                        sourceType = AgendaSourceDeadline.JOB_WORKFLOW_TASK,
+                        title = task.title,
+                        subtitle = "Promemoria generale Home · " + (if (dueDate == null) "senza data" else "data senza ora"),
+                        dateAt = dueDate ?: 0L
+                    )
+                }
             } finally {
                 workflow.close()
                 jobs.close()
             }
-        }.onFailure { errors += "Checklist e note del Centro Cantiere non disponibili" }
+        }.onFailure { errors += "Checklist e promemoria Home non disponibili" }
         return AgendaSourceResult(
             rows.distinctBy { it.key }.sortedWith(
                 compareBy<AgendaSourceDeadline> { if (it.dateAt > 0L) it.dateAt else Long.MAX_VALUE }
