@@ -4,5 +4,14 @@
         <activity
             android:name=".EstimatesActivity"
             android:exported="false" />
+        <provider
+            android:name=".MetricAgreementFileProvider"
+            android:authorities="${applicationId}.preventivi.evidence"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/metric_agreement_file_paths" />
+        </provider>
     </application>
 </manifest>
