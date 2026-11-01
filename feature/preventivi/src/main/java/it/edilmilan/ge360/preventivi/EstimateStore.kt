@@ -1299,6 +1299,21 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 metricVariantEconomicEvents(estimate.ge360Id).forEach { put(it.toJson()) }
             }
         })
+        put("metricAgreementAttachments", JSONArray().apply {
+            estimates.forEach { q ->
+                agreementAttachments(q.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
+        put("metricAgreementCorrections", JSONArray().apply {
+            estimates.forEach { q ->
+                agreementCorrections(q.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
+        put("metricAgreementCorrectionEvents", JSONArray().apply {
+            estimates.forEach { q ->
+                agreementCorrectionEvents(q.ge360Id).forEach { put(it.toJson()) }
+            }
+        })
     }.toString(2)
 
     /**
@@ -1390,6 +1405,58 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 else agreements.isEmpty())
             ) { "Proposta o annotazione senza cronologia economica corrispondente" }
         }
+        val attachmentRows = if (!native) emptyList() else
+            root.optJSONArray("metricAgreementAttachments")?.let { array ->
+                (0 until array.length()).map {
+                    MetricAgreementAttachmentV5.fromJson(array.getJSONObject(it))
+                }
+            } ?: emptyList()
+        val correctionRows = if (!native) emptyList() else
+            root.optJSONArray("metricAgreementCorrections")?.let { array ->
+                (0 until array.length()).map {
+                    MetricAgreementCorrectionV5.fromJson(array.getJSONObject(it))
+                }
+            } ?: emptyList()
+        val correctionEvents = if (!native) emptyList() else
+            root.optJSONArray("metricAgreementCorrectionEvents")?.let { array ->
+                (0 until array.length()).map {
+                    MetricAgreementCorrectionEventV5.fromJson(array.getJSONObject(it))
+                }
+            } ?: emptyList()
+        require(attachmentRows.all { it.valid() } &&
+            attachmentRows.distinctBy { it.ge360Id }.size == attachmentRows.size &&
+            correctionRows.all { it.valid() } &&
+            correctionRows.distinctBy { it.ge360Id }.size == correctionRows.size &&
+            correctionRows.distinctBy {
+                it.estimateGe360Id to it.economicsGe360Id
+            }.size == correctionRows.size &&
+            correctionEvents.all { it.valid() } &&
+            correctionEvents.distinctBy { it.ge360Id }.size == correctionEvents.size) {
+            "Allegati e rettifiche del backup non validi o duplicati"
+        }
+        correctionRows.forEach { correction ->
+            val related = correctionEvents.filter {
+                it.correctionGe360Id == correction.ge360Id &&
+                    it.estimateGe360Id == correction.estimateGe360Id &&
+                    kotlin.math.abs(it.signedAmountEuro -
+                        correction.correctedSignedAmountEuro) < 0.001
+            }
+            require(related.count { it.action == "CORRECTION_PROPOSED" } == 1 &&
+                (if (correction.status == MetricAgreementCorrectionV5.STATUS_ATTESTED)
+                    related.count { it.action == "CORRECTION_ATTESTED" } == 1 &&
+                        attachmentRows.any {
+                            it.correctionGe360Id == correction.ge360Id &&
+                                it.economicsGe360Id == correction.economicsGe360Id &&
+                                it.estimateGe360Id == correction.estimateGe360Id
+                        }
+                else related.none { it.action == "CORRECTION_ATTESTED" })) {
+                "Cronologia o documento della rettifica non coerente"
+            }
+        }
+        require(correctionEvents.all { event -> correctionRows.any {
+            it.ge360Id == event.correctionGe360Id &&
+                it.estimateGe360Id == event.estimateGe360Id
+        } }) { "Evento di rettifica privo del record" }
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -1522,6 +1589,58 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 if (existing == null) db.insertOrThrow("estimate_metric_economics_events",
                     null, economicEventValues(quote.id, event))
                 else require(existing == event) { "Evento economico già esistente ma diverso" }
+            }
+            correctionRows.forEach { correction ->
+                val q = getByGe360Id(correction.estimateGe360Id)
+                    ?: error("Rettifica senza preventivo")
+                val prior = metricVariantEconomics(q.ge360Id).singleOrNull {
+                    it.ge360Id == correction.economicsGe360Id
+                } ?: error("Rettifica senza accordo originale")
+                require(prior.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED &&
+                    kotlin.math.abs(prior.proposedSignedAmountEuro -
+                        correction.priorSignedAmountEuro) < 0.001) {
+                    "Rettifica diversa dall'importo originale"
+                }
+                val current = agreementCorrections(q.ge360Id).singleOrNull {
+                    it.ge360Id == correction.ge360Id
+                }
+                if (current == null) db.insertOrThrow("estimate_agreement_corrections",
+                    null, correctionValues(q.id, correction))
+                else require(current == correction) { "UUID rettifica divergente nel backup" }
+            }
+            attachmentRows.forEach { attachment ->
+                val q = getByGe360Id(attachment.estimateGe360Id)
+                    ?: error("Allegato senza preventivo")
+                require(metricVariantEconomics(q.ge360Id).any {
+                    it.ge360Id == attachment.economicsGe360Id
+                }) { "Allegato senza accordo economico" }
+                if (attachment.correctionGe360Id.isNotBlank()) require(
+                    agreementCorrections(q.ge360Id).any {
+                        it.ge360Id == attachment.correctionGe360Id &&
+                            it.economicsGe360Id == attachment.economicsGe360Id
+                    }
+                ) { "Allegato non associato alla rettifica" }
+                val existing = agreementAttachments(q.ge360Id)
+                    .singleOrNull { it.ge360Id == attachment.ge360Id }
+                if (existing == null) db.insertOrThrow("estimate_agreement_attachments",
+                    null, attachmentValues(q.id, attachment))
+                else require(existing == attachment) { "Conflitto UUID allegato" }
+            }
+            correctionEvents.forEach { event ->
+                val q = getByGe360Id(event.estimateGe360Id)
+                    ?: error("Evento rettifica senza preventivo")
+                require(agreementCorrections(q.ge360Id).any {
+                    it.ge360Id == event.correctionGe360Id
+                }) { "Evento senza rettifica" }
+                val current = db.query("estimate_agreement_correction_events",
+                    arrayOf("data_json"), "ge360_id=?", arrayOf(event.ge360Id),
+                    null, null, null, "1").use { c ->
+                    if (c.moveToFirst()) MetricAgreementCorrectionEventV5.fromJson(
+                        JSONObject(c.getString(0))) else null
+                }
+                if (current == null) db.insertOrThrow("estimate_agreement_correction_events",
+                    null, correctionEventValues(q.id, event))
+                else require(current == event) { "Evento rettifica divergente" }
             }
             // Recreate missing historical note-only sources as *unverified*.
             backfillLegacyMetricNotes(db)
