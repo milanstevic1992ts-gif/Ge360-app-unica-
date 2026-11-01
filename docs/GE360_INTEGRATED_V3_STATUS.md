@@ -282,3 +282,7 @@ Rischi ancora aperti: nessuna cifratura del backup ZIP e nessuna firma; file tem
 
 ### V7 integrazione creazione backup
 - Validazione documentale su ZIP appena generato, **prima** della rotazione dei 10 backup e del salvataggio dell'ultima data. Se hash/dimensione/header dell'evidenza differiscono dalla metadata Preventivi, il file ZIP appena creato viene eliminato e nessuna copia Drive viene richiesta. Controllo genericamente iniettato in `BackupArchive.create`, senza dipendenze inverse verso Preventivi; legacy caller conserva il comportamento precedente. Scritto, non collaudato.
+
+### V7 robustezza archivio: nomi e indici
+- Il creatore ZIP usa un suffisso UUID breve oltre alla data/ora per non sovrascrivere un backup già esistente nello stesso secondo; riserva il percorso con `createNewFile()`. Nessuna modifica al riconoscimento `.ge360.zip` storico.
+- Il preflight ora rifiuta anche indici allegati o manifest di tipo JSON errato (non interpreta come assenza di documenti un array/stringa malevolo).

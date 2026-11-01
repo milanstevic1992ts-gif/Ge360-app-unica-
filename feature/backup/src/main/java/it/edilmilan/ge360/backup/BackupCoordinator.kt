@@ -388,6 +388,12 @@ class BackupCoordinator(private val context: Context) {
      */
     private fun preflightAgreementEvidence(file: File, manifest: JSONObject) {
         val json = JSONObject(archive.readText(file, "modules/preventivi.json"))
+        if (json.has("metricAgreementAttachments")) require(
+            json.optJSONArray("metricAgreementAttachments") != null
+        ) { "Elenco documenti degli accordi non valido" }
+        if (manifest.has("metricAgreementFiles")) require(
+            manifest.optJSONObject("metricAgreementFiles") != null
+        ) { "Indice documentale nel manifest non valido" }
         val list = json.optJSONArray("metricAgreementAttachments") ?: JSONArray()
         val map = manifest.optJSONObject("metricAgreementFiles") ?: JSONObject()
         val ids = mutableSetOf<String>()

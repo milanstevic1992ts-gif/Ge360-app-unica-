@@ -16,6 +16,7 @@ import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -58,7 +59,10 @@ class BackupArchive(private val context: Context) {
         if (!runtimeVersion.isNullOrBlank()) manifest.put("appVersion", runtimeVersion)
 
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ITALY).format(Date())
-        val target = File(backupDir(), "${prefix}_$stamp.ge360.zip")
+        // Never overwrite a valid backup created during the same second.
+        val target = File(backupDir(),
+            "${prefix}_${stamp}_${UUID.randomUUID().toString().take(8)}.ge360.zip")
+        check(target.createNewFile()) { "Impossibile prenotare un nuovo file di backup" }
         val hashes = JSONObject()
         var count = 0
         try {
