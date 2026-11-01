@@ -519,7 +519,7 @@ class EstimatesActivity : AppCompatActivity() {
             box.addView(TextView(this).apply {
                 text = "\nImporto annotato attuale: " +
                     String.format(Locale.ITALY, "%+.2f €", effective) +
-                    "\nRettifiche precedenti: ${corrections.size}\n" +
+                    "\nStorico rettifiche: ${corrections.size}\n" +
                     corrections.mapIndexed { index, row ->
                         "${index + 1}. ${row.status}: " +
                             String.format(Locale.ITALY, "%+.2f → %+.2f €",
@@ -661,11 +661,11 @@ class EstimatesActivity : AppCompatActivity() {
         }
         root.addView(TextView(this).apply {
             text = "STATO: ${correction.status}\n" +
-                "Accordo originario: " + String.format(Locale.ITALY, "%+.2f €",
+                "Importo precedente annotato: " + String.format(Locale.ITALY, "%+.2f €",
                     correction.priorSignedAmountEuro) + "\n" +
                 "Importo rettificato: " + String.format(Locale.ITALY, "%+.2f €",
                     correction.correctedSignedAmountEuro) + "\n" +
-                "Differenza rispetto all'accordo: " +
+                "Variazione rispetto all'importo precedente: " +
                 String.format(Locale.ITALY, "%+.2f €", correction.adjustmentEuro()) +
                 "\nMotivo: ${correction.reason}\n" +
                 (if (correction.status == MetricAgreementCorrectionV5.STATUS_ATTESTED)
