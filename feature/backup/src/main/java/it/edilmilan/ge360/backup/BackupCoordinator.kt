@@ -427,7 +427,11 @@ class BackupCoordinator(private val context: Context) {
                     estimateIds = estimates.list().map { it.ge360Id }.filter { it.isNotBlank() }.toSet(),
                     planRooms = plans.list().associate { plan ->
                         plan.ge360Id to plans.rooms(plan.ge360Id).map { it.ge360Id }.toSet()
-                    }
+                    },
+                    jobClients = jobs.list().filter { it.ge360Id.isNotBlank() }
+                        .associate { it.ge360Id to it.clientGe360Id },
+                    estimateLinks = estimates.list().filter { it.ge360Id.isNotBlank() }
+                        .associate { it.ge360Id to (it.clientGe360Id to it.jobsiteId) }
                 )
             } finally {
                 closeAll(clients, jobs, estimates, plans)

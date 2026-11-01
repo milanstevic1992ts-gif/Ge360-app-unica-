@@ -48,7 +48,7 @@ class RestoreLinksV10Test {
     @Test fun validGraphAndUnlinkedStandaloneRecordsAreAccepted() {
         val result = RestoreLinksV10.check(snapshot(), replaceAll = true)
         assertEquals(3, result.checkedRecords)
-        assertEquals(3, result.checkedLinks)
+        assertEquals(4, result.checkedLinks)
         val independent = snapshot(
             jobs = JSONArray().put(item(job)),
             estimates = JSONArray().put(item(estimate))
@@ -101,6 +101,25 @@ class RestoreLinksV10Test {
         val broken = JSONObject(planJson.toString()).put("floorPlans",
             JSONArray().put(item(plan).put("rooms", JSONArray())))
         rejected(snapshot(plans = broken))
+    }
+
+    @Test fun estimateCannotClaimClientDifferentFromItsJobsiteClient() {
+        val other = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val clients = JSONArray().put(item(client)).put(item(other))
+        val quotes = JSONArray().put(item(estimate,
+            "clientGe360Id" to other, "jobsiteId" to job))
+        rejected(snapshot(clients = clients, estimates = quotes))
+    }
+
+    @Test fun floorPlanCannotLinkAnEstimateToDifferentJobsite() {
+        val other = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val jobs = JSONArray()
+            .put(item(job, "clientGe360Id" to client))
+            .put(item(other, "clientGe360Id" to client))
+        val planJson = JSONObject().put("floorPlans", JSONArray().put(
+            item(plan, "jobsiteId" to other, "estimateId" to estimate)
+                .put("rooms", JSONArray())))
+        rejected(snapshot(jobs = jobs, plans = planJson))
     }
 
     @Test fun legacyNonUuidReferencesAreNotReassigned() {
