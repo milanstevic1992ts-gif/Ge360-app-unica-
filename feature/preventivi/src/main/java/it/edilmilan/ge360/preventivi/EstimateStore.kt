@@ -147,11 +147,114 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         db.execSQL("CREATE INDEX idx_est_job ON estimates(jobsite_id, updated_at DESC)")
         db.execSQL("CREATE INDEX idx_est_client ON estimates(client_id, updated_at DESC)")
         db.execSQL("CREATE INDEX idx_est_items ON estimate_items(estimate_id, id)")
+        createMetricTables(db)
         seedPriceList(db)
     }
 
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createMetricTables(db)
+            backfillLegacyMetricNotes(db)
+        }
+    }
+
+    private fun createMetricTables(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_metric_sources (
+            item_ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            binding_ge360_id TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            trust TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(estimate_id, binding_ge360_id),
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_metric_est ON estimate_metric_sources(estimate_id)")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS estimate_metric_events (
+            ge360_id TEXT PRIMARY KEY NOT NULL,
+            estimate_id INTEGER NOT NULL,
+            item_ge360_id TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            occurred_at INTEGER NOT NULL,
+            FOREIGN KEY(estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_metric_events_est ON estimate_metric_events(estimate_id, occurred_at)")
+    }
+
+    private fun metricSourceValues(estimateId: Long, data: MetricProvenanceV2) =
+        ContentValues().apply {
+            put("item_ge360_id", data.itemGe360Id)
+            put("estimate_id", estimateId)
+            put("binding_ge360_id", data.sourceBindingGe360Id)
+            put("snapshot_json", data.toJson().toString())
+            put("trust", data.trust)
+            put("created_at", data.createdAt)
+        }
+
+    private fun metricEventValues(estimateId: Long, data: MetricReviewEventV2) =
+        ContentValues().apply {
+            put("ge360_id", data.ge360Id)
+            put("estimate_id", estimateId)
+            put("item_ge360_id", data.itemGe360Id)
+            put("event_json", data.toJson().toString())
+            put("occurred_at", data.occurredAt)
+        }
+
+    fun metricProvenance(itemGe360Id: String): MetricProvenanceV2? {
+        if (itemGe360Id.isBlank()) return null
+        return readableDatabase.query("estimate_metric_sources",
+            arrayOf("snapshot_json"), "item_ge360_id=?",
+            arrayOf(itemGe360Id), null, null, null, "1").use { c ->
+                if (c.moveToFirst()) MetricProvenanceV2.fromJson(JSONObject(c.getString(0)))
+                else null
+            }
+    }
+
+    private fun metricSourcesForEstimateId(id: Long): List<MetricProvenanceV2> {
+        val out = mutableListOf<MetricProvenanceV2>()
+        readableDatabase.query("estimate_metric_sources",
+            arrayOf("snapshot_json"), "estimate_id=?", arrayOf(id.toString()),
+            null, null, "created_at").use { c ->
+            while (c.moveToNext()) out += MetricProvenanceV2.fromJson(JSONObject(c.getString(0)))
+        }
+        return out
+    }
+
+    fun metricEvents(estimateGe360Id: String): List<MetricReviewEventV2> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val out = mutableListOf<MetricReviewEventV2>()
+        readableDatabase.query("estimate_metric_events", arrayOf("event_json"),
+            "estimate_id=?", arrayOf(estimate.id.toString()), null, null,
+            "occurred_at DESC").use { c ->
+            while (c.moveToNext()) out += MetricReviewEventV2.fromJson(JSONObject(c.getString(0)))
+        }
+        return out
+    }
+
+    /**
+     * Migrate old note-only links conservatively. They retain legacy status and
+     * cannot be priced as verified without a fresh operator-reviewed binding.
+     */
+    private fun backfillLegacyMetricNotes(db: SQLiteDatabase) {
+        db.rawQuery("""SELECT e.id, e.ge360_id, i.*
+            FROM estimates e JOIN estimate_items i ON i.estimate_id=e.id
+            WHERE i.internal_note LIKE '%GE360_METRICO_V1:%'""", null).use { c ->
+            while (c.moveToNext()) {
+                val estimateId = c.getLong(0)
+                val estimateUuid = c.getString(1)
+                val item = itemFromCursor(c)
+                val parsed = MeasuredEstimateDraftV1.sourceOf(item) ?: continue
+                val legacy = MetricProvenanceV2.fromLegacyNote(
+                    estimateUuid, item, parsed, System.currentTimeMillis()
+                ) ?: continue
+                if (metricProvenance(item.ge360Id) == null) {
+                    db.insertWithOnConflict("estimate_metric_sources", null,
+                        metricSourceValues(estimateId, legacy), SQLiteDatabase.CONFLICT_IGNORE)
+                }
+            }
+        }
+    }
 
     fun list(query: String = "", status: String = "Tutti"): List<EstimateRecord> {
         val clauses = mutableListOf<String>(); val args = mutableListOf<String>()
@@ -419,6 +522,6 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         val UNITS=listOf("corpo","m²","ml","cad.","ora","giornata","forfait")
         val SECTIONS=listOf("Bagno","Resto della casa","Esterni","Opere extra")
         private const val DB_NAME="ge360_preventivi.db"
-        private const val DB_VERSION=1
+        private const val DB_VERSION=2
     }
 }
