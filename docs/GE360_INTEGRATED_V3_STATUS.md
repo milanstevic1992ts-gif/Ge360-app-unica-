@@ -72,3 +72,29 @@ Stato: **codice salvato sul branch integrato; nessuna build, test, APK, merge, d
 **Limiti tecnici dichiarati:** `FloorPlanRoom.wallArea()` può fornire una superficie lorda; non certifica automaticamente detrazioni aperture, singole facce o geometrie irregolari complesse. La sola `room.updatedAt` non intercetta necessariamente ogni modifica a muri, aperture o geometria esterna: serve in futuro un fingerprint di geometria canonica/versionata prima di abilitare produzione di computi o preventivi. Il salvataggio associa dati ma non certifica metri né prezzi. L'import storico Planimetrie non è attualmente una transazione ACID globale su tutti i record. Nessun merge verso `main`.
 
 Prossimo gate: revisione statica mirata del codice/compilazione quando autorizzata; test restore versioni vecchie/nuove e il passaggio planimetria→quantità sotto vincoli geometrici e di prezzo.
+
+## Rilievi → Preventivi, geometria verificabile V2 — 1 novembre 2026
+
+Codice su `feature/ge360-integrated-v3-20261101` soltanto. **NESSUNA BUILD, TEST, APK, ACTIONS, MERGE O DEPLOY ESEGUITI.**
+
+### Motore e salvataggio
+- `PlanGeometryQuantitiesV2.kt`: SHA-256 deterministico di geometria stanza (modalità, dimensioni e dati manuali) + pareti per ordine/UUID, lunghezza/direzione e nota contenente `[GE360_OPENINGS]`. Esclude ID SQLite locali e timestamp di lettura per sopravvivere al backup/restore.
+- Per profili `Pareti quotate`: richiede perimetro chiuso e senza autointersezioni. L'area del pavimento deriva dal poligono; un valore manuale difforme viene bloccato.
+- Superfici: `PAVIMENTO`, `SOFFITTO`, `PARETI` lorde, `PARETI_NETTE`, `PARETE_SINGOLA_LORDA`, `PARETE_SINGOLA_NETTA`. Una parete singola rappresenta **una faccia**, non automaticamente due.
+- Le superfici nette sottraggono solo porte/finestre esplicitamente salvate nel metadato della parete. Dimensioni finite, aperture non sovrapposte, altezza compatibile con la stanza, UUID, offset e larghezza dentro al muro sono obbligatori. Metadati corrotti causano errore, non uno sconto inventato.
+- `PlanWorkBindingV1`: aggiunti `geometryFingerprint`, `wallGe360Id`, `grossM2`, `openingDeductionsM2`, nel backup `workBindings[]`. La quantità netta è un'istantanea separata dalle righe economiche.
+- `FloorPlanStore` database v4: migrazione additiva da v3 con nuove colonne; i vecchi binding senza hash sono **legacy da riconfermare**, non vengono promossi a verificati. La chiave di deduplicazione usa geometria e UUID parete, permettendo più muri nello stesso ambiente.
+- `addWorkBindings` registra più superfici in una transazione SQLite e ricontrolla geometria/quantità subito prima del salvataggio; se un ambiente o un'apertura cambia durante la scelta, l'operazione è rifiutata.
+
+### Interfaccia
+- `FloorPlansActivity`: scelta del preventivo esistente, lavorazione catalogo `m²`, tipo superficie, checklist multi-stanza oppure checklist multi-parete. Selezione/deselezione totale e preview metri/decurtazioni prima di salvare.
+- Stato dei binding storici: `PlanGeometryQuantitiesV2.matches` controlla impronta SHA-256, quantità lorda, detrazioni e netta contro le misure attuali. Un hash assente (V1) è sempre non verificato.
+- I preventivi esistenti e i loro prezzi **non sono aggiornati** da questo flusso.
+
+### Gate di qualità aperti
+1. Eseguire compilazione Kotlin/Gradle, test JUnit, migrazioni reali DB v1/v2/v3→v4, backup/restore e UI mobile **solo dopo autorizzazione**.
+2. Netti complessi: aperture non dichiarate, più facce, nicchie, demolizioni, pareti inclinate, contropareti e finiture diverse per superficie richiedono modellazione manuale e verifica in cantiere.
+3. Prezzi, preventivi approvati e computi ufficiali restano indipendenti. Prima di creare voci economiche implementare revisione e conferma delle quantità, gestione duplicati tra stanze e singole facce e detrazioni secondo criteri contrattuali.
+4. Hash geometria è controllo d'integrità **della selezione locale**, non misura certificata, firma digitale né prova fotografica. Non viene promossa automaticamente alcuna quantità.
+5. Backup Planimetrie esistente resta solo parzialmente transazionale tra record e database separati: è necessaria prova di restore/rollback prima dell'uso in produzione.
+6. Test preparati in `PlanGeometryQuantitiesV2Test.kt`, **non eseguiti**. Per test delle aperture basati su `org.json`, usare runtime JSON effettivo/strumentazione.
