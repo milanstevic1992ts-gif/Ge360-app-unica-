@@ -255,9 +255,15 @@ class BackupCoordinator(private val context: Context) {
         // Fail before ANY database or file mutation if the agreement evidence
         // advertised by this archive disagrees with its V5/V6 metadata.
         preflightAgreementEvidence(file, manifest)
+        // V10: check the UUID graph BEFORE saving clients, jobs, estimates,
+        // documents or taking a destructive path through the module importers.
+        val linkReport = preflightCrossModuleLinks(file, replaceAll)
 
         val counts = linkedMapOf<String, Int>()
         val warnings = mutableListOf<String>()
+        if (linkReport.historicalLinksSkipped > 0) {
+            warnings += "Controllo riferimenti V10: ${linkReport.historicalLinksSkipped} collegamenti storici senza UUID canonico non reinterpretati automaticamente."
+        }
         val safety = if (guardRollback) {
             runCatching { createBackup(includeGalleryFiles = true, copyToDrive = false) }
                 .getOrElse { throw IllegalStateException("Ripristino annullato: impossibile creare il backup completo di sicurezza dei dati correnti (${it.message})", it) }
@@ -399,6 +405,48 @@ class BackupCoordinator(private val context: Context) {
             secret.fill('\u0000')
             plain.delete()
         }
+    }
+
+    /**
+     * Validate a snapshot of the cross-module UUID graph before any restore
+     * writes. In merge mode, existing UUIDs are allowed as link targets;
+     * replace-all mode relies only on records arriving in this backup.
+     */
+    private fun preflightCrossModuleLinks(
+        file: File, replaceAll: Boolean
+    ): RestoreLinksV10.Report {
+        val local = if (replaceAll) RestoreLinksV10.Existing() else {
+            val clients = ClientStore(context)
+            val jobs = JobsiteStore(context)
+            val estimates = EstimateStore(context)
+            val plans = FloorPlanStore(context)
+            try {
+                RestoreLinksV10.Existing(
+                    clientIds = clients.search().map { it.ge360Id }.filter { it.isNotBlank() }.toSet(),
+                    jobIds = jobs.list().map { it.ge360Id }.filter { it.isNotBlank() }.toSet(),
+                    estimateIds = estimates.list().map { it.ge360Id }.filter { it.isNotBlank() }.toSet(),
+                    planRooms = plans.list().associate { plan ->
+                        plan.ge360Id to plans.rooms(plan.ge360Id).map { it.ge360Id }.toSet()
+                    }
+                )
+            } finally {
+                closeAll(clients, jobs, estimates, plans)
+            }
+        }
+        fun optional(path: String): String? =
+            runCatching { archive.readText(file, path) }.getOrNull()
+
+        return RestoreLinksV10.check(
+            RestoreLinksV10.Snapshot(
+                clients = archive.readText(file, "modules/clienti.json"),
+                jobs = archive.readText(file, "modules/cantieri.json"),
+                estimates = archive.readText(file, "modules/preventivi.json"),
+                scanner = archive.readText(file, "modules/scanner.json"),
+                gallery = archive.readText(file, "modules/galleria.json"),
+                floorPlans = optional("modules/planimetrie.json"),
+                jobsiteArchive = optional("modules/jobsite-archive.json")
+            ), replaceAll, local
+        )
     }
 
     private fun preflightRestore(file: File) {
