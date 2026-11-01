@@ -850,7 +850,8 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                     ?: error("Variante senza preventivo")
                 val source = metricProvenance(variant.previousItemGe360Id)
                     ?: error("Variante senza origine precedente")
-                require(source.estimateGe360Id == variant.estimateGe360Id &&
+                require(source.trust == MetricProvenanceV2.TRUST_VERIFIED &&
+                    source.estimateGe360Id == variant.estimateGe360Id &&
                     source.sourceBindingGe360Id == variant.previousBindingGe360Id &&
                     source.geometryFingerprint == variant.previousFingerprint &&
                     source.planGe360Id == variant.planGe360Id &&
@@ -859,6 +860,14 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                     source.surface == variant.surface &&
                     source.wallGe360Id.orEmpty() == variant.wallGe360Id.orEmpty()) {
                     "Variante incoerente con la fonte originale"
+                }
+                val prior = estimate.items.singleOrNull {
+                    it.ge360Id == variant.previousItemGe360Id
+                } ?: error("Variante senza voce storica del preventivo")
+                require(kotlin.math.abs(prior.quantity - variant.previousQuantityM2) < 0.001 &&
+                    kotlin.math.abs(prior.unitPrice - variant.priorUnitPrice) < 0.001 &&
+                    (prior.included && !prior.optional) == variant.priorIncluded) {
+                    "Il prezzo o la quantità storica non coincide con la variante importata"
                 }
                 val current = metricVariants(estimate.ge360Id)
                     .singleOrNull { it.ge360Id == variant.ge360Id }
