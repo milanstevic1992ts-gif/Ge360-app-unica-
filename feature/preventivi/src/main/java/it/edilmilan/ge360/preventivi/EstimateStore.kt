@@ -246,6 +246,7 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
     }
 
     fun save(record: EstimateRecord): Long {
+        val editorRevision = record.updatedAt
         val now = System.currentTimeMillis()
         if (record.ge360Id.isBlank()) record.ge360Id = UUID.randomUUID().toString()
         if (record.number.isBlank()) record.number = nextNumber()
@@ -255,6 +256,19 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         val db = writableDatabase
         db.beginTransaction()
         try {
+            if (record.id > 0) {
+                // This legacy editor rewrites the entire set of quote items.
+                // Protect a measured import from being erased by an outdated editor.
+                val current = get(record.id)
+                if (current != null && current.items.any {
+                        MeasuredEstimateDraftV1.sourceOf(it) != null
+                    }) {
+                    require(current.updatedAt == editorRevision) {
+                        "Il preventivo ha ricevuto nuove quantità dal rilievo: " +
+                            "chiudi e riapri l'editor prima di salvare."
+                    }
+                }
+            }
             val id = if (record.id > 0) { db.update("estimates", recordValues(record), "id=?", arrayOf(record.id.toString())); record.id }
             else db.insertOrThrow("estimates", null, recordValues(record)).also { record.id = it }
             db.delete("estimate_items", "estimate_id=?", arrayOf(id.toString()))
