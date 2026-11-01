@@ -3,6 +3,9 @@ package it.edilmilan.ge360.backup
 import android.content.Context
 import android.net.Uri
 import it.edilmilan.ge360.attrezzi.ToolsStore
+import it.edilmilan.ge360.attrezzi.MaterialInventoryStore
+import it.edilmilan.ge360.attrezzi.MaterialPlanStore
+import it.edilmilan.ge360.attrezzi.MaterialDocumentEvidenceStoreV13
 import it.edilmilan.ge360.attrezzi.CustomWorkPackStore
 import it.edilmilan.ge360.attrezzi.VanPreparationStore
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -75,6 +78,9 @@ class BackupCoordinator(private val context: Context) {
         val estimateCustomizations = PreventiviCustomizationStore(context)
         val floorPlans = FloorPlanStore(context)
         val tools = ToolsStore(context)
+        val inventory = MaterialInventoryStore(context)
+        val materialPlans = MaterialPlanStore(context)
+        val materialEvidence = MaterialDocumentEvidenceStoreV13(context)
         val customWorkPacks = CustomWorkPackStore(context)
         val vanPreparations = VanPreparationStore(context)
         val gallery = GalleryStore(context)
@@ -96,6 +102,9 @@ class BackupCoordinator(private val context: Context) {
                 "modules/preventivi-customizations.json" to estimateCustomizations.exportFullJson(),
                 "modules/planimetrie.json" to floorPlans.exportJson(),
                 "modules/attrezzi.json" to tools.exportJson(),
+                "modules/material-inventory-v2.json" to inventory.exportJson(),
+                "modules/material-plans-v1.json" to materialPlans.exportJson(),
+                "modules/material-evidence-v13.json" to materialEvidence.exportJson(),
                 "modules/attrezzi-custom-packs.json" to customWorkPacks.exportJson(),
                 "modules/furgone.json" to vanPreparations.exportJson(),
                 "modules/galleria.json" to gallery.exportJson(),
@@ -191,7 +200,7 @@ class BackupCoordinator(private val context: Context) {
             val driveDone = copyToDrive && archive.driveReady() && runCatching { archive.copyToDrive(info.file) }.isSuccess
             return CreateResult(info, driveDone, galleryIncluded, gallerySkipped, scannerFiles)
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, customWorkPacks, vanPreparations, gallery)
         }
     }
 
@@ -263,6 +272,7 @@ class BackupCoordinator(private val context: Context) {
         // strict policy prevent recovery of the operator's safety snapshot.
         val linkReport = if (guardRollback) preflightCrossModuleLinks(file, replaceAll)
             else null
+        if (guardRollback) preflightMaterialEvidenceV13(file, replaceAll)
 
         val counts = linkedMapOf<String, Int>()
         val warnings = mutableListOf<String>()
@@ -291,6 +301,9 @@ class BackupCoordinator(private val context: Context) {
         val estimateCustomizations = PreventiviCustomizationStore(context)
         val floorPlans = FloorPlanStore(context)
         val tools = ToolsStore(context)
+        val inventory = MaterialInventoryStore(context)
+        val materialPlans = MaterialPlanStore(context)
+        val materialEvidence = MaterialDocumentEvidenceStoreV13(context)
         val customWorkPacks = CustomWorkPackStore(context)
         val vanPreparations = VanPreparationStore(context)
         val gallery = GalleryStore(context)
@@ -349,6 +362,16 @@ class BackupCoordinator(private val context: Context) {
 
             counts["Attrezzi"] = tools.importJson(archive.readText(file, "modules/attrezzi.json"), replaceAll)
 
+            // V13: preserve inventory and confirmed plans in the SAME backup.
+            fun optionalModule(path: String): String? =
+                runCatching { archive.readText(file, path) }.getOrNull()
+            optionalModule("modules/material-inventory-v2.json")?.let {
+                counts["Magazzino materiali"] = inventory.importJson(it, replaceAll)
+            } ?: run { warnings += "Backup legacy senza magazzino V2: dati locali conservati." }
+            optionalModule("modules/material-plans-v1.json")?.let {
+                counts["Piani materiali"] = materialPlans.importJson(it, replaceAll)
+            } ?: run { warnings += "Backup legacy senza piani materiali V1: dati locali conservati." }
+
             val customPacksJson = runCatching { archive.readText(file, "modules/attrezzi-custom-packs.json") }.getOrNull()
             if (customPacksJson != null) counts["Pacchetti personalizzati"] = customWorkPacks.importJson(customPacksJson, replaceAll)
             else warnings += "Backup precedente ai pacchetti Attrezzi/Materiali personalizzati."
@@ -360,6 +383,9 @@ class BackupCoordinator(private val context: Context) {
             val scannerRestored = restoreScanner(file, manifest, documents, replaceAll)
             counts["Scanner"] = scannerRestored.first
             if (scannerRestored.second < scannerRestored.first) warnings += "Alcuni record Scanner non avevano il PDF nel pacchetto."
+            optionalModule("modules/material-evidence-v13.json")?.let {
+                counts["Fatture DDT materiali"] = materialEvidence.importJson(it, replaceAll)
+            } ?: run { warnings += "Backup legacy senza attribuzioni V13: registro locale conservato." }
 
             val firJson = runCatching { archive.readText(file, "modules/fir.json") }.getOrNull()
             if (firJson != null) counts["FIR"] = fir.importJson(firJson, replaceAll)
@@ -384,7 +410,7 @@ class BackupCoordinator(private val context: Context) {
             }
             throw error
         } finally {
-            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, gallery)
+            closeAll(clients, jobs, workflow, jobsiteArchive, daily, compensi, messages, finances, documents, fir, estimates, estimateRooms, estimateLifecycle, floorPlans, tools, inventory, materialPlans, materialEvidence, customWorkPacks, vanPreparations, gallery)
         }
     }
 
