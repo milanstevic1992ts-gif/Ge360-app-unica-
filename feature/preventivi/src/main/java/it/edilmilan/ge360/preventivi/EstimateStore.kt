@@ -705,6 +705,9 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 (item.included && !item.optional) == variant.priorIncluded) {
                 "Condizioni del preventivo originale cambiate: rivedere l'accordo"
             }
+            require(verifiedEvidence(quote.ge360Id, current.ge360Id, "")) {
+                "Prima di annotare l'accordo allega almeno un PDF, JPG o PNG integro"
+            }
             val updated = current.copy(
                 status = MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED,
                 externalAgreementReference = externalReference.trim(),
