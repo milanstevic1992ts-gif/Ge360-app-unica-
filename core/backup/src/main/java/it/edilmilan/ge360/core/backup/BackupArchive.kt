@@ -55,6 +55,42 @@ class BackupArchive(private val context: Context) {
         BackupPassphraseStoreV8(context).enable(password)
 
     /**
+     * Restore scheduled-backup access after Android Keystore loss.
+     * Do not trust a typed password by itself: first authenticate and inspect
+     * an independently chosen encrypted GE360 archive from the document picker.
+     * No local key/prefs mutation occurs until all checks have passed.
+     */
+    fun recoverLocalKeyFromUri(uri: Uri, password: CharArray) {
+        require(encryptionEnabled()) { "La cifratura dei nuovi backup non è attiva" }
+        val proof = File(context.cacheDir,
+            "ge360-recovery-source-" + UUID.randomUUID().toString() + ".tmp")
+        val clear = File(context.cacheDir,
+            "ge360-recovery-check-" + UUID.randomUUID().toString() + ".ge360.zip")
+        try {
+            context.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "Backup di prova non leggibile" }
+                FileOutputStream(proof).use { output ->
+                    input.copyTo(output, 64 * 1024)
+                    output.fd.sync()
+                }
+            }
+            require(EncryptedBackupV8.isEncrypted(proof)) {
+                "Per riparare la chiave serve un backup GE360 cifrato"
+            }
+            EncryptedBackupV8.decrypt(proof, clear, password)
+            inspect(clear, verifyHashes = true)
+            val schema = readManifest(clear).optString("schema")
+            require(schema == "ge360.backup.v1") { "Backup di prova GE360 non valido" }
+            BackupPassphraseStoreV8(context).rewrapAfterVerifiedArchive(password)
+        } finally {
+            clear.delete()
+            proof.delete()
+        }
+    }
+
+
+
+    /**
      * With V8 enabled the ZIP is built in PRIVATE cache only, checked using
      * the existing V7 semantic preflight, and published as encrypted .ge360.enc.
      * A missing Keystore secret is fatal: do not silently create a plain backup.
