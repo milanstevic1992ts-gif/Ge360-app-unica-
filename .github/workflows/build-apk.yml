@@ -26,7 +26,6 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-
           java-version: '17'
 
       - name: Set up Gradle 8.9
@@ -34,13 +33,20 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build release APK
-        run: gradle :app:assembleRelease --stacktrace
+      - name: Test critical modules and build installable debug APK
+        run: |
+          gradle \
+            :feature:agenda:testDebugUnitTest \
+            :feature:giornata:testDebugUnitTest \
+            :feature:attrezzi:testDebugUnitTest \
+            :feature:planimetrie:testDebugUnitTest \
+            :feature:preventivi:testDebugUnitTest \
+            :app:assembleDebug --stacktrace
 
-      - name: Verify unsigned APK structure
+      - name: Verify APK structure and checksum
         if: success()
         run: |
-          APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n1)
+          APK=$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n1)
           test -n "$APK"
           ls -lh "$APK"
           sha256sum "$APK"
@@ -49,32 +55,13 @@ jobs:
           unzip -l "$APK" | grep -q 'AndroidManifest.xml'
           BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
           "$BT/aapt" dump badging "$APK" | head -n 8
+          "$BT/apksigner" verify "$APK"
 
-      - name: Prepare official Android signing tools
-        if: success()
-        run: |
-          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)
-          mkdir -p signing-tools/lib64 signing-tools/lib
-          cp "$BT/zipalign" signing-tools/
-          cp "$BT/apksigner" signing-tools/
-          cp "$BT/lib/apksigner.jar" signing-tools/lib/
-          if [ -d "$BT/lib64" ]; then cp -a "$BT/lib64/." signing-tools/lib64/; fi
-          chmod +x signing-tools/zipalign signing-tools/apksigner
-
-      - name: Upload release APK
+      - name: Upload installable APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: GE360-release-unsigned
-          path: app/build/outputs/apk/release/*.apk
+          name: GE360-debug-installabile
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
-
-      - name: Upload Android signing tools
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-signing-tools-linux
-          path: signing-tools/
-          if-no-files-found: error
-          retention-days: 1
