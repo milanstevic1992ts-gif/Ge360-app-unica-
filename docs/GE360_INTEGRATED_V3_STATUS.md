@@ -450,3 +450,42 @@ La shell Android aveva già `app/.../DiagnosticsActivity.kt` accessibile da `Alt
 - Il pannello nasce nel dettaglio cantiere esistente, non affolla la Home e non ha job automatici. Avvia la lettura quando l'operatore apre/torna al dettaglio, non all'avvio dell'app.
 - Prima di un collaudo: autorizzazione separata per compilazione, test JUnit, flussi app su smartphone, schema compatibile, DB vuoti, lavori senza cantiere, grandi ledger materiali, cantiere con task bloccati, costi manodopera vs Spese, registri compensi con storni e documenti mancanti.
 - Nessun build/Gradle eseguito, test/Actions/CI/APK/merge/deploy o accesso Debian. Android `main`, backend Glass e marketing invariati.
+
+
+## V13 — Materiali da FATTURE e DDT con attribuzione confermata (1 novembre 2026)
+
+**Stato: CODICE SALVATO SU FEATURE BRANCH, NON COMPILATO, NON TESTATO, NON COLLAUDATO, NON DISTRIBUITO.**
+**Scelta architetturale:** dati Scanner canonici + materiale magazzino + UUID cantiere facoltativo, nessun matching OCR/similarità, nessuna scrittura automatica a stock, pagamenti, Spese o preventivi.
+
+### Codice realmente implementato
+1. `feature/attrezzi/.../MaterialDocumentEvidenceV13.kt`: ledger SQLite dedicato `ge360_material_document_evidence_v13.db`, righe con UUID stabili, documento Scanner UUID, materiale magazzino UUID, cantiere UUID opzionale, tipo FATTURA oppure DDT, quantità/unità, data conferma, data annullamento. La tripla documento–materiale–cantiere può avere una sola riga attiva. Non sovrascrive attribuzioni: correzione tramite annullamento registrato, poi nuova conferma. `exportJson/importJson` con schema versionato, verifica duplicati, transazione locale e protezione da collisioni UUID in merge.
+2. `MaterialDocumentEvidenceRulesV13.totals`: quantità **fatturate** e quantità **consegnate con DDT** calcolate separatamente, su sole righe attive e unità compatibili, mai sommate fra loro o trasformate in pagamento/carico/consumo.
+3. `MaterialEvidenceActivityV13`: nuova schermata manuale, raggiungibile da Materiali 2.0 e dal Centro controllo cantiere, con selezione esplicita di documento FATTURA/DDT già presente in Scanner, materiale e cantiere (facoltativo), quantità letta/verificata e seconda conferma. L'attribuzione ricontrolla il record Scanner, il materiale e il cantiere ancora esistenti e pretende il **PDF locale** prima di confermare. Righe attive con prova persa o riferimento modificato restano nello storico come `DA VERIFICARE`, ma non entrano nei totali.
+4. Riepilogo per materiale/cantiere: piani confermati (`MaterialPlanStore`), quantità fatturate confermate, quantità DDT confermate, consumo registrato (`MaterialInventoryStore`), differenza **previsto−consumato** solo quando `hasCompleteMovementHistory` certifica lo storico; non è una giacenza fisica certificata. Visualizza anche i materiali pianificati/consumati che **non** hanno righe acquisto confermate. Un valore assente è `non documentato`, non `zero acquistato`.
+5. Centro Cantiere V12: nuova scheda Fatture/DDT materiali per UUID cantiere, con conteggi separati e avvisi per documenti non più accessibili o unità difformi; collegamento al registro V13. Non associa automaticamente fatture senza cantiere, non attribuisce importi o acquisti a movimenti di magazzino.
+6. Backup/Ripristino: `BackupCoordinator` ora esporta ed importa `modules/material-inventory-v2.json`, `modules/material-plans-v1.json`, `modules/material-evidence-v13.json`. La fase V13 preflight controlla **prima delle modifiche** UUID documento/materiale/cantiere, tipologia e unità, presenza del PDF degli attributi attivi nell'indice ZIP. Lo stesso controllo viene eseguito prima della pubblicazione di un nuovo backup: una fattura attribuita ma PDF assente impedisce la creazione di una copia apparentemente completa.
+7. Compatibilità legacy: archivi precedenti senza moduli materiali V13/V2/V1 lasciano i dati correnti invariati e mostrano avvisi; per restore `Sostituisci` di un vecchio archivio che non ha V13, se esistono **attribuzioni V13 attive** sul dispositivo, il restore viene bloccato prima delle scritture per non lasciare riferimenti orfani. Il rollback di emergenza usa i backup di sicurezza moderni e non applica gate strict V13.
+8. Test `feature/attrezzi/src/test/.../MaterialDocumentEvidenceV13Test.kt`: contratti sintetici per distinzione fattura/DDT, perimetro cantiere, annullamenti storici, incompatibilità unità, dati non validi e serializzazione. **Solo scritti, non eseguiti.**
+
+### Commit Android su `feature/ge360-integrated-v3-20261101`
+- `fe415c3fbe8871a92dc3ba81e3397c763ec2990f` — ledger V13
+- `ab638bb1128fe42277a302268a039915644ef51c` — interfaccia attribuzioni manuali
+- `5246f3ad79efefd67cc67dbf14d58e4fff0da8aa` — ingresso in Materiali + Manifest
+- `71113194559a538e7603d783525a09b705a80a6d` — backup completo inventario/piani/prove
+- `be04f0fc7db18c4fd654ee1639aa1890111ee0a5` — preflight UUID/tipo/unità
+- `4441e2b98dc383a9623d77db191f547994546850` — PDF obbligatorio alla conferma e nel backup
+- `e5c800ecc420196014e406cc18f3e912d2cce519` — segnale V13 nel Centro Cantiere
+- `68d3de2b49e6dcee68a09384384ec122d581d772` — guard backup e completezza storico consumi
+- `3feaf14d3b4a649c347c708d19cea6f0a13ae086` — contratti unitari scritti
+- `3340a80311c3848e2acd502d12b1372268cd0c9f` — ricarica fonti canoniche ed esclusione dalle somme di prove non verificabili
+- `1a767dc87e06a42532f861e4ea0fd8b1f07e55b7` — blocco replace legacy rischioso
+- `056cbc0610d5df37b0df89a39985a82af5746dc7` — mostra anche materiali senza documento collegato
+
+### Limiti noti e QA
+- Una fattura e il corrispondente DDT possono rappresentare gli stessi beni: **NON SOMMARE** le due serie; non esiste riconciliazione automatica tra documenti, né verifica fiscale automatica o attestazione di pagamento.
+- Il PDF deve esistere in Scanner per confermare, ma la sola presenza o intestazione OCR non prova autenticità, proprietà o contabilizzazione del costo. Quantità scelte dall'operatore. I dati non vengono verificati contro le righe originali della fattura tramite firma digitale o fatturazione elettronica.
+- `MaterialInventoryStore` può rappresentare uno storico parziale: la differenza previsto−consumato è **sospesa** quando la provenienza dello storico non è completa. Il valore non è giacenza fisica e non equivale al residuo acquistato.
+- La lettura unisce store diversi senza transazione globale; l'operazione `importJson` di V13 usa una transazione SQLite locale e una safety snapshot generale compensativa (non ACID distribuita). L'apertura di SQLiteOpenHelper può migrare uno schema esistente.
+- Il recupero da vecchi backup privi di inventario/piani/V13 non reinventa attribuzioni. Per merge con moduli legacy va verificata la compatibilità prima del collaudo.
+- **Gates obbligatori per futuro QA autorizzato:** compilazione Android e test Kotlin/Android su API 26–35, documento PDF mancante, tipo Scanner modificato dopo attribuzione, unità cambiate, stesso documento/riga duplicata, annullamento, cantiere libero e attribuito, piano senza documento, storico incompleto, backup cifrato, restore legacy e rollback in caso di errore durante import.
+- Nessun build, gradle test, emulatori, Actions, APK, merge, deploy, main o Debian modificato. Marketing resta in pausa.
