@@ -481,11 +481,17 @@ class EstimatesActivity : AppCompatActivity() {
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (name.text.toString().isBlank()) { name.error = "Nome obbligatorio"; return@setOnClickListener }
-                if (measuredOrigin != null && included.isChecked &&
-                    !optional.isChecked && !confirmedMeasuredPrice.isChecked) {
-                    Toast.makeText(this, "Conferma le misure prima di attivare la voce nel totale",
-                        Toast.LENGTH_LONG).show()
-                    return@setOnClickListener
+                if (measuredOrigin != null && included.isChecked && !optional.isChecked) {
+                    if (!confirmedMeasuredPrice.isChecked) {
+                        Toast.makeText(this,
+                            "Conferma le misure prima di attivare la voce nel totale",
+                            Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    if (parseAmount(price.text.toString()) <= 0.0) {
+                        price.error = "Imposta e verifica un prezzo positivo prima di attivare"
+                        return@setOnClickListener
+                    }
                 }
                 item.name = name.text.toString().trim()
                 item.category = category.text.toString().trim().ifBlank { "Personalizzate" }
