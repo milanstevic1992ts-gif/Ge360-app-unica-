@@ -269,7 +269,6 @@ class AgendaActivity : AppCompatActivity() {
                 setTextColor(Ge360Brand.PrimaryDark)
             })
         }
-        if (filter == "Note") return
         val sources = sourceSnapshot.deadlines.filter { source ->
             (query.isBlank() || listOf(source.title, source.subtitle).any { it.contains(query, true) }) &&
                 when (filter) {
@@ -278,7 +277,10 @@ class AgendaActivity : AppCompatActivity() {
                         source.dateAt >= first && source.dateAt < last &&
                             (selectedDay == null || AgendaCalendar.midnight(source.dateAt) == selectedDay)
                     }
-                    "Oggi" -> source.dateAt < AgendaCalendar.nextDay(now)
+                    "Oggi" -> source.dateAt > 0 && source.dateAt < AgendaCalendar.nextDay(now)
+                    "Note" -> source.sourceType == AgendaSourceDeadline.JOB_WORKFLOW_NOTE
+                    "Attivita'" -> source.sourceType != AgendaSourceDeadline.JOB_WORKFLOW_NOTE
+                    "Agenda" -> source.dateAt > 0
                     else -> true
                 }
         }
@@ -309,7 +311,7 @@ class AgendaActivity : AppCompatActivity() {
                         setTextColor(Ge360Brand.ForestDark)
                     })
                     addView(TextView(this@AgendaActivity).apply {
-                        text = SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).format(Date(source.dateAt)) +
+                        text = (if (source.dateAt > 0L) SimpleDateFormat("dd/MM/yyyy", Locale.ITALY).format(Date(source.dateAt)) else "Senza data") +
                             " · " + source.subtitle + "\nApri scheda originale ›"
                         textSize = 12f
                         setTextColor(Ge360Brand.TextSecondary)

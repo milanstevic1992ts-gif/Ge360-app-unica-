@@ -70,3 +70,9 @@ Fase 2: implementati calendari settimanale/mensile, ricorrenze, allarmi Android 
 - Dati storici, date invalide, cambio fuso e date ISO.
 - Backend/sync non coinvolti, FIR/Scanner non modificati.
 - Nessuna compilazione, CI, test, APK, deploy o merge eseguiti in questa fase.
+
+### Integrazione checklist e note preesistenti
+- La checklist nel JobsiteWorkflowStore resta proprietaria dei task: Agenda mostra in lettura solo task aperti (da fare, in corso, bloccati); a livello generale include quelli manuali, nel contesto del singolo cantiere anche quelli da template.
+- Le note storiche del Centro Cantiere restano nel loro archivio e sono visibili solo nel contesto del cantiere selezionato.
+- I task e le note privi di scadenza vengono etichettati "Senza data" e non compaiono nel calendario a giorni o nelle notifiche.
+- L'accesso apre la scheda del cantiere: azioni sulla checklist restano nel modulo proprietario.
