@@ -5,7 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
-import java.security.SecureRandom
+import java.util.UUID
 import java.util.Arrays
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -23,7 +23,8 @@ class BackupPassphraseStoreV8(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(
         "ge360_encrypted_backup_v8", Context.MODE_PRIVATE
     )
-    private val alias = "ge360_backup_v8_local_wrap"
+    private val legacyAlias = "ge360_backup_v8_local_wrap"
+    private fun activeAlias(): String = prefs.getString("keystore_alias", null) ?: legacyAlias
     private val keystore by lazy { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }
 
     fun isEnabled(): Boolean = prefs.getBoolean("enabled", false)
@@ -81,15 +82,59 @@ class BackupPassphraseStoreV8(context: Context) {
         }
     }
 
-    private fun currentKey(): SecretKey = (keystore.getKey(alias, null) as? SecretKey)
+    /**
+     * Called ONLY after authentication of a user-selected encrypted backup.
+     * A new Keystore alias is prepared before switching preferences, so a
+     * failure cannot destroy the old wrapped secret first.
+     */
+    fun rewrapAfterVerifiedArchive(password: CharArray) {
+        require(isEnabled()) { "Attivare prima la cifratura V8" }
+        require(password.size in 12..256 && password.any { !it.isWhitespace() }) {
+            "Password di recupero non valida"
+        }
+        val previousAlias = activeAlias()
+        val newAlias = "ge360_backup_v9_wrap_" + UUID.randomUUID().toString()
+        val raw = String(password).toByteArray(Charsets.UTF_8)
+        var committed = false
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, generateKey(newAlias))
+            val iv = cipher.iv
+            check(iv.size == 12) { "Nonce Android Keystore non valido" }
+            val encrypted = cipher.doFinal(raw)
+            val wrapped = iv + encrypted
+            try {
+                check(prefs.edit()
+                    .putString("keystore_alias", newAlias)
+                    .putString("wrapped_passphrase", Base64.encodeToString(wrapped, Base64.NO_WRAP))
+                    .putBoolean("enabled", true)
+                    .commit()) { "Ripristino chiave locale non confermato" }
+                committed = true
+            } finally {
+                wrapped.fill(0.toByte())
+                encrypted.fill(0.toByte())
+            }
+        } finally {
+            raw.fill(0.toByte())
+            if (!committed) runCatching { keystore.deleteEntry(newAlias) }
+        }
+        if (previousAlias != newAlias) runCatching { keystore.deleteEntry(previousAlias) }
+    }
+
+    private fun currentKey(): SecretKey = (keystore.getKey(activeAlias(), null) as? SecretKey)
         ?: error("Chiave Android Keystore non trovata")
 
     private fun getOrCreateKey(): SecretKey {
+        val alias = activeAlias()
         if (keystore.containsAlias(alias)) return currentKey()
+        return generateKey(alias)
+    }
+
+    private fun generateKey(name: String): SecretKey {
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(
             KeyGenParameterSpec.Builder(
-                alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                name, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
             ).setKeySize(256)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
