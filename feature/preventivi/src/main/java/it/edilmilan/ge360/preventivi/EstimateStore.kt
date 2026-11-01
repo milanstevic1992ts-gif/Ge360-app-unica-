@@ -237,12 +237,13 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
      * cannot be priced as verified without a fresh operator-reviewed binding.
      */
     private fun backfillLegacyMetricNotes(db: SQLiteDatabase) {
-        db.rawQuery("""SELECT e.id, e.ge360_id, i.*
+        db.rawQuery("""SELECT i.*, e.id AS parent_estimate_id,
+                e.ge360_id AS parent_estimate_uuid
             FROM estimates e JOIN estimate_items i ON i.estimate_id=e.id
             WHERE i.internal_note LIKE '%GE360_METRICO_V1:%'""", null).use { c ->
             while (c.moveToNext()) {
-                val estimateId = c.getLong(0)
-                val estimateUuid = c.getString(1)
+                val estimateId = c.getLong(c.getColumnIndexOrThrow("parent_estimate_id"))
+                val estimateUuid = c.getString(c.getColumnIndexOrThrow("parent_estimate_uuid"))
                 val item = itemFromCursor(c)
                 val parsed = MeasuredEstimateDraftV1.sourceOf(item) ?: continue
                 val legacy = MetricProvenanceV2.fromLegacyNote(
