@@ -5,6 +5,8 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import it.edilmilan.ge360.scanner.ScannerDocument
+import it.edilmilan.ge360.scanner.DocumentStore
+import it.edilmilan.ge360.cantieri.JobsiteStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -67,6 +69,7 @@ object MaterialDocumentEvidenceRulesV13 {
 
 class MaterialDocumentEvidenceStoreV13(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DATABASE, null, VERSION) {
+    private val app = context.applicationContext
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE material_document_lines(
@@ -124,10 +127,26 @@ class MaterialDocumentEvidenceStoreV13(context: Context) :
         require(kind in setOf("FATTURA", "DDT")) { "Selezionare una fattura o un DDT Scanner" }
         require(quantity.isFinite() && quantity > 0.0) { "Quantità non valida" }
         val scope = jobsiteId.orEmpty()
-        require(doc.jobsiteId.isBlank() || doc.jobsiteId == scope) {
+        // Re-read canonical data at confirmation time: never trust a stale
+        // spinner row from an activity that may have been paused.
+        val freshDoc = DocumentStore(app).use { it.getByGe360Id(doc.ge360Id) }
+            ?: error("Documento Scanner non più presente")
+        val freshMaterial = MaterialInventoryStore(app).use { store ->
+            store.list().firstOrNull { it.ge360Id == material.ge360Id }
+        } ?: error("Materiale non più presente nel magazzino")
+        require(freshMaterial.unit == material.unit) {
+            "Unità materiale modificata durante la conferma"
+        }
+        require(freshDoc.type.trim().uppercase(java.util.Locale.ROOT) == kind) {
+            "Tipo documento modificato durante la conferma"
+        }
+        require(scope.isBlank() || JobsiteStore(app).use { store ->
+            store.list().any { it.ge360Id == scope }
+        }) { "Cantiere non più presente" }
+        require(freshDoc.jobsiteId.isBlank() || freshDoc.jobsiteId == scope) {
             "Documento associato a un cantiere diverso. Verificare prima in Scanner"
         }
-        require(doc.pdfPath.isNotBlank() && java.io.File(doc.pdfPath).isFile) {
+        require(freshDoc.pdfPath.isNotBlank() && java.io.File(freshDoc.pdfPath).isFile) {
             "Documento Scanner senza PDF locale verificabile: associare prima il file"
         }
         val line = MaterialDocumentLineV13(

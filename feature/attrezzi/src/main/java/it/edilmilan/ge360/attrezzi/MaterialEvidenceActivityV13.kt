@@ -93,19 +93,29 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
         val materials = inventory.list().associateBy { it.ge360Id }
         val docs = scanner.list().associateBy { it.ge360Id }
         val jobs = sites.list().associateBy { it.ge360Id }
+        val trusted = active.filter { line ->
+            val doc = docs[line.documentGe360Id]
+            val item = materials[line.materialGe360Id]
+            doc != null && doc.type.equals(line.documentKind, ignoreCase = true) &&
+                (doc.jobsiteId.isBlank() || doc.jobsiteId == line.jobsiteGe360Id) &&
+                doc.pdfPath.isNotBlank() && java.io.File(doc.pdfPath).isFile &&
+                item != null && item.unit.equals(line.unit, ignoreCase = true) &&
+                (line.jobsiteGe360Id.isBlank() || line.jobsiteGe360Id in jobs)
+        }
         val plansByMaterial = plans.all()
         val fullHistory = inventory.hasCompleteMovementHistory()
         val movements = inventory.allMovementHistory(
             jobsiteGe360Id = jobFilter.takeIf { it.isNotBlank() })
-        body.addView(label("RIEPILOGO MATERIALE · " + active.size +
-            " righe attive · " + (rows.size - active.size) + " annullate", 12f))
+        body.addView(label("RIEPILOGO MATERIALE · " + trusted.size +
+            " righe verificabili · " + (active.size - trusted.size) +
+            " da controllare · " + (rows.size - active.size) + " annullate", 12f))
         if (active.isEmpty()) body.addView(label("Nessuna riga attribuita. " +
             "Scegli il documento Scanner, il materiale, il cantiere e la quantità.", 13f))
-        active.groupBy { it.materialGe360Id to it.jobsiteGe360Id }.forEach { (key, lines) ->
+        trusted.groupBy { it.materialGe360Id to it.jobsiteGe360Id }.forEach { (key, lines) ->
             val mat = materials[key.first]
             val unit = mat?.unit ?: lines.first().unit
             val values = MaterialDocumentEvidenceRulesV13.totals(
-                active, key.first, key.second, unit)
+                trusted, key.first, key.second, unit)
             val plan = plansByMaterial.filter {
                 it.materialGe360Id == key.first &&
                     it.jobsiteGe360Id.orEmpty() == key.second
@@ -135,7 +145,8 @@ class MaterialEvidenceActivityV13 : AppCompatActivity() {
             val name = materials[row.materialGe360Id]?.name ?: "Materiale mancante"
             val doc = docs[row.documentGe360Id]
             addCard(
-                (if (row.active) "" else "ANNULLATA · ") + name,
+                (if (!row.active) "ANNULLATA · "
+                 else if (row !in trusted) "DA VERIFICARE · " else "") + name,
                 row.documentKind + " · " + (doc?.documentNumber ?: "documento non trovato"),
                 fmt(row.quantity) + " " + row.unit + " · " +
                     (if (row.jobsiteGe360Id.isBlank()) "nessun cantiere"
