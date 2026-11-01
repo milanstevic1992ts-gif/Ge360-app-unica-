@@ -212,3 +212,38 @@ Una variante di metratura su un preventivo già inviato/accettato NON riscrive l
 1. Collegare/verificare gli allegati fisici della prova (email/PDF/firma) con autorizzazioni e privacy appropriate. Per ora viene annotato **solo il riferimento**.
 2. Realizzare iter contrattuale formale (proposta al cliente, accettazione, eventuale revoca/nuova versione, trattamento IVA e segno negativo, contabilità e fatturazione), senza presumere che l'attestazione manuale equivalga a consenso.
 3. QA SQLite V1→V4, esportazione/ripristino, concorrenza, collisioni/sovrapposizioni e comportamento UI. Nessuna verifica eseguibile effettuata in questo incremento; main non toccato.
+
+
+## 1 novembre 2026 — Allegati accordi e rettifiche V5
+
+**STATO: sviluppato sul branch feature Android, codice NON compilato/collaudato.** Nessun APK, build, test, GitHub Actions, merge, modifica main, deploy Debian o riavvio produzione. Marketing in pausa.
+
+### Contratti e archivio locale
+- `MetricAgreementRecordsV5.kt`: `MetricAgreementAttachmentV5` (UUID, UUID preventivo/economia/eventuale rettifica, nome, MIME, dimensione, SHA-256, data); `MetricAgreementCorrectionV5` (importo precedente, nuovo importo, delta, motivazione, stato `RETTIFICA_PROPOSTA` o `RETTIFICA_ACCORDO_ANNOTATO`); `MetricAgreementCorrectionEventV5` append-only.
+- `MetricAgreementFilesV5.kt` + `MetricAgreementFileProvider`: picker Android SAF, copia bytes in `filesDir/metric-agreements/<UUID>.<pdf|jpg|png>`, limite **12 MiB per file**, confronto MIME e firma dell'header, SHA-256 e dimensione, nomi sanitizzati, apertura tramite `FileProvider` con permesso temporaneo. Nessuna dipendenza da URI esterni che possono scadere; file privati all'app. Provider dichiarato nel manifest `feature/preventivi` e XML limitato alla cartella privata.
+- **Il backup ZIP non è crittografato per il solo fatto di contenere hash**: conservare esportazioni e dispositivi in modo protetto. SHA-256 rileva modifiche accidentali ma non autentica la firma del cliente.
+
+### DB, workflow e comportamento contabile
+- Database `ge360_preventivi.db` V4→V5 **migrazione additiva**: tabelle `estimate_agreement_attachments`, `estimate_agreement_corrections`, `estimate_agreement_correction_events`, UUID/foreign key preventivo e `UNIQUE(estimate_id,economics_ge360_id)` per impedire due rettifiche della stessa proposta commerciale.
+- `EstimateStore.attachAgreementFile()`: verifica appartenenza al preventivo e alla relativa economia/rettifica, salva file reale e metadata in una transazione SQLite (con pulizia del file su errore). Nessuna eliminazione documenti dall'interfaccia per non cancellare prove.
+- `attestMetricVariantAgreement()` ora richiede almeno un allegato base effettivamente presente, integro e verificato SHA-256; gli accordi V4 già annotati non vengono annullati da questa regola retroattivamente.
+- `proposeAgreementCorrection()`: ammessa solo su un accordo originale già annotato; richiede motivo e nuovo valore centesimale di segno identico (extra rimane extra, riduzione rimane riduzione); l'originale non si riscrive.
+- `attestAgreementCorrection()`: richiede allegato **specifico della rettifica**, riferimento esterno, data non futura, motivazione e conferma manuale; evento append-only. Lo stato è attestazione dell'operatore, NON firma valida né verifica remota del consenso.
+- `effectiveAgreedVariantsEuro()`: somma INFORMATIVA delle economie annotate; quando una rettifica è annotata sostituisce SOLO nel calcolo derivato l'importo precedente, senza sommare entrambi. Rettifica non ancora annotata non incide. Nessun flusso a fatture, SAL, credito, pagamento o importi del preventivo.
+- Un'unica rettifica per proposta economica in V5; annullamenti e catene di revisioni contrattuali sono ancora da progettare, senza cancellazione dello storico.
+
+### UI
+- `EstimatesActivity`: pulsanti `+ ALLEGA PDF / FOTO ACCORDO` e `APRI`, apertura tramite FileProvider; `RETTIFICA` dall'accordo annotato; mostra importo precedente, corretto e delta; attestazione con prova distinta; riepilogo extra/riduzioni usa importi corretti solo quando la rettifica è annotata.
+- Se il picker si interrompe per ricreazione della Activity, recupera UUID in `onSaveInstanceState`.
+- Esportazione semplice JSON Preventivi rifiutata con allegati e rimando a **Backup GE360 ZIP**; import JSON standalone di metadati privi di file integri viene rifiutato. Backup ZIP completo è il supporto portabile con prove.
+
+### Backup, sicurezza e QA aperta
+- `BackupCoordinator`: copia i PDF/JPG/PNG del registro nel ZIP **anche per backup automatico**; se un file non supera il controllo, interrompe l'intero backup. Inserisce `metricAgreementFiles` nel manifest e ripristina le copie controllando path, dimensione e SHA-256.
+- `EstimateStore.exportJson/importJson`: array additivi `metricAgreementAttachments[]`, `metricAgreementCorrections[]`, `metricAgreementCorrectionEvents[]`; validazioni di riferimenti economici/tecnici/UUID e presenza di cronologia; ripristino locale SQLite transazionale, backup GE360 continua a gestire eventuale rollback fra moduli.
+- `MetricAgreementV5ContractTest.kt`: test modello per integrazione documenti e rettifiche scritti ma NON eseguiti.
+- **Gates**: compilare e collaudare (su autorizzazione): permessi SAF/FileProvider, manipolazione file/limite dimensioni, certificazione hash, backup ZIP e rollback multi-modulo, migrazioni DB V1→V5, caso import JSON standalone, rotazione schermata, duplicati, concorrenza e firma documentale non implementata. La gestione di file grandi è attualmente sincrona nel flusso UI; prevedere worker e progress UX prima del rilascio.
+
+### Limiti espliciti
+- Allegare una prova NON prova che il cliente abbia firmato o approvato un importo. Non c'è analisi legale della firma, timbro elettronico, PEC, verifica email o marca temporale.
+- Il riferimento esterno è un'annotazione manuale; nessun invio al cliente.
+- Il checksum e il backup non sostituiscono cifratura end-to-end, retention/privacy o audit antifrode.
