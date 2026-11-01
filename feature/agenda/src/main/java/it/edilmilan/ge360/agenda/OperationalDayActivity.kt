@@ -38,7 +38,7 @@ class OperationalDayActivity : AppCompatActivity() {
     private var agendaRows: List<AgendaEntry> = emptyList()
     private var agendaError: String? = null
     private val timeFormat = SimpleDateFormat("dd/MM · HH:mm", Locale.ITALY)
-    private val dayFormat = SimpleDateFormat("dd/MM · tutto il giorno", Locale.ITALY)
+    private val dayFormat = SimpleDateFormat("dd/MM", Locale.ITALY)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -212,7 +212,10 @@ class OperationalDayActivity : AppCompatActivity() {
                 title = if (item.entry?.scope == AgendaEntry.PRIVATE) "Impegno privato" else item.title,
                 subtitle = buildString {
                     if (item.urgent) append("Priorità alta · ")
-                    if (item.at > 0) append((if (item.dateOnly) dayFormat else timeFormat).format(Date(item.at)) + " · ")
+                    if (item.at > 0) {
+                        append((if (item.dateOnly) dayFormat else timeFormat).format(Date(item.at)))
+                        append(if (item.dateOnly) " · data senza ora · " else " · ")
+                    }
                     else append("Senza data · ")
                     append(item.description)
                     append(if (item.entry != null) " · Modificabile" else " · Fonte originale")

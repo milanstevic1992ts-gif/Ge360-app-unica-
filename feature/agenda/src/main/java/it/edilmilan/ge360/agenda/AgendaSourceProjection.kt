@@ -149,7 +149,7 @@ object AgendaSourceProjection {
                         )
                     }
                 }
-                workflow.tasks(GENERAL_REMINDER_SCOPE).filter { task ->
+                if (clientUuid.isBlank() && jobsiteUuid.isBlank()) workflow.tasks(GENERAL_REMINDER_SCOPE).filter { task ->
                     task.ge360Id.isNotBlank() && task.templateId.startsWith(HOME_REMINDER_PREFIX) &&
                         task.status in setOf(WorkflowStatuses.TODO, WorkflowStatuses.IN_PROGRESS, WorkflowStatuses.BLOCKED)
                 }.forEach { task ->
