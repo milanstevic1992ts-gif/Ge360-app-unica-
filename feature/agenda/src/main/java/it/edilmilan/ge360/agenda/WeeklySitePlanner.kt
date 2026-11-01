@@ -20,7 +20,9 @@ data class WeeklyJobHealth(
     val job: JobsiteRecord,
     val resources: JobResourceSummary?,
     val openWork: Int,
-    val blockedWork: Int
+    val blockedWork: Int,
+    val doneWork: Int,
+    val progressPercent: Int?
 ) {
     val needsReview: Boolean
         get() = (resources?.missing ?: 0) > 0 ||
@@ -48,6 +50,7 @@ data class WeeklyPlannerSnapshot(
     val people: List<PersonnelRecord>,
     val days: List<WeeklyPlannerDay>,
     val conflicts: List<WeeklyStaffConflict>,
+    val execution: WeeklyExecutionSnapshot,
     val warnings: List<String>
 ) {
     val assignmentCount get() = days.sumOf { it.assignments.size }
@@ -100,7 +103,11 @@ object WeeklySitePlanner {
                 WeeklyJobHealth(
                     job, summary,
                     tasks.count { it.status in setOf(WorkflowStatuses.TODO, WorkflowStatuses.IN_PROGRESS, WorkflowStatuses.BLOCKED) },
-                    tasks.count { it.status == WorkflowStatuses.BLOCKED }
+                    tasks.count { it.status == WorkflowStatuses.BLOCKED },
+                    tasks.count { it.status == WorkflowStatuses.DONE },
+                    runCatching { jobs.progressSummary(job.ge360Id)?.percent }
+                        .onFailure { warnings += "Avanzamento non leggibile per " + job.displayTitle() }
+                        .getOrNull()
                 )
             }
         } finally {
@@ -120,6 +127,8 @@ object WeeklySitePlanner {
         val occurrences = agenda.flatMap { AgendaCalendar.occurrences(it, from, until) }
         val datedSources = sources.deadlines.filter { it.dateAt >= from && it.dateAt < until }
         val conflicts = findConflicts(assignmentRows)
+        val execution = WeeklyExecutionComparison.load(context, monday, assignmentRows)
+        warnings.addAll(execution.warnings)
         val week = (0L..6L).map { offset ->
             val day = monday.plusDays(offset)
             WeeklyPlannerDay(
@@ -130,7 +139,7 @@ object WeeklySitePlanner {
                 conflicts = conflicts.filter { it.date == day }
             )
         }
-        return WeeklyPlannerSnapshot(monday, health, people, week, conflicts, warnings)
+        return WeeklyPlannerSnapshot(monday, health, people, week, conflicts, execution, warnings.distinct())
     }
 
     fun dayOf(epochMillis: Long): LocalDate =
