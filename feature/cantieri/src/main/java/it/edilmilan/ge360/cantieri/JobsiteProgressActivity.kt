@@ -20,6 +20,7 @@ import com.google.android.material.card.MaterialCardView
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
+import org.json.JSONArray
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -221,7 +222,7 @@ class JobsiteProgressActivity : AppCompatActivity() {
                 if (i > 0) addView(space(6))
                 val stamp = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
                     .format(Date(entry.capturedAt))
-                addView(whiteCard().apply {
+                addView(whiteCard(clickable = true, action = { showSnapshotDetails(entry) }).apply {
                     addView(LinearLayout(this@JobsiteProgressActivity).apply {
                         orientation = LinearLayout.VERTICAL
                         setPadding(dp(14), dp(11), dp(14), dp(11))
@@ -242,11 +243,44 @@ class JobsiteProgressActivity : AppCompatActivity() {
                     })
                 })
             }
-            if (snapshots.size > 8) addView(text(
-                "Mostrate le ultime 8 misurazioni. Le precedenti rimangono nel registro e nel backup.",
-                11f, "#62686E"
-            ))
+            if (snapshots.size > 8) addView(actionText("Mostra tutte le rilevazioni") {
+                val all = runCatching { store.progressSnapshots(job.ge360Id, 2000) }
+                    .getOrElse { return@actionText toast("Archivio delle rilevazioni non disponibile") }
+                AlertDialog.Builder(this@JobsiteProgressActivity)
+                    .setTitle("Archivio avanzamento · " + all.size + " rilevazioni recenti")
+                    .setItems(all.map { item ->
+                        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY).format(Date(item.capturedAt)) +
+                            " · " + item.percent + "%"
+                    }.toTypedArray()) { _, position -> showSnapshotDetails(all[position]) }
+                    .setNegativeButton("Chiudi", null)
+                    .show()
+            })
         }
+
+    private fun showSnapshotDetails(entry: JobsiteProgressSnapshot) {
+        val phaseDetails = runCatching {
+            val array = JSONArray(entry.phasesJson)
+            (0 until array.length()).joinToString("\n") { i ->
+                val phase = array.getJSONObject(i)
+                "• " + phase.optString("title", "Fase") + ": " +
+                    phase.optInt("percent") + "% (peso " + phase.optInt("weight") + ")"
+            }
+        }.getOrElse { "Dettaglio fasi non leggibile: la rilevazione resta archiviata." }
+        val captured = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+            .format(Date(entry.capturedAt))
+        AlertDialog.Builder(this)
+            .setTitle("Rilevazione · " + entry.percent + "%")
+            .setMessage(
+                "Registrata: " + captured +
+                    "\nData di lavoro: " + entry.observedDate +
+                    "\nStato al momento: " + entry.jobsiteStatus +
+                    "\nFine prevista al momento: " + entry.targetEndDate.ifBlank { "Non impostata" } +
+                    "\n\nFASI AL MOMENTO DELLA RILEVAZIONE:\n" + phaseDetails +
+                    (if (entry.note.isBlank()) "" else "\n\nNota: " + entry.note)
+            )
+            .setPositiveButton("Chiudi", null)
+            .show()
+    }
 
     private fun captureProgress() {
         if (store.progressSummary(job.ge360Id) == null) {
