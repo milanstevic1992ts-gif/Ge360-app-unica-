@@ -92,7 +92,8 @@ data class MeasuredEstimateDraftV1(
             optional = false
             total = 0.0
             internalNote = sourceNote() +
-                "\nBOZZA DI REVISIONE: quantità non prezzata e fuori totale. Verificare prima di attivare."
+                "\nIMPORT INIZIALE: voce fuori totale e prezzo zero. " +
+                    "Qualsiasi successivo prezzo o inclusione richiede controllo e conferma manuale."
         }
     }
 
