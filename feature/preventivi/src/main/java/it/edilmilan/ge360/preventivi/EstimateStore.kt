@@ -277,6 +277,184 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         return out
     }
 
+    fun metricSources(estimateGe360Id: String): List<MetricProvenanceV2> =
+        getByGe360Id(estimateGe360Id)?.let { metricSourcesForEstimateId(it.id) }
+            ?: emptyList()
+
+    fun metricVariants(estimateGe360Id: String): List<MetricVariantV3> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val out = mutableListOf<MetricVariantV3>()
+        readableDatabase.query("estimate_metric_variants",
+            arrayOf("snapshot_json"), "estimate_id=?", arrayOf(estimate.id.toString()),
+            null, null, "created_at DESC").use { c ->
+            while (c.moveToNext()) out += MetricVariantV3.fromJson(JSONObject(c.getString(0)))
+        }
+        return out
+    }
+
+    fun metricVariantEvents(estimateGe360Id: String): List<MetricVariantEventV3> {
+        val estimate = getByGe360Id(estimateGe360Id) ?: return emptyList()
+        val out = mutableListOf<MetricVariantEventV3>()
+        readableDatabase.query("estimate_metric_variant_events",
+            arrayOf("event_json"), "estimate_id=?", arrayOf(estimate.id.toString()),
+            null, null, "occurred_at DESC").use { c ->
+            while (c.moveToNext()) out += MetricVariantEventV3.fromJson(JSONObject(c.getString(0)))
+        }
+        return out
+    }
+
+    /**
+     * The new geometry is only a variation proposal, not a replacement quote row.
+     * Source geometry must be rechecked by the Rilievi UI before this DB transaction.
+     */
+    fun proposeMetricVariant(
+        estimateGe360Id: String,
+        expectedEstimateUpdatedAt: Long,
+        previousItemGe360Id: String,
+        candidate: MeasuredEstimateDraftV1,
+        reason: String
+    ): MetricVariantV3 {
+        require(candidate.valid() && reason.trim().length >= 8) {
+            "Variante: controllare misure, detrazioni e motivo"
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val quote = getByGe360Id(estimateGe360Id)
+                ?: error("Preventivo originale non presente")
+            require(quote.updatedAt == expectedEstimateUpdatedAt) {
+                "Preventivo originale cambiato: riaprire la variante"
+            }
+            require(quote.status != EstimateStatuses.REJECTED) {
+                "Non creare varianti su un preventivo rifiutato"
+            }
+            val old = metricSourcesForEstimateId(quote.id)
+                .singleOrNull { it.itemGe360Id == previousItemGe360Id }
+                ?: error("Metratura precedente non presente nel registro")
+            require(old.trust == MetricProvenanceV2.TRUST_VERIFIED) {
+                "Metratura legacy non verificata: serve nuovo rilievo"
+            }
+            val price = quote.items.singleOrNull { it.ge360Id == old.itemGe360Id }
+                ?: error("Lavorazione originale non disponibile")
+            require(price.priceListCode == old.workCode && price.unit == "m²" &&
+                price.room == old.roomSnapshot &&
+                kotlin.math.abs(price.quantity - old.reviewedQuantityM2) < 0.001) {
+                "Riga originale diversa dalla fonte: verificare prima della variante"
+            }
+            require(old.planGe360Id == candidate.planGe360Id &&
+                old.roomGe360Id == candidate.roomGe360Id &&
+                old.wallGe360Id.orEmpty() == candidate.wallGe360Id.orEmpty() &&
+                old.surface == candidate.surface && old.workCode == candidate.workCode) {
+                "La variante deve riguardare la stessa lavorazione e superficie"
+            }
+            require(old.sourceBindingGe360Id != candidate.sourceBindingGe360Id &&
+                old.geometryFingerprint != candidate.geometryFingerprint) {
+                "Serve una nuova revisione geometrica, non lo stesso rilievo"
+            }
+            require(kotlin.math.abs(old.reviewedQuantityM2 -
+                candidate.reviewedQuantityM2()) >= 0.01) {
+                "La nuova quantità deve differire dalla precedente almeno di 0,01 m²"
+            }
+            require(metricSourcesForEstimateId(quote.id).none {
+                it.sourceBindingGe360Id == candidate.sourceBindingGe360Id
+            }) { "La nuova revisione è già stata importata come voce del preventivo" }
+            require(metricVariants(estimateGe360Id).none {
+                it.previousItemGe360Id == previousItemGe360Id ||
+                    it.candidateBindingGe360Id == candidate.sourceBindingGe360Id
+            }) {
+                "Esiste già una variante per questa voce: gestirla prima di crearne un'altra"
+            }
+            val draft = MetricVariantV3(
+                estimateGe360Id = estimateGe360Id,
+                previousItemGe360Id = price.ge360Id,
+                previousBindingGe360Id = old.sourceBindingGe360Id,
+                candidateBindingGe360Id = candidate.sourceBindingGe360Id,
+                planGe360Id = candidate.planGe360Id,
+                roomGe360Id = candidate.roomGe360Id,
+                wallGe360Id = candidate.wallGe360Id,
+                workCode = candidate.workCode,
+                surface = candidate.surface,
+                previousFingerprint = old.geometryFingerprint,
+                candidateFingerprint = candidate.geometryFingerprint,
+                previousQuantityM2 = old.reviewedQuantityM2,
+                proposedQuantityM2 = candidate.reviewedQuantityM2(),
+                candidateGrossM2 = candidate.grossM2,
+                candidateOpeningDeductionsM2 = candidate.openingDeductionsM2,
+                candidateAdditionalDeductionsM2 = candidate.additionalDeductionM2,
+                priorUnitPrice = price.unitPrice,
+                priorIncluded = price.included && !price.optional,
+                reason = reason.trim()
+            )
+            require(draft.valid()) { "Snapshot della variante non valido" }
+            db.insertOrThrow("estimate_metric_variants", null, variantValues(quote.id, draft))
+            val event = MetricVariantEventV3(
+                variantGe360Id = draft.ge360Id,
+                estimateGe360Id = estimateGe360Id,
+                action = "PROPOSED",
+                reason = reason.trim()
+            )
+            check(event.valid())
+            db.insertOrThrow("estimate_metric_variant_events", null,
+                variantEventValues(quote.id, event))
+            db.setTransactionSuccessful()
+            return draft
+        } finally { db.endTransaction() }
+    }
+
+    /** Technical review only: original accepted quote and totals remain untouched. */
+    fun reviewMetricVariant(
+        estimateGe360Id: String,
+        variantGe360Id: String,
+        reviewReason: String
+    ): MetricVariantV3 {
+        require(reviewReason.trim().length >= 8) { "Motivare la verifica tecnica" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val quote = getByGe360Id(estimateGe360Id)
+                ?: error("Preventivo non trovato")
+            val old = metricVariants(estimateGe360Id)
+                .singleOrNull { it.ge360Id == variantGe360Id }
+                ?: error("Variante non trovata")
+            require(old.valid() && old.status == MetricVariantV3.STATUS_PROPOSED) {
+                "Variante già verificata o dati non validi"
+            }
+            val source = metricSourcesForEstimateId(quote.id)
+                .singleOrNull { it.itemGe360Id == old.previousItemGe360Id }
+                ?: error("Fonte del preventivo originale mancante")
+            val originalRow = quote.items.singleOrNull {
+                it.ge360Id == old.previousItemGe360Id
+            } ?: error("Riga originale assente")
+            require(source.trust == MetricProvenanceV2.TRUST_VERIFIED &&
+                source.sourceBindingGe360Id == old.previousBindingGe360Id &&
+                source.geometryFingerprint == old.previousFingerprint &&
+                kotlin.math.abs(originalRow.unitPrice - old.priorUnitPrice) < 0.001 &&
+                (originalRow.included && !originalRow.optional) == old.priorIncluded) {
+                "Preventivo o condizioni economiche modificati: riesaminare la proposta"
+            }
+            val updated = old.copy(
+                status = MetricVariantV3.STATUS_TECH_REVIEWED,
+                reviewReason = reviewReason.trim(),
+                reviewedAt = maxOf(System.currentTimeMillis(), old.createdAt)
+            )
+            require(updated.valid())
+            val count = db.update("estimate_metric_variants", variantValues(quote.id, updated),
+                "ge360_id=? AND status=?", arrayOf(
+                    variantGe360Id, MetricVariantV3.STATUS_PROPOSED))
+            check(count == 1) { "La variante è cambiata durante la conferma" }
+            val event = MetricVariantEventV3(
+                variantGe360Id = updated.ge360Id,
+                estimateGe360Id = estimateGe360Id,
+                action = "TECH_REVIEWED",
+                reason = reviewReason.trim()
+            )
+            db.insertOrThrow("estimate_metric_variant_events", null,
+                variantEventValues(quote.id, event))
+            db.setTransactionSuccessful()
+            return updated
+        } finally { db.endTransaction() }
+    }
+
     /**
      * Migrate old note-only links conservatively. They retain legacy status and
      * cannot be priced as verified without a fresh operator-reviewed binding.
