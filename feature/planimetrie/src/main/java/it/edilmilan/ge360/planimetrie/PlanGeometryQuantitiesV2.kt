@@ -1,6 +1,7 @@
 package it.edilmilan.ge360.planimetrie
 
 import java.security.MessageDigest
+import org.json.JSONArray
 import kotlin.math.abs
 
 /**
@@ -47,7 +48,34 @@ object PlanGeometryQuantitiesV2 {
     }
 
     private fun validatedOpenArea(wall: FloorPlanWall, height: Double): Double {
+        val metadataAt = wall.note.indexOf(FloorPlanWallOpenings.META_MARKER)
         val openings = FloorPlanWallOpenings.openings(wall.note)
+        if (metadataAt >= 0) {
+            val raw = wall.note.substring(
+                metadataAt + FloorPlanWallOpenings.META_MARKER.length
+            ).trim()
+            val parsed = runCatching { JSONArray(raw) }.getOrElse {
+                error("Metadati aperture danneggiati: verificare la parete")
+            }
+            require(parsed.length() == openings.size &&
+                openings.map { it.id }.distinct().size == openings.size) {
+                "Aperture duplicate o dati non validi"
+            }
+            for (i in 0 until parsed.length()) {
+                val original = parsed.getJSONObject(i)
+                val type = original.getString("type")
+                require(type in OpeningTypes.ALL) { "Tipo apertura non supportato" }
+                val width = original.getDouble("width")
+                val openingHeight = original.getDouble("height")
+                val offset = original.getDouble("offset")
+                val sill = original.optDouble("sillHeight", 0.0)
+                require(width.isFinite() && width > 0 && openingHeight.isFinite() &&
+                    openingHeight > 0 && offset.isFinite() && offset >= 0 &&
+                    sill.isFinite() && sill >= 0) {
+                    "Dimensioni di apertura non valide"
+                }
+            }
+        }
         var deduction = 0.0
         openings.forEach { opening ->
             require(opening.width.isFinite() && opening.height.isFinite() &&
@@ -87,7 +115,19 @@ object PlanGeometryQuantitiesV2 {
         require(!single || !wallGe360Id.isNullOrBlank()) { "Seleziona una parete precisa" }
         require(single || wallGe360Id.isNullOrBlank()) { "Parete non prevista per questo tipo di superficie" }
 
-        val needsWalls = single || net || (room.mode == FloorPlanRoomModes.WALLS)
+        require(listOf(room.length, room.width, room.height, room.cutWidth,
+            room.cutHeight, room.manualFloor, room.manualCeiling, room.manualWalls,
+            room.manualPerimeter).all { it.isFinite() && it >= 0.0 }) {
+            "Misure stanza non valide"
+        }
+        if (room.mode == FloorPlanRoomModes.L_SHAPE) {
+            require(room.length > 0 && room.width > 0 &&
+                room.cutWidth <= room.length && room.cutHeight <= room.width) {
+                "Dimensioni della stanza a L non coerenti"
+            }
+        }
+        val needsWalls = single || net || room.mode == FloorPlanRoomModes.WALLS ||
+            (surface == PlanWorkBindingV1.WALLS && walls.isNotEmpty())
         if (needsWalls) {
             require(walls.isNotEmpty() && FloorPlanWallGeometry.isValidClosedProfile(walls)) {
                 "Profilo muri non chiuso o irregolare: correggere il rilievo"
@@ -97,9 +137,14 @@ object PlanGeometryQuantitiesV2 {
             ?: error("Parete selezionata non trovata") else null
         val gross: Double = when (surface) {
             PlanWorkBindingV1.FLOOR -> {
-                if (room.mode == FloorPlanRoomModes.WALLS)
-                    FloorPlanWallGeometry.area(walls)
-                else room.floorArea()
+                if (room.mode == FloorPlanRoomModes.WALLS) {
+                    val geometricArea = FloorPlanWallGeometry.area(walls)
+                    require(room.manualFloor <= 0.0 ||
+                        abs(room.manualFloor - geometricArea) <= 0.01) {
+                        "Area manuale diversa dalla pianta quotata: riconciliare il rilievo"
+                    }
+                    geometricArea
+                } else room.floorArea()
             }
             PlanWorkBindingV1.CEILING -> {
                 if (room.mode == FloorPlanRoomModes.WALLS && room.manualCeiling <= 0.0)
@@ -125,7 +170,7 @@ object PlanGeometryQuantitiesV2 {
         val relevantWalls = if (single) listOf(selectedWall!!) else walls
         val deduction = if (net) relevantWalls.sumOf { validatedOpenArea(it, room.height) } else 0.0
         val netArea = gross - deduction
-        require(netArea.isFinite() && netArea > 0.0 && deduction <= gross + 0.001) {
+        require(netArea.isFinite() && netArea > 0.005 && deduction <= gross + 0.001) {
             "Le aperture superano la superficie del muro"
         }
         fun round2(x: Double): Double = kotlin.math.round(x * 100.0) / 100.0
