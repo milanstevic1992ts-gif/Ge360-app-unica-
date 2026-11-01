@@ -489,3 +489,41 @@ La shell Android aveva già `app/.../DiagnosticsActivity.kt` accessibile da `Alt
 - Il recupero da vecchi backup privi di inventario/piani/V13 non reinventa attribuzioni. Per merge con moduli legacy va verificata la compatibilità prima del collaudo.
 - **Gates obbligatori per futuro QA autorizzato:** compilazione Android e test Kotlin/Android su API 26–35, documento PDF mancante, tipo Scanner modificato dopo attribuzione, unità cambiate, stesso documento/riga duplicata, annullamento, cantiere libero e attribuito, piano senza documento, storico incompleto, backup cifrato, restore legacy e rollback in caso di errore durante import.
 - Nessun build, gradle test, emulatori, Actions, APK, merge, deploy, main o Debian modificato. Marketing resta in pausa.
+
+
+## V14 — Riconciliazione manuale FATTURA–DDT senza doppio conteggio (1 novembre 2026)
+
+**Stato: CODICE SALVATO SU BRANCH, NON COMPILATO / NON TESTATO / NON COLLAUDATO / NON DISTRIBUITO.**
+**Branch Android:** `feature/ge360-integrated-v3-20261101`; base V13 `0f5d4a718b174578658ca30f3491f3309001dab8`. Nessuna modifica a `main`, Debian, marketing, backend Glass o business ledgers Spese/Compensi.
+
+### Semantica: sovrapposizione documentale, NON nuova merce
+- `MaterialInvoiceDdtMatchV14` lega **due righe V13 attive**, obbligatoriamente una `FATTURA` e una `DDT`, con **stesso UUID materiale, UUID cantiere e unità** e PDF/Scanner ancora reperibili. Il collegamento è una quantità **comune tra le fonti**, non una terza quantità acquistata, consegnata o in stock. Fatturato, consegnato, riconciliato e ancora non abbinato sono voci distinte; non si sommano le prime due.
+- Sono possibili **abbinamenti parziali**: un documento fattura a più DDT e un DDT a più fatture, purché le quantità abbinate in totale non superino il valore di nessuna riga sorgente. Una singola coppia di righe può avere **un solo abbinamento attivo**; per correggere occorre annullare prima quello registrato.
+- Nessun riconoscimento automatico OCR/supplier/numero, nessuna decisione di pagamento, acquisto, carico magazzino, consumo, costo imputato o margine. Differenze di fornitore mostrate all'operatore come avvertenza in conferma, non riconciliate per deduzione.
+- `MaterialReconciliationRulesV14.validate` è puro e adatto a contratti regressione su unità/cantiere/materiale, capacità residua, errori e annullamenti. `matchedQuantity` restituisce soltanto l'overlap documentato; non crea nuova misura economica.
+
+### Modifiche reali
+1. `feature/attrezzi/.../MaterialReconciliationV14.kt` — record immutabile con UUID, quantità/unità, riferimenti alle righe V13, conferma e annullamento, regole di capacità e somma per scope.
+2. `MaterialDocumentEvidenceStoreV13` **DB VERSION 1→2 con migrazione additiva**, tabella `invoice_ddt_matches`, indice coppia unico sulle righe attive, conferma manuale in transazione SQLite e verifica della persistenza di entrambe le sorgenti in Scanner, materiale e cantiere; annullamento storico V14. Annullare una riga V13 ora richiede prima l'annullamento degli abbinamenti V14 attivi: controllo e update nella medesima transazione.
+3. Backup: la V14 è serializzata come array **opzionale** `reconciliations` nel già versionato `modules/material-evidence-v13.json` (stessa path per retrocompatibilità). `importJson` gestisce pacchetti V13 senza array, collisioni UUID, riconciliazioni già presenti in merge, abbinamenti attivi incompatibili, doppie coppie e sovra-attribuzioni, nella transazione locale. Non cancella gli storici annullati.
+4. `BackupCoordinator.preflightMaterialEvidenceV13` ha il gate V14 **prima di qualsiasi mutazione** e prima di pubblicare un nuovo backup: tutte le quantità attive abbinate devono essere consistenti con le righe V13 e con i documenti/piani/stock già inclusi. Se il modulo V13 è dichiarato in manifest ma il file è illeggibile, non viene trattato come legacy. Il rollback di emergenza continua tramite safety backup, senza gate strict duplicato.
+5. `MaterialEvidenceActivityV13` ora offre `RICONCILIA FATTURA ↔ DDT · V14`, selezione manuale delle due righe sorgenti e della quantità, anteprima disponibilità su entrambi i lati, avviso supplier discordante, conferma doppia, annullamento storico. Il riepilogo per materiale/cantiere mostra quantità riconciliata e quantità fatturata e DDT non ancora abbinate separatamente. Righe con fonte non più verificabile restano visibili come anomalie e non entrano nelle somme affidabili.
+6. `JobsiteControlV12`: la scheda `Fatture/DDT materiali` riporta anche conteggio dei match V14 e righe FATTURA/DDT non abbinate nel cantiere selezionato, con link alla schermata V13/V14, senza calcolare quantità aggregate fra materiali o unità diverse.
+7. `feature/attrezzi/src/test/.../MaterialReconciliationV14Test.kt`: contratti sintetici per quantità comune non doppia, più documenti per lato, over-allocation, coppia duplicata, annullamento, unità diverse, cantiere diverso, sorgenti non mutanti. **TEST SCRITTI, MA NON ESEGUITI.**
+
+### Commit Android
+- `e0fae3a9c9baaa2b06d97414313d9431510f47fb` — regole di dominio V14
+- `92d57c06bae39c30cc65c25c07bca1728a4b1ca8` — DB additivo, storico, serializzazione, UI domain access
+- `7bf2c0067e19de6369ea353ad73a6d530eb2ced0` — preflight V14 backup/restore
+- `30c810ecbc16178d4c2938a8b1a54fdf1cf8afec` — UI confronto e conferma manuale
+- `1a287f0fe4180be3228e81263de82e48166f6edd` — centro cantiere V14
+- `9634ee8770eea58fd969b33fc175302ebe1436a1` — revisione null-safe fornitori
+- `69e435632cdd9b1a779618a73313505935876cea` — test sintetici scritti
+- `8d487b9914d0d14399e9030787a12f2bccea155e` — controlli su annullamento riga V13 e moduli backup dichiarati illeggibili
+
+### Limiti e QA necessari
+- V14 ricostruisce una sovrapposizione **confermata dall'operatore**, non prova l'autenticità fiscale dei documenti, non esegue OCR validato riga per riga, non certifica quantità reali del fornitore. Fatture acconto e note credito non vengono riconciliate automaticamente.
+- Il valore complessivo della fattura Scanner non è attribuibile a una singola riga materiale senza prezzi/unità e identificazione di sconti/trasporto/IVA: **non si produce alcun costo unitario dedotto né margine fittizio**. Per una futura V15 serve un modello esplicito di importi riga, allocazioni costi e approvazione.
+- Source PDF richiesti per nuove conferme; il PDF è verificato come file leggibile locale, non tramite firma digitale o check di contenuto fiscale. Persistono limiti di consistenza fra database e allegati; il sistema non è una transazione globale.
+- V14 usa la stessa path ZIP V13 con campo JSON opzionale, compatibile con pacchetti che lo omettono. Gli storici annullati restano visibili; il restore strict verifica soprattutto le riconciliazioni attive. Necessario verificare in QA autorizzato export, cifratura, `Unisci`, `Sostituisci` e rollback di errori in qualsiasi passaggio.
+- **Nessuna compilazione Gradle, test, GitHub Actions, emulatori, APK, deploy, PR o merge.** I commit non equivalgono a funzionalità collaudate.
