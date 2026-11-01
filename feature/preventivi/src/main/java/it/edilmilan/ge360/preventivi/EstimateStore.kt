@@ -526,10 +526,76 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         })
     }.toString(2)
 
+    /**
+     * Single database transaction for records + authoritative metric lineage.
+     * Old backups with no sidecar metadata are accepted but note-only lineage is
+     * rebuilt as LEGACY_NOTE_ONLY, never silently promoted to verified.
+     */
     fun importJson(json: String, replaceAll: Boolean): Int {
         val root = JSONObject(json)
-        if (replaceAll) { writableDatabase.delete("estimate_items", null, null); writableDatabase.delete("estimates", null, null) }
-        return if (root.optString("schema") == "ge360.preventivi.v1") importNative(root) else importLegacy(root)
+        val native = root.optString("schema") == "ge360.preventivi.v1"
+        val provenanceRows = if (!native) emptyList() else root.optJSONArray("metricProvenance")
+            ?.let { a -> (0 until a.length()).map { MetricProvenanceV2.fromJson(a.getJSONObject(it)) } }
+            ?: emptyList()
+        val eventRows = if (!native) emptyList() else root.optJSONArray("metricReviewEvents")
+            ?.let { a -> (0 until a.length()).map { MetricReviewEventV2.fromJson(a.getJSONObject(it)) } }
+            ?: emptyList()
+        require(provenanceRows.all { it.valid() } &&
+            provenanceRows.distinctBy { it.itemGe360Id }.size == provenanceRows.size &&
+            provenanceRows.distinctBy {
+                it.estimateGe360Id to it.sourceBindingGe360Id
+            }.size == provenanceRows.size) { "Duplicazione o origine metrica non valida nel backup" }
+        require(eventRows.all { it.valid() } &&
+            eventRows.distinctBy { it.ge360Id }.size == eventRows.size) {
+            "Storico metrico non valido nel backup"
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            if (replaceAll) {
+                db.delete("estimate_items", null, null)
+                db.delete("estimates", null, null)
+            }
+            val imported = if (native) importNative(root) else importLegacy(root)
+            provenanceRows.forEach { origin ->
+                val est = getByGe360Id(origin.estimateGe360Id)
+                    ?: error("Origine riferita a preventivo inesistente")
+                val item = est.items.singleOrNull { it.ge360Id == origin.itemGe360Id }
+                    ?: error("Origine riferita a voce economica inesistente")
+                require(item.priceListCode == origin.workCode &&
+                    item.room == origin.roomSnapshot && item.unit == "m²" &&
+                    kotlin.math.abs(item.quantity - origin.reviewedQuantityM2) <= 0.001) {
+                    "La voce importata non coincide con lo snapshot metrico"
+                }
+                val old = metricProvenance(origin.itemGe360Id)
+                if (old == null) db.insertOrThrow("estimate_metric_sources", null,
+                    metricSourceValues(est.id, origin))
+                else require(old == origin) {
+                    "UUID origine metratura presente con contenuto divergente"
+                }
+            }
+            eventRows.forEach { event ->
+                val est = getByGe360Id(event.estimateGe360Id)
+                    ?: error("Evento di revisione con preventivo inesistente")
+                require(metricProvenance(event.itemGe360Id)?.estimateGe360Id == event.estimateGe360Id) {
+                    "Evento di revisione senza origine metrica"
+                }
+                val existing = db.query("estimate_metric_events", arrayOf("event_json"),
+                    "ge360_id=?", arrayOf(event.ge360Id), null, null, null, "1").use {
+                    c -> if (c.moveToFirst()) MetricReviewEventV2.fromJson(
+                        JSONObject(c.getString(0))) else null
+                }
+                if (existing == null) db.insertOrThrow("estimate_metric_events", null,
+                    metricEventValues(est.id, event))
+                else require(existing == event) {
+                    "UUID evento metrico presente con dati divergenti"
+                }
+            }
+            // Recreate missing historical note-only sources as *unverified*.
+            backfillLegacyMetricNotes(db)
+            db.setTransactionSuccessful()
+            return imported
+        } finally { db.endTransaction() }
     }
 
     private fun importNative(root: JSONObject): Int {
