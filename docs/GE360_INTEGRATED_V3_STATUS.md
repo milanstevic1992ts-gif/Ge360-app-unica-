@@ -527,3 +527,42 @@ La shell Android aveva già `app/.../DiagnosticsActivity.kt` accessibile da `Alt
 - Source PDF richiesti per nuove conferme; il PDF è verificato come file leggibile locale, non tramite firma digitale o check di contenuto fiscale. Persistono limiti di consistenza fra database e allegati; il sistema non è una transazione globale.
 - V14 usa la stessa path ZIP V13 con campo JSON opzionale, compatibile con pacchetti che lo omettono. Gli storici annullati restano visibili; il restore strict verifica soprattutto le riconciliazioni attive. Necessario verificare in QA autorizzato export, cifratura, `Unisci`, `Sostituisci` e rollback di errori in qualsiasi passaggio.
 - **Nessuna compilazione Gradle, test, GitHub Actions, emulatori, APK, deploy, PR o merge.** I commit non equivalgono a funzionalità collaudate.
+
+
+## V15 — Controllo economico documentato dei materiali (1 novembre 2026)
+
+**STATO: CODICE SU BRANCH, NON COMPILATO, NON TESTATO, NON COLLAUDATO, NON DISTRIBUITO.**
+Branch Android `feature/ge360-integrated-v3-20261101`; base V14 `20437ecb76fd8bd11a531fc3fe58290a57bd29c9`.
+**Vincoli:** nessun build, Gradle, test eseguito, Actions, APK, PR, merge, deploy, modifiche `main` o Debian; marketing in pausa.
+
+### Analisi del codice su HEAD
+- `MaterialPlanStore` offre quantità di materiale approvate, versionate per UUID piano, ma **nessuna previsione economica approvata**. Il prezzo medio stock `MaterialStockItem.avgUnitCost` è gestionale e NON equivale a un preventivo/budget né a un prezzo fatturato verificato.
+- `DocumentStore` contiene fatture/DDT con metadati e PDF, ma i totali OCR/Scanner possono includere IVA, trasporto, sconti, più materiali, costi di altri cantieri. Non attribuire l'intero totale a una riga: V15 richiede **inserimento manuale dell'imponibile della singola riga di fattura**.
+- `MaterialDocumentEvidenceStoreV13` contiene righe documento/materiale/cantiere (con storico V14 invoice↔DDT), ma nessun valore monetario attendibile. V15 aggiunge un ledger autonomo per i valori economici documentati senza mutare le tabelle V13/V14.
+
+### Implementazione reale V15
+1. `feature/attrezzi/.../MaterialCostV15.kt`: nuove data class `MaterialInvoiceCostV15` (riga UUID FATTURA V13, importo imponibile EUR in centesimi `Long`, conferma/annullamento non distruttivo) e `MaterialBudgetRevisionV15` (UUID revisione del piano quantità, materiale, cantiere facoltativo, unità, prezzo unitario netto in centesimi, istante conferma).
+2. `MaterialCostStoreV15` usa database indipendente `ge360_material_cost_v15.db` con tabella `invoice_cost_v15` (indice una sola riga prezzo **attiva** per riga FATTURA) e `budget_revision_v15` (revisioni immutabili). Il confermatore rileggere Scanner e V13, richiede FATTURA, PDF presente, materiale/unità compatibili e cantiere coerente. Annullamento V15 è uno storico; per correggere bisogna annullare prima il prezzo attivo. Budget approvato legato alla versione **corrente** di un piano, non riproposto automaticamente dopo cambi di quantità.
+3. `MaterialCostRulesV15`: parsing dei prezzi in EUR con massimo due decimali tramite `BigDecimal`, importi persistiti in centesimi interi; budget `quantità × prezzo unitario` in `BigDecimal` e arrotondamento finale **HALF_UP** ai centesimi. Convalida di overflow; `Coverage` distingue righe FATTURA attive valorizzate/non valorizzate o fonte non più verificabile. Se dati necessari assenti, lo scostamento non è calcolabile.
+4. `MaterialEvidenceActivityV13` potenziata, nessuna nuova activity: tasti `IMPORTO RIGA FATTURA · V15` e `BUDGET MATERIALI · V15`, con dialog e seconda conferma esplicita; allegato OCR/source non genera prezzi automatici. Il riepilogo per materiale/cantiere mostra imponibile documento verificabile, copertura `n/N`, budget relativo alla revisione quantità vigente e differenza tra costo documentato e budget **solo quando tutte le righe fattura censite dello scope sono valorizzate**. È sempre segnalato che tali cifre non attestano che tutte le fatture del cantiere siano state importate e non rappresentano margine o risultato economico.
+5. `JobsiteControlV12`: nuova scheda `Budget e costi materiali` per UUID cantiere con conteggi di copertura, imponibile documentato, budget approvato sui piani correnti e limiti. **Nessuna somma tra Spese, costo ore, compensi e fatture**; nessun profitto o costo totale dedotto; assenze espresse `non registrato`.
+6. `MaterialDocumentEvidenceStoreV13.void`: ulteriore guard non permette di annullare una riga V13 FATTURA con importo V15 attivo. Prima annullare importo V15 (e eventuali riconciliazioni V14): preservazione referenziale prima di perdere la fonte di costo.
+7. `BackupCoordinator`: nuovo `modules/material-cost-v15.json` esportato con i dati V13/V14, inventario V2 e piani V1; import dopo scanner e V13. `preflightMaterialCostsV15` eseguito prima di modifiche e prima di pubblicazione del nuovo backup: controlla formato, UUID, una sola attribuzione costo attiva per fattura, riferimenti a righe V13 FATTURA attive, budget riferiti alla revisione piano esatta, compatibilità unità/cantiere e coerenza numerica; merge con record locali a UUID identico solo se contenuti invariati. **Se modulo V15 dichiarato nel manifest è illeggibile, errore anziché legacy.** Per restore `Sostituisci` da backup che non ha V15, se esiste archivio prezzi/budget locale, abort prima delle mutazioni per non perdere lo storico.
+8. `feature/attrezzi/src/test/.../MaterialCostV15Test.kt`: test sintetici scritti su centesimi, arrotondamento/versione piano, ricostruzione JSON, costo parziale, fonti da ricontrollare, storni e scope cantiere. **NON ESEGUITI.**
+
+### Commit V15 sul branch Android
+- `5a757f75e4bc9a6e8e6cc109256ebdffe88a128b` — dominio V15 + ledger autonomo
+- `81af3ee58b81439bab52fe8749d3780d67dfc30b` — UI valori imponibili e budget confermati
+- `5b40b494a53567f522c49300507c221dfb6acf0c` — integrazione backup/restore e preflight
+- `f97d9b59eb49f2bee2453506a6e1a9e4a43cef61` — guard su annullamenti V13 e controlli canonicità
+- `a7b1336d517cb4885bec8ac2660a68c2e550cc33` — KPI copertura per singolo cantiere
+- `dc3c6776ab606570527f47ac665bea68bc5901ca` — JUnit sintetici scritti, non eseguiti
+- `4f6c539c58c8a5fa659948f7add517fce617f7be` — formattazione esatta in centesimi, overflow e assenze
+
+### Limiti/prossimi QA autorizzati
+- `MaterialInvoiceCostV15.netCents` è una quota imponibile **manualmente dichiarata** per una riga FATTURA, non verifica fiscale o pagamento bancario. I documenti Scanner potrebbero non contenere tutte le righe, i costi trasporto/sconti/IVA potrebbero non essere allocati, una fattura può coprire più materiali. Non ripartire automaticamente `ScannerDocument.totalAmount`, non eseguire riconciliazione contabilità bancaria.
+- I prezzi di budget si riferiscono **solo** alla specifica revisione del piano materiali confermata; una revisione successiva rende il budget precedente storico e richiede nuova conferma. Budget vs costi censiti non è margine o costo consuntivo completo; anche 100% di righe valorizzate indica solo copertura dell'archivio censito.
+- Una quantità di magazzino utilizzata non dimostra acquisto né costo fatturato; la sovrapposizione V14 FATTURA↔DDT non crea un secondo costo. Nessun conteggio doppio con Spese/Finance o Compensi.
+- I controlli dei DB diversi non sono transazionali globali. La safety snapshot V9 e i gate V10/V13/V14/V15 limitano il rischio dei restore, ma **non** certificano l'integrità senza QA.
+- QA futuro: compilazione Android API target, test eseguibili sui modelli dei centesimi, prezzi 0 e grandi importi, importo negativo o tre decimali, revisione piano cambiata, cantiere/stock/PDF mancanti, V13 annullato con costo attivo, più fatture sullo stesso DDT, V8 cifratura, restore legacy, merge, replace, rollback, UI smartphone. Non eseguiti in questa fase.
+- **STATO: GITHUB_FEATURE_CODE ≠ BUILD ≠ TEST ≠ APK ≠ PRODUZIONE.**
