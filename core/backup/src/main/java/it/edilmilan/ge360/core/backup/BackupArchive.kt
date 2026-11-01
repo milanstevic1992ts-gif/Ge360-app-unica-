@@ -78,7 +78,11 @@ class BackupArchive(private val context: Context) {
         val name = prefix + "_" + stamp + "_" + UUID.randomUUID().toString().take(8)
         val target = File(backupDir(), name + if (secured) ".ge360.enc" else ".ge360.zip")
         val stage = if (secured) File(context.cacheDir,
-            "ge360-v8-build-" + UUID.randomUUID().toString() + ".zip") else target
+            "ge360-v8-build-" + UUID.randomUUID().toString() + ".zip")
+            else File(backupDir(), target.name + ".partial")
+        // Only published, complete archives have the .zip/.enc final suffix.
+        // Crash remnants with .partial are ignored by latestLocal/rotation.
+        val encryptedStage = if (secured) File(backupDir(), target.name + ".partial") else null
         try {
             check(stage.createNewFile()) { "Impossibile preparare il file di backup" }
             val hashes = JSONObject()
@@ -112,10 +116,17 @@ class BackupArchive(private val context: Context) {
             val zipInfo = inspect(stage, verifyHashes = true)
             validateBeforePublish?.invoke(stage)
             val info = if (secured) {
-                EncryptedBackupV8.encrypt(stage, target, requireNotNull(secret))
-                check(EncryptedBackupV8.isEncrypted(target)) { "Archivio cifrato non valido" }
+                val encrypted = requireNotNull(encryptedStage)
+                EncryptedBackupV8.encrypt(stage, encrypted, requireNotNull(secret))
+                check(EncryptedBackupV8.isEncrypted(encrypted)) { "Archivio cifrato non valido" }
+                check(encrypted.renameTo(target)) {
+                    "Impossibile pubblicare il backup cifrato completo"
+                }
                 BackupFileInfo(target, sha256(FileInputStream(target)), target.length(), zipInfo.entries)
-            } else zipInfo
+            } else {
+                check(stage.renameTo(target)) { "Impossibile pubblicare il backup ZIP completo" }
+                BackupFileInfo(target, zipInfo.sha256, zipInfo.sizeBytes, zipInfo.entries)
+            }
             rotate(10)
             prefs.edit()
                 .putLong("last_backup_at", System.currentTimeMillis())
@@ -127,7 +138,10 @@ class BackupArchive(private val context: Context) {
             target.delete()
             throw error
         } finally {
-            if (secured) stage.delete()
+            // Cleanup is best-effort; cold-start V9 also removes recognized
+            // abandoned scratch from process death/power loss.
+            stage.delete()
+            encryptedStage?.delete()
             secret?.fill('\u0000')
         }
     }
