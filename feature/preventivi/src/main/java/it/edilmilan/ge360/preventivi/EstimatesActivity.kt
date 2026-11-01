@@ -194,8 +194,24 @@ class EstimatesActivity : AppCompatActivity() {
                 "Dal Rilievo seleziona una nuova revisione della stessa superficie.")
             return
         }
-        val economics = store.metricVariantEconomics(estimateGe360Id)
-            .associateBy { it.variantGe360Id }
+        val economicsRows = store.metricVariantEconomics(estimateGe360Id)
+        val economics = economicsRows.associateBy { it.variantGe360Id }
+        val recorded = economicsRows.filter {
+            it.status == MetricVariantEconomicsV4.STATUS_EVIDENCE_RECORDED
+        }
+        val proposed = economicsRows.filter {
+            it.status == MetricVariantEconomicsV4.STATUS_PROPOSED
+        }
+        fun euro(value: Double) = String.format(Locale.ITALY, "%+.2f €", value)
+        val overview = "ACCORDI ESTERNI ANNOTATI (NON CONTABILIZZATI)\n" +
+            "Extra: " + euro(recorded.filter { it.proposedSignedAmountEuro > 0 }
+                .sumOf { it.proposedSignedAmountEuro }) + " · riduzioni: " +
+            euro(recorded.filter { it.proposedSignedAmountEuro < 0 }
+                .sumOf { it.proposedSignedAmountEuro }) + "\n" +
+            "Saldo indicativo accordi annotati: " +
+            euro(recorded.sumOf { it.proposedSignedAmountEuro }) + "\n" +
+            "Proposte in attesa di accordo: ${proposed.size}" +
+            "\nQuesti importi NON sono inclusi nel preventivo, SAL o fatturazione."
         val labels = variants.map { v ->
             val linked = economics[v.ge360Id]
             v.workCode + " · " + v.status + " · " +
@@ -206,6 +222,7 @@ class EstimatesActivity : AppCompatActivity() {
                 } ?: " · senza proposta economica")
         }
         AlertDialog.Builder(this).setTitle("Varianti · preventivo invariato")
+            .setMessage(overview)
             .setItems(labels.toTypedArray()) { _, position ->
                 reviewMetricVariant(estimateGe360Id, variants[position])
             }
