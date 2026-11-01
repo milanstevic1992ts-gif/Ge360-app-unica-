@@ -178,6 +178,9 @@ class JobsiteTaskPlanActivity : AppCompatActivity() {
                         12f, "#626A71"
                     ))
                 }
+                if (item.task.status == WorkflowStatuses.IN_PROGRESS && item.start != null) {
+                    addView(label("In corso: giorni indicati come residui.", 11f, "#626A71"))
+                }
                 if (item.start != null && item.finish != null) {
                     addView(label(
                         "Dal " + item.start + " al " + item.finish + " · ipotesi",
@@ -248,7 +251,9 @@ class JobsiteTaskPlanActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(6), dp(18), dp(4))
             addView(label(
-                "Durata ipotizzata per questa singola lavorazione, non ore di squadra.",
+                if (task.status == WorkflowStatuses.IN_PROGRESS)
+                    "Attività in corso: inserisci i GIORNI ANCORA NECESSARI, non quelli già lavorati."
+                else "Durata da prevedere per la lavorazione, non ore assegnate alla squadra.",
                 12f, "#626A71"
             ))
             addView(days)

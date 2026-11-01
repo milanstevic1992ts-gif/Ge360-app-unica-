@@ -135,6 +135,11 @@ object TaskScheduleEngine {
                             when {
                                 dependencies.any { it.state == TaskScheduleLine.State.BLOCKED } ->
                                     make(TaskScheduleLine.State.BLOCKED, "Una lavorazione precedente è bloccata")
+                                task.status == WorkflowStatuses.IN_PROGRESS && dependencies.any {
+                                    it.state != TaskScheduleLine.State.DONE &&
+                                        it.state != TaskScheduleLine.State.NOT_NEEDED
+                                } -> make(TaskScheduleLine.State.WAITING_DEPENDENCY,
+                                    "Attività già in corso ma predecessori non conclusi: correggi o conferma la checklist")
                                 dependencies.any {
                                     it.state != TaskScheduleLine.State.DONE &&
                                         it.state != TaskScheduleLine.State.NOT_NEEDED &&
@@ -146,7 +151,11 @@ object TaskScheduleEngine {
                                     val start = if (dependencyEnd == null) anchor else
                                         maxOf(anchor, nextWorkday(dependencyEnd.plusDays(1)))
                                     val end = addWorkdays(start, plan.plannedWorkdays - 1)
-                                    make(TaskScheduleLine.State.SCHEDULED, "In parallelo alle altre attività indipendenti; squadra non allocata", start, end)
+                                    make(TaskScheduleLine.State.SCHEDULED,
+                                        if (task.status == WorkflowStatuses.IN_PROGRESS)
+                                            "Durata inserita interpretata come giorni ancora necessari; squadra non allocata"
+                                        else "In parallelo alle attività indipendenti; squadra non allocata",
+                                        start, end)
                                 }
                             }
                         }
