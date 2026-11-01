@@ -70,7 +70,9 @@ internal object RestoreLinksV10 {
             uniqueIds(plans, "Planimetrie")
             each(plans) { plan ->
                 val planId = plan.getString("ge360Id")
-                val rooms = plan.getJSONArray("rooms")
+                // Match FloorPlanStore.importJson legacy behavior: earlier plans
+                // may omit the optional rooms array.
+                val rooms = plan.optJSONArray("rooms") ?: JSONArray()
                 importedRoomIds[planId] = uniqueIds(rooms, "Stanze del rilievo")
             }
         }
