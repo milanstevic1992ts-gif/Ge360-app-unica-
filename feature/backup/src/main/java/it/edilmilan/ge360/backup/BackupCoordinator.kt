@@ -255,6 +255,7 @@ class BackupCoordinator(private val context: Context) {
         // Fail before ANY database or file mutation if the agreement evidence
         // advertised by this archive disagrees with its V5/V6 metadata.
         preflightAgreementEvidence(file, manifest)
+        preflightDocumentArchiveLinks(file, manifest)
         // V10: check the UUID graph BEFORE saving clients, jobs, estimates,
         // documents or taking a destructive path through the module importers.
         // During emergency rollback, restore the PREVIOUS state even if it
@@ -416,6 +417,53 @@ class BackupCoordinator(private val context: Context) {
      * writes. In merge mode, existing UUIDs are allowed as link targets;
      * replace-all mode relies only on records arriving in this backup.
      */
+    /**
+     * The ZIP's own hash manifest is not sufficient: the scanner/archive
+     * index must point to the document row that really owns the bytes.
+     * This check runs before ANY module import, including replacement.
+     *
+     * Legacy packages without optional files keep their existing metadata-
+     * only restore behavior; declared files may never be orphaned or aliased.
+     */
+    private fun preflightDocumentArchiveLinks(file: File, manifest: JSONObject) {
+        fun verify(
+            indexKey: String, modulePath: String, arrayKey: String,
+            idKey: String, expectedPath: (String) -> String
+        ) {
+            val map = manifest.optJSONObject(indexKey) ?: return
+            val module = runCatching { JSONObject(archive.readText(file, modulePath)) }.getOrNull()
+                ?: error("Manifest $indexKey senza modulo documentale $modulePath")
+            val rows = module.getJSONArray(arrayKey)
+            val identities = mutableSetOf<String>()
+            for (i in 0 until rows.length()) {
+                val id = rows.getJSONObject(i).optString(idKey)
+                if (id.isNotBlank()) identities += id
+            }
+            val keys = map.keys()
+            while (keys.hasNext()) {
+                val id = keys.next()
+                require(id in identities) {
+                    "Backup incoerente: indice $indexKey con documento senza record ($id)"
+                }
+                val zipPath = map.getString(id)
+                require(zipPath == expectedPath(id)) {
+                    "Backup incoerente: documento $indexKey collegato a percorso inatteso ($id)"
+                }
+                archive.openEntry(file, zipPath).use { input ->
+                    require(input.read() != -1) {
+                        "Backup incoerente: documento $indexKey vuoto ($id)"
+                    }
+                }
+            }
+        }
+        verify(
+            "scannerFiles", "modules/scanner.json", "documents", "ge360_id"
+        ) { id -> "files/scanner/${safe(id)}.pdf" }
+        verify(
+            "jobsiteArchiveFiles", "modules/jobsite-archive.json", "files", "ge360Id"
+        ) { id -> "files/jobsite-archive/${safe(id)}.pdf" }
+    }
+
     private fun preflightCrossModuleLinks(
         file: File, replaceAll: Boolean
     ): RestoreLinksV10.Report {
