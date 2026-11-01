@@ -136,3 +136,29 @@ Codice su `feature/ge360-integrated-v3-20261101` soltanto. **NESSUNA BUILD, TEST
 ### Attenzione QA
 - Il riconoscimento di voci manuali non correlate resta conservativo ma non può dimostrare automaticamente che due lavori siano o meno duplicati: serve valutazione esplicita dell'operatore.
 - I nuovi controlli interattivi non sostituiscono un workflow di approvazione economica centralizzato. La provenienza nelle note non è crittograficamente vincolante.
+
+
+## 1 novembre 2026 — Preventivi: registro autorevole origine metrica V2
+
+**Stato: implementato solo su `feature/ge360-integrated-v3-20261101`. NON compilato, testato né distribuito.** Nessuna modifica a `main`, Debian, GitHub Actions, APK o marketing.
+
+### Motivazione
+`GE360_METRICO_V1:` nella nota interna non garantiva l'integrità della provenienza durante operazioni di editor, copia, importazione o variazione del prezzo. `EstimateStore.save()` riscrive inoltre le righe del preventivo: la nuova fonte deve essere indipendente dall'ID SQLite delle righe, mantenendo UUID stabili.
+
+### Implementazione
+- **DB Preventivi v1→v2**: tabelle `estimate_metric_sources` (snapshot originale indipendente da `internalNote`, legato a UUID voce, FK id preventivo, UUID binding unico per preventivo) e `estimate_metric_events` (storico conferme `IMPORT` e `PRICE_REVIEW`). Le origini non sono aggiornate dai normali editor, anche quando `estimate_items` viene ricreata; eventi economici inseriti solo in append dal codice applicativo.
+- `MetricProvenanceV2.kt`: fotografia delle quantità lorde, aperture sottratte, detrazioni aggiuntive, quantità finale, UUID rilievo/stanza/muro/binding, codice catalogo, impronta SHA-256 e fiducia `REVIEWED_FROM_GEOMETRY` / `LEGACY_NOTE_ONLY`.
+- **Migrazione conservativa**: riferimenti nelle note esistenti vengono importati nel registro con fiducia `LEGACY_NOTE_ONLY` solo se analizzabili e coerenti. Le altre note non vengono promosse; l'editor blocca modifiche sospette di contenuti metrici senza provenienza valida. Il dato `LEGACY_NOTE_ONLY` non può essere autorizzato economicamente senza nuova revisione.
+- `EstimateStore.insertMeasuredReviewLine()` scrive, in una transazione, la voce esclusa da totale, la fonte V2 e l'evento `IMPORT`. Confronta duplicati e sovrapposizioni su tabella metrica, **non** su testo delle note.
+- `EstimateStore.save(record, metricConfirmations)`: impedisce perdita/rimozione di righe metriche senza procedura dedicata; preserva quantità, codice lavorazione, unità e stanza riferiti alla fonte; rifiuta editor stantii; eventuale variazione di prezzo o inclusione richiede origine verificata, stato `Bozza/Da controllare` e motivo di almeno 8 caratteri. L'evento `PRICE_REVIEW` registra prezzo/inclusione prima e dopo. Ogni salvato è transazionale nel medesimo DB Preventivi.
+- `EstimatesActivity`: nota interna non più autorevole; la schermata consulta il registro V2 per bloccare quantità e riferimenti, chiede spunta e motivazione alla variazione economica, mostra lo storico delle verifiche. La rimozione rapida di voce con origine è bloccata.
+- `EstimateStore.duplicate()`: una metratura presente in copia di un preventivo diventa **informativa, fuori totale e a prezzo 0**, senza ereditare falsa provenienza; occorre rieseguire il collegamento al rilievo.
+- `EstimateStore.exportJson()/importJson()`: nuovi array `metricProvenance[]` e `metricReviewEvents[]` nello schema JSON compatibile `ge360.preventivi.v1`. Restore transazionale sull'intero DB Preventivi con validazione UUID, corrispondenza item/fonte e conflitti; backup precedenti privi di array accettati, con origine note-only non verificata.
+- `MetricProvenanceV2Test.kt`: test di contratto scritti ma **non eseguiti**.
+
+### Gate di sviluppo aperti
+- Validazione compilazione/strumentazione/migrazione v1→v2, import vecchi backup, restore con eventi/duplicati, editor con concorrenza, roundtrip ZIP GE360.
+- **Varianti**: ancora da progettare come sostituzione/supersessione controllata con nuova revisione di metratura e preservazione delle scelte economiche precedenti; per ora le fonti correnti non si eliminano/modificano tramite editor standard.
+- Gestione multi-database Rilievi/Preventivi: controllo revisione geometria prima del trasferimento, ma nessuna transazione distribuita; richiede collaudo.
+- Il registro riduce le modifiche accidentali ma NON è una firma digitale crittografica, un ledger antifrode o un computo metrico ufficiale. I backup JSON non sono autenticati con firma.
+- La logica generale degli editor legacy resta preesistente fuori dai percorsi metrici: ulteriori gate di optimistic locking/immutabilità sono previsti.
