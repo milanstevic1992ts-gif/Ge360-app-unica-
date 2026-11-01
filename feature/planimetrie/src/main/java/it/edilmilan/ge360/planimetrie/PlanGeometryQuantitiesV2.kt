@@ -63,6 +63,9 @@ object PlanGeometryQuantitiesV2 {
             }
             for (i in 0 until parsed.length()) {
                 val original = parsed.getJSONObject(i)
+                require(original.getString("id").isNotBlank()) {
+                    "Ogni apertura deve avere un UUID stabile"
+                }
                 val type = original.getString("type")
                 require(type in OpeningTypes.ALL) { "Tipo apertura non supportato" }
                 val width = original.getDouble("width")
@@ -129,7 +132,9 @@ object PlanGeometryQuantitiesV2 {
         val needsWalls = single || net || room.mode == FloorPlanRoomModes.WALLS ||
             (surface == PlanWorkBindingV1.WALLS && walls.isNotEmpty())
         if (needsWalls) {
-            require(walls.isNotEmpty() && FloorPlanWallGeometry.isValidClosedProfile(walls)) {
+            require(walls.isNotEmpty() &&
+                walls.all { it.length.isFinite() && it.length > 0.001 } &&
+                FloorPlanWallGeometry.isValidClosedProfile(walls)) {
                 "Profilo muri non chiuso o irregolare: correggere il rilievo"
             }
         }
@@ -192,6 +197,8 @@ object PlanGeometryQuantitiesV2 {
             val current = measure(room, walls, binding.surface, binding.wallGe360Id)
             binding.geometryFingerprint == current.fingerprint &&
                 abs(binding.quantityM2 - current.quantityM2) <= 0.001 &&
+                abs(binding.grossM2 - current.grossM2) <= 0.001 &&
+                abs(binding.openingDeductionsM2 - current.openingDeductionsM2) <= 0.001 &&
                 binding.roomGe360Id == room.ge360Id &&
                 binding.planGe360Id == room.floorPlanId
         }.getOrDefault(false)
