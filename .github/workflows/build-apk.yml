@@ -46,6 +46,8 @@ jobs:
             :feature:attrezzi:testDebugUnitTest \
             :feature:planimetrie:testDebugUnitTest \
             :feature:preventivi:testDebugUnitTest \
+            :feature:fisco:testDebugUnitTest \
+            :feature:spese:testDebugUnitTest \
             --stacktrace
 
 

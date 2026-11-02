@@ -12,7 +12,16 @@ import java.util.UUID
 
 enum class FinanceType { INCOME, EXPENSE }
 enum class FinanceScope { PRIVATE, BUSINESS }
-enum class FireflySyncStatus { PENDING, SYNCED, ERROR }
+/**
+ * Stato della sincronizzazione di un movimento verso Firefly.
+ *
+ * [UNCERTAIN] esiste perche' "non ho ricevuto risposta" non e' la stessa cosa
+ * di "e' andata male": se la richiesta di creazione e' partita e la risposta si
+ * e' persa, la transazione su Firefly puo' esistere comunque. Trattare quel
+ * caso come [ERROR] e ritentarlo in automatico e' esattamente come nascevano i
+ * movimenti doppi.
+ */
+enum class FireflySyncStatus { PENDING, SYNCED, ERROR, UNCERTAIN }
 
 data class FinanceRecord(
     var id: Long = 0,
@@ -194,6 +203,22 @@ class FinanceStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         if (ge360Id.isBlank()) return
         val values = ContentValues().apply {
             put("firefly_status", FireflySyncStatus.ERROR.name)
+            put("firefly_last_error", message.trim().take(500))
+        }
+        writableDatabase.update(TABLE, values, "ge360_id=?", arrayOf(ge360Id.trim()))
+    }
+
+    /**
+     * Esito ignoto: la richiesta puo' essere arrivata a Firefly oppure no.
+     *
+     * Il movimento NON viene ritentato in automatico, perche' un secondo invio
+     * rischia di creare un doppione. Va verificato su Firefly e poi ripreso a
+     * mano dal menu Dati.
+     */
+    fun markFireflyUncertain(ge360Id: String, message: String) {
+        if (ge360Id.isBlank()) return
+        val values = ContentValues().apply {
+            put("firefly_status", FireflySyncStatus.UNCERTAIN.name)
             put("firefly_last_error", message.trim().take(500))
         }
         writableDatabase.update(TABLE, values, "ge360_id=?", arrayOf(ge360Id.trim()))

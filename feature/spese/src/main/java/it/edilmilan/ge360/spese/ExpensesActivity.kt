@@ -508,6 +508,9 @@ class ExpensesActivity : BaseGeActivity() {
                 FireflySyncStatus.SYNCED -> " · Firefly ✓"
                 FireflySyncStatus.ERROR -> " · Firefly ⚠"
                 FireflySyncStatus.PENDING -> " · Firefly …"
+                // Non si sa se la transazione e' stata creata: va guardata su
+                // Firefly, non ritentata alla cieca.
+                FireflySyncStatus.UNCERTAIN -> " · Firefly da verificare"
             }
             val note = if (record.note.isBlank()) "" else "\n${record.note}"
             views.meta.text = "$scope · ${formatDate(record.date)}$jobsite$firefly$note"
@@ -718,7 +721,13 @@ class ExpensesActivity : BaseGeActivity() {
                                 if (!isFinishing && !isDestroyed) {
                                     reload()
                                     if (!result.ok) {
-                                        toast("Salvato sul telefono · Firefly da riprovare")
+                                        toast(
+                                            if (result.uncertain) {
+                                                "Salvato sul telefono · controlla su Firefly: l'esito non è confermato"
+                                            } else {
+                                                "Salvato sul telefono · Firefly da riprovare"
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -818,7 +827,8 @@ class ExpensesActivity : BaseGeActivity() {
             "Importa e unisci",
             "Importa e sostituisci",
             "Esporta CSV",
-            "Riprova sincronizzazione Firefly"
+            "Riprova sincronizzazione Firefly",
+            "Forza anche i movimenti da verificare"
         )
         AlertDialog.Builder(this)
             .setTitle("Dati Spese")
@@ -850,20 +860,44 @@ class ExpensesActivity : BaseGeActivity() {
                         putExtra(Intent.EXTRA_TITLE, "ge360-spese.csv")
                     }, REQ_EXPORT_CSV)
 
-                    4 -> geLoad({ store.all() }) { outcome ->
-                        outcome.onSuccess { records ->
-                            FireflyFinanceSync.syncPendingAsync(this, records) { result ->
-                                runOnUiThread {
-                                    if (!isFinishing && !isDestroyed) {
-                                        toast(result.message)
-                                        reload()
-                                    }
-                                }
-                            }
-                        }.onFailure { toast("Lettura movimenti non riuscita: ${it.message}") }
-                    }
+                    4 -> retryFirefly(includeUncertain = false)
+                    5 -> confirmForceUncertain()
                 }
             }
+            .show()
+    }
+
+    private fun retryFirefly(includeUncertain: Boolean) {
+        geLoad({ store.all() }) { outcome ->
+            outcome.onSuccess { records ->
+                FireflyFinanceSync.syncPendingAsync(this, records, includeUncertain) { result ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            toast(result.message)
+                            reload()
+                        }
+                    }
+                }
+            }.onFailure { toast("Lettura movimenti non riuscita: ${it.message}") }
+        }
+    }
+
+    /**
+     * Il reinvio forzato puo' creare un doppione se il server non rispetta la
+     * chiave di idempotenza: va chiesto, non fatto di nascosto.
+     */
+    private fun confirmForceUncertain() {
+        AlertDialog.Builder(this)
+            .setTitle("Forzare i movimenti da verificare?")
+            .setMessage(
+                "Questi movimenti potrebbero essere già stati registrati su Firefly: " +
+                    "la risposta del server si era persa.\n\n" +
+                    "Controlla su Firefly prima di procedere, altrimenti rischi un movimento doppio."
+            )
+            .setPositiveButton("Ho verificato, procedi") { _, _ ->
+                retryFirefly(includeUncertain = true)
+            }
+            .setNegativeButton("Annulla", null)
             .show()
     }
 
