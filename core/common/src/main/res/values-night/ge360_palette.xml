@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Palette EDIL MILAN STEVIC / GE360 - tema scuro.
+
+  Stessi nomi del tema chiaro: cambia solo il valore. L'identita' resta
+  l'ocra cantiere, ma schiarita quanto serve per restare leggibile sul fondo
+  scuro; il verde del marchio diventa una salvia chiara per titoli e icone.
+  I contrasti sono tenuti sopra 4.5:1 sul surface per testo e icone.
+-->
+<resources>
+    <color name="ge360_primary">#F0A82A</color>
+    <!-- Riempimento dei bottoni primari: resta scuro quanto basta per il testo bianco. -->
+    <color name="ge360_primary_dark">#B5720A</color>
+    <color name="ge360_primary_soft">#2E2619</color>
+    <color name="ge360_on_primary">#FFFFFF</color>
+    <!-- Ocra come testo/icona sul fondo scuro: va schiarito. -->
+    <color name="ge360_accent">#F3B64A</color>
+
+    <color name="ge360_forest">#C9D4C4</color>
+    <color name="ge360_forest_dark">#E6EBE2</color>
+    <color name="ge360_forest_soft">#2A2F27</color>
+    <color name="ge360_technical_blue">#5BA8E0</color>
+
+    <color name="ge360_background">#17181A</color>
+    <color name="ge360_surface">#212220</color>
+    <color name="ge360_surface_warm">#26241F</color>
+
+    <color name="ge360_text">#F0EFEA</color>
+    <color name="ge360_text_secondary">#A8A7A0</color>
+
+    <color name="ge360_border">#34352F</color>
+    <color name="ge360_border_strong">#46473F</color>
+
+    <color name="ge360_success">#5CBE82</color>
+    <color name="ge360_success_soft">#1C2A20</color>
+    <color name="ge360_warning">#E0A33A</color>
+    <color name="ge360_warning_soft">#2A2318</color>
+    <color name="ge360_danger">#E8786C</color>
+    <color name="ge360_danger_soft">#2E1D1B</color>
+</resources>

@@ -41,6 +41,27 @@ data class JobsiteFinanceSummary(
     val movements: Int
 )
 
+/**
+ * Totali di un mese, divisi per tipo e ambito.
+ *
+ * Prima la dashboard caricava in memoria TUTTI i movimenti di sempre e poi li
+ * filtrava in Kotlin per tenere il mese corrente, a ogni refresh e a ogni
+ * carattere digitato nella ricerca. Qui i totali li fa SQLite con una query
+ * sola.
+ */
+data class MonthFinanceSummary(
+    val income: Double = 0.0,
+    val expense: Double = 0.0,
+    val businessIncome: Double = 0.0,
+    val businessExpense: Double = 0.0,
+    val privateIncome: Double = 0.0,
+    val privateExpense: Double = 0.0
+) {
+    val balance: Double get() = income - expense
+    val businessBalance: Double get() = businessIncome - businessExpense
+    val privateBalance: Double get() = privateIncome - privateExpense
+}
+
 class FinanceStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -188,6 +209,45 @@ class FinanceStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null, 
         val income = rows.filter { it.type == FinanceType.INCOME }.sumOf { it.amount }
         val expense = rows.filter { it.type == FinanceType.EXPENSE }.sumOf { it.amount }
         return JobsiteFinanceSummary(income, expense, income - expense, rows.size)
+    }
+
+    /**
+     * Totali del mese [yearMonth], nel formato "AAAA-MM".
+     *
+     * Una sola query aggregata: restituisce al massimo quattro righe
+     * (entrata/uscita per azienda/privato) invece dell'intero archivio.
+     */
+    fun monthSummary(yearMonth: String): MonthFinanceSummary {
+        var summary = MonthFinanceSummary()
+        readableDatabase.rawQuery(
+            "SELECT type, scope, SUM(amount) FROM $TABLE WHERE date LIKE ? GROUP BY type, scope",
+            arrayOf("$yearMonth%")
+        ).use { c ->
+            while (c.moveToNext()) {
+                val income = parseType(c.getString(0)) == FinanceType.INCOME
+                val business = parseScope(c.getString(1)) == FinanceScope.BUSINESS
+                val total = c.getDouble(2)
+                summary = when {
+                    income && business -> summary.copy(
+                        income = summary.income + total,
+                        businessIncome = summary.businessIncome + total
+                    )
+                    income -> summary.copy(
+                        income = summary.income + total,
+                        privateIncome = summary.privateIncome + total
+                    )
+                    business -> summary.copy(
+                        expense = summary.expense + total,
+                        businessExpense = summary.businessExpense + total
+                    )
+                    else -> summary.copy(
+                        expense = summary.expense + total,
+                        privateExpense = summary.privateExpense + total
+                    )
+                }
+            }
+        }
+        return summary
     }
 
     fun exportJson(): String {

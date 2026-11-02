@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tema scuro: eredita tutto da values/themes.xml.
+
+  I colori cambiano da soli perche' sono riferimenti a @color/ge360_*, che in
+  values-night hanno valori diversi. Qui serve solo ribaltare le icone di
+  sistema, che sono booleani e non colori.
+-->
+<resources>
+    <style name="Theme.GE360" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/ge360_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/ge360_primary_dark</item>
+        <item name="colorOnPrimary">@color/ge360_on_primary</item>
+        <item name="colorSecondary">@color/ge360_forest</item>
+        <item name="colorSecondaryVariant">@color/ge360_forest_dark</item>
+        <item name="colorOnSecondary">@color/ge360_on_primary</item>
+        <item name="colorSurface">@color/ge360_surface</item>
+        <item name="colorOnSurface">@color/ge360_text</item>
+        <item name="colorOnBackground">@color/ge360_text</item>
+        <item name="colorError">@color/ge360_danger</item>
+        <item name="android:colorAccent">@color/ge360_primary</item>
+
+        <item name="android:fontFamily">sans</item>
+        <!-- Icone della barra di stato chiare sopra il fondo scuro. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/ge360_background</item>
+        <item name="android:colorBackground">@color/ge360_background</item>
+        <item name="android:textColorPrimary">@color/ge360_text</item>
+        <item name="android:textColorSecondary">@color/ge360_text_secondary</item>
+        <item name="android:textColorHint">@color/ge360_text_secondary</item>
+        <item name="android:statusBarColor">@color/ge360_background</item>
+        <item name="android:navigationBarColor">@color/ge360_surface</item>
+
+        <item name="materialButtonStyle">@style/Widget.GE360.Button</item>
+        <item name="materialCardViewStyle">@style/Widget.GE360.Card</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.GE360.Dialog</item>
+    </style>
+</resources>

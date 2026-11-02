@@ -1,6 +1,6 @@
 package it.edilmilan.ge360.centrocantiere
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.os.Bundle
 import android.text.InputType
 import android.graphics.Color

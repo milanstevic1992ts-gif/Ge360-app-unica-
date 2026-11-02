@@ -1,7 +1,7 @@
 package it.edilmilan.ge360.centrocantiere
 
 import android.app.Activity
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.app.Application
 import android.content.ContentProvider
 import android.content.ContentValues

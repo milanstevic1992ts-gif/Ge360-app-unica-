@@ -313,14 +313,14 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
         form.addView(noteInput, full(dp(88)))
         form.addView(activeCheck)
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(if (existing == null) "Nuovo collaboratore esterno" else "Modifica collaboratore esterno")
             .setView(form)
             .setPositiveButton("SALVA", null)
             .setNegativeButton("Annulla", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val name = nameInput.text.toString().trim()
                 val trade = tradeInput.text.toString().trim()
                 if (name.isBlank()) {
@@ -378,7 +378,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
         form.addView(jobSpinner, full(dp(54)))
         form.addView(noteInput, full(dp(76)))
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Registra pagamento")
             .setMessage("${person.name} · ${ExternalCollaboratorLedger.trade(person)}")
             .setView(form)
@@ -386,7 +386,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
             .setNegativeButton("Annulla", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val amount = parseMoney(amountInput.text.toString())
                 if (amount <= 0.0) {
                     amountInput.error = "Inserisci un importo valido"

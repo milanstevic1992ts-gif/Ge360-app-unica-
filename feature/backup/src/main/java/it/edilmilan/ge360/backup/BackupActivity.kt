@@ -1,7 +1,7 @@
 package it.edilmilan.ge360.backup
 
 import android.app.Activity
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.text.InputType

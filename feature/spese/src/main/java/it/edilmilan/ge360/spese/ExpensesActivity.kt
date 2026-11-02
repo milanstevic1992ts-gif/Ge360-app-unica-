@@ -1,7 +1,6 @@
 package it.edilmilan.ge360.spese
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
@@ -12,30 +11,64 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
-import android.widget.BaseAdapter
 import android.widget.EditText
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
+import androidx.appcompat.app.AlertDialog
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
-import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
+import it.edilmilan.ge360.core.common.ui.BaseGeActivity
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
+import it.edilmilan.ge360.core.common.ui.GeFilterRow
+import it.edilmilan.ge360.core.common.ui.GeListContainer
+import it.edilmilan.ge360.core.common.ui.GeRadius
+import it.edilmilan.ge360.core.common.ui.GeSpace
+import it.edilmilan.ge360.core.common.ui.GeType
+import it.edilmilan.ge360.core.common.ui.applyGe360Card
+import it.edilmilan.ge360.core.common.ui.applyGe360Subtitle
+import it.edilmilan.ge360.core.common.ui.applyGe360Title
+import it.edilmilan.ge360.core.common.ui.brandRounded
+import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
+import it.edilmilan.ge360.core.common.ui.dp
+import it.edilmilan.ge360.core.common.ui.geActionBar
+import it.edilmilan.ge360.core.common.ui.geCancelPending
+import it.edilmilan.ge360.core.common.ui.geEmptyState
+import it.edilmilan.ge360.core.common.ui.geFieldLabel
+import it.edilmilan.ge360.core.common.ui.geFilterRow
+import it.edilmilan.ge360.core.common.ui.geInput
+import it.edilmilan.ge360.core.common.ui.geLoad
+import it.edilmilan.ge360.core.common.ui.geLoadDebounced
+import it.edilmilan.ge360.core.common.ui.gePrimaryButton
+import it.edilmilan.ge360.core.common.ui.geScreen
+import it.edilmilan.ge360.core.common.ui.geSearchInput
+import it.edilmilan.ge360.core.common.ui.geSecondaryButton
+import it.edilmilan.ge360.core.common.ui.geStatRow
+import it.edilmilan.ge360.core.common.ui.geStatTile
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.util.Locale
 
-class ExpensesActivity : AppCompatActivity() {
+/**
+ * Dashboard movimenti.
+ *
+ * Schermata di riferimento per la migrazione al design system: qui non ci sono
+ * piu' colori scritti a mano, numeri di padding inventati, letture del database
+ * sul thread della UI ne' righe di lista ricostruite da zero a ogni scorrimento.
+ */
+class ExpensesActivity : BaseGeActivity() {
+
     private lateinit var store: FinanceStore
     private lateinit var jobsiteStore: JobsiteStore
+
     private lateinit var searchInput: EditText
     private lateinit var monthLabel: TextView
     private lateinit var balanceValue: TextView
@@ -47,271 +80,438 @@ class ExpensesActivity : AppCompatActivity() {
     private lateinit var privateValue: TextView
     private lateinit var privateDetail: TextView
     private lateinit var visibleCountLabel: TextView
-    private lateinit var listView: ListView
-    private lateinit var adapter: FinanceAdapter
-    private val filterButtons = mutableMapOf<String, MaterialButton>()
+    private lateinit var listContainer: GeListContainer
+    private lateinit var filterRow: GeFilterRow
+
+    private val adapter = FinanceAdapter()
     private var activeFilter = FinanceStore.FILTER_ALL
     private var pendingImportReplace = false
 
+    /** Token del caricamento ritardato della ricerca, per annullarlo in uscita. */
+    private val searchToken = Any()
+
+    /** Istantanea dei dati che servono alla schermata, calcolata in background. */
+    private data class Screen(
+        val rows: List<FinanceRecord>,
+        val month: MonthFinanceSummary
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        store = FinanceStore(this)
-        jobsiteStore = JobsiteStore(this)
+        store = FinanceStore(this).managed()
+        jobsiteStore = JobsiteStore(this).managed()
         setContentView(buildScreen())
-        loadData()
+        reload()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::adapter.isInitialized) loadData()
+        reload()
     }
 
-    private fun buildScreen(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(10))
-        }
+    override fun onDestroy() {
+        geCancelPending(searchToken)
+        super.onDestroy()
+    }
 
-        root.addView(buildScreenHeaderWithSubtitle(
-            context = this,
-            title = "Spese",
-            subtitle = "Dashboard entrate, uscite, privato e azienda",
-            onBack = { finish() },
-            trailingLabel = "Dati",
-            onTrailingClick = { showDataMenu() }
-        ))
+    // -----------------------------------------------------------------------
+    // Costruzione della schermata
+    // -----------------------------------------------------------------------
+
+    private fun buildScreen(): View {
+        val root = geScreen()
+
+        root.addView(
+            buildScreenHeaderWithSubtitle(
+                context = this,
+                title = "Spese",
+                subtitle = "Entrate, uscite, privato e azienda",
+                onBack = { finish() },
+                trailingLabel = "Dati",
+                onTrailingClick = { showDataMenu() }
+            )
+        )
+
+        val scrollable = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         monthLabel = TextView(this).apply {
-            textSize = 17f
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), dp(10), dp(4), dp(8))
+            applyGe360Title(GeType.H2)
+            setPadding(dp(GeSpace.XS), dp(GeSpace.SM), dp(GeSpace.XS), dp(GeSpace.SM))
         }
-        root.addView(monthLabel)
+        scrollable.addView(monthLabel)
 
-        root.addView(metricCard(
-            title = "Saldo del mese",
-            onClick = { setActiveFilter(FinanceStore.FILTER_ALL) },
-            bind = { value, detail ->
+        // Saldo: il numero che conta, a tutta larghezza e senza vicini.
+        scrollable.addView(
+            geStatTile(
+                label = "Saldo del mese",
+                onClick = { setActiveFilter(FinanceStore.FILTER_ALL) }
+            ) { value, detail ->
                 balanceValue = value
                 balanceDetail = detail
-            }
-        ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(104)).apply {
-            bottomMargin = dp(8)
-        })
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
 
-        root.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(metricCard(
-                title = "Entrate",
-                onClick = { setActiveFilter("Entrate") },
-                bind = { value, _ -> incomeValue = value }
-            ), LinearLayout.LayoutParams(0, dp(108), 1f).apply { marginEnd = dp(4) })
-            addView(metricCard(
-                title = "Uscite",
-                onClick = { setActiveFilter("Uscite") },
-                bind = { value, _ -> expenseValue = value }
-            ), LinearLayout.LayoutParams(0, dp(108), 1f).apply { marginStart = dp(4) })
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(108)).apply {
-            bottomMargin = dp(8)
-        })
+        scrollable.addView(
+            geStatRow(
+                geStatTile(
+                    label = "Entrate",
+                    accent = Ge360Brand.Success,
+                    onClick = { setActiveFilter("Entrate") }
+                ) { value, _ -> incomeValue = value },
+                geStatTile(
+                    label = "Uscite",
+                    accent = Ge360Brand.Danger,
+                    onClick = { setActiveFilter("Uscite") }
+                ) { value, _ -> expenseValue = value }
+            ),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(GeSpace.SM) }
+        )
 
-        root.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(metricCard(
-                title = "Azienda",
-                onClick = { setActiveFilter("Azienda") },
-                bind = { value, detail ->
+        scrollable.addView(
+            geStatRow(
+                geStatTile(
+                    label = "Azienda",
+                    onClick = { setActiveFilter("Azienda") }
+                ) { value, detail ->
                     businessValue = value
                     businessDetail = detail
-                }
-            ), LinearLayout.LayoutParams(0, dp(114), 1f).apply { marginEnd = dp(4) })
-            addView(metricCard(
-                title = "Privato",
-                onClick = { setActiveFilter("Privato") },
-                bind = { value, detail ->
+                },
+                geStatTile(
+                    label = "Privato",
+                    accent = Ge360Brand.TechnicalBlue,
+                    onClick = { setActiveFilter("Privato") }
+                ) { value, detail ->
                     privateValue = value
                     privateDetail = detail
                 }
-            ), LinearLayout.LayoutParams(0, dp(114), 1f).apply { marginStart = dp(4) })
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(114)).apply {
-            bottomMargin = dp(8)
-        })
+            ),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(GeSpace.SM) }
+        )
 
-        visibleCountLabel = TextView(this).apply {
-            textSize = 13f
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), dp(4), dp(4), dp(6))
-        }
-        root.addView(visibleCountLabel)
+        root.addView(
+            ScrollView(this).apply {
+                isFillViewport = true
+                addView(scrollable)
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
 
-        searchInput = EditText(this).apply {
-            hint = "Cerca categoria, nota, cantiere, data…"
-            isSingleLine = true
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+        searchInput = geSearchInput("Cerca categoria, nota, cantiere, data…").apply {
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = loadData()
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) =
+                    reload(debounced = true)
+
                 override fun afterTextChanged(s: Editable?) = Unit
             })
         }
-        root.addView(searchInput, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        root.addView(searchInput)
 
-        val filters = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        FinanceStore.FILTERS.forEach { filter ->
-            val button = MaterialButton(this).apply {
-                textSize = 11f
-                setOnClickListener { setActiveFilter(filter) }
-            }
-            filterButtons[filter] = button
-            filters.addView(
-                button,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginEnd = dp(6) }
-            )
+        filterRow = geFilterRow(FinanceStore.FILTERS, activeFilter) { setActiveFilter(it) }
+        root.addView(filterRow)
+
+        visibleCountLabel = TextView(this).apply {
+            applyGe360Subtitle(GeType.CAPTION)
+            setPadding(dp(GeSpace.XS), dp(GeSpace.MD), dp(GeSpace.XS), dp(GeSpace.XS))
         }
-        refreshFilterButtons()
-        root.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(filters)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+        root.addView(visibleCountLabel)
 
-        adapter = FinanceAdapter()
-        listView = ListView(this).apply {
-            dividerHeight = 0
-            adapter = this@ExpensesActivity.adapter
-            setOnItemClickListener { _, _, position, _ -> showEditor(this@ExpensesActivity.adapter.items[position]) }
-            setOnItemLongClickListener { _, _, position, _ ->
-                val item = this@ExpensesActivity.adapter.items[position]
-                confirmDelete(item)
-                true
-            }
+        listContainer = GeListContainer(this).apply {
+            list.layoutManager = LinearLayoutManager(this@ExpensesActivity)
+            list.adapter = adapter
+            list.setHasFixedSize(true)
         }
-        root.addView(listView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(
+            listContainer,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        )
 
-        root.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(MaterialButton(this@ExpensesActivity).apply {
-                text = "Cantieri"
-                setOnClickListener { showJobsiteSummary() }
-            }, LinearLayout.LayoutParams(0, dp(54), 0.8f).apply { marginEnd = dp(4) })
-            addView(MaterialButton(this@ExpensesActivity).apply {
-                text = "+ Uscita"
-                setOnClickListener {
+        root.addView(
+            geActionBar(
+                geSecondaryButton("Cantieri") { showJobsiteSummary() },
+                gePrimaryButton("+ Uscita") {
                     showEditor(
                         FinanceRecord(date = LocalDate.now().toString(), type = FinanceType.EXPENSE),
                         FinanceType.EXPENSE
                     )
-                }
-            }, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
-                marginStart = dp(4)
-                marginEnd = dp(4)
-            })
-            addView(MaterialButton(this@ExpensesActivity).apply {
-                text = "+ Entrata"
-                setOnClickListener {
+                },
+                gePrimaryButton("+ Entrata") {
                     showEditor(
                         FinanceRecord(date = LocalDate.now().toString(), type = FinanceType.INCOME),
                         FinanceType.INCOME
                     )
                 }
-            }, LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginStart = dp(4) })
-        })
+            )
+        )
+
         return root
     }
 
-    private fun metricCard(
-        title: String,
-        onClick: () -> Unit,
-        bind: (TextView, TextView) -> Unit
-    ): MaterialCardView {
-        val value = TextView(this).apply {
-            text = euro(0.0)
-            textSize = 20f
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        val detail = TextView(this).apply {
-            textSize = 11.5f
-            setPadding(0, dp(4), 0, 0)
-        }
-        bind(value, detail)
-        return MaterialCardView(this).apply {
-            radius = dp(18).toFloat()
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { onClick() }
-            addView(LinearLayout(this@ExpensesActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-                addView(TextView(this@ExpensesActivity).apply {
-                    text = title
-                    textSize = 12.5f
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(value)
-                addView(detail)
-            })
-        }
-    }
+    // -----------------------------------------------------------------------
+    // Caricamento dati
+    // -----------------------------------------------------------------------
 
     private fun setActiveFilter(filter: String) {
         activeFilter = filter
-        refreshFilterButtons()
-        if (::adapter.isInitialized) loadData()
+        filterRow.select(filter)
+        reload()
     }
 
-    private fun refreshFilterButtons() {
-        filterButtons.forEach { (filter, button) ->
-            button.text = if (filter == activeFilter) "✓ $filter" else filter
-        }
-    }
-
-    private fun loadData() {
-        if (!::adapter.isInitialized) return
-        val rows = store.search(if (::searchInput.isInitialized) searchInput.text.toString() else "", activeFilter)
-        adapter.items = rows
-        adapter.notifyDataSetChanged()
-
+    /**
+     * Ricarica la schermata.
+     *
+     * Tutto il lavoro sul database sta dentro [load]: gira su un thread di
+     * background e il risultato arriva solo se la schermata e' ancora aperta.
+     * Con [debounced] la partenza aspetta che l'utente smetta di scrivere.
+     */
+    private fun reload(debounced: Boolean = false) {
+        if (!::listContainer.isInitialized) return
+        val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
+        val filter = activeFilter
         val month = YearMonth.now()
-        val allMonth = store.all().filter {
-            runCatching { YearMonth.from(LocalDate.parse(it.date)) }.getOrNull() == month
+
+        val work = {
+            Screen(
+                rows = store.search(query, filter),
+                month = store.monthSummary(month.toString())
+            )
+        }
+        val onResult: (Result<Screen>) -> Unit = { outcome ->
+            outcome
+                .onSuccess { render(month, it) }
+                .onFailure { showLoadError(it) }
         }
 
-        val income = allMonth.filter { it.type == FinanceType.INCOME }.sumOf { it.amount }
-        val expense = allMonth.filter { it.type == FinanceType.EXPENSE }.sumOf { it.amount }
+        if (debounced) {
+            geLoadDebounced(searchToken, work = work, onResult = onResult)
+        } else {
+            geLoad(work, onResult)
+        }
+    }
 
-        val businessIncome = allMonth.filter {
-            it.scope == FinanceScope.BUSINESS && it.type == FinanceType.INCOME
-        }.sumOf { it.amount }
-        val businessExpense = allMonth.filter {
-            it.scope == FinanceScope.BUSINESS && it.type == FinanceType.EXPENSE
-        }.sumOf { it.amount }
+    private fun render(month: YearMonth, screen: Screen) {
+        val summary = screen.month
 
-        val privateIncome = allMonth.filter {
-            it.scope == FinanceScope.PRIVATE && it.type == FinanceType.INCOME
-        }.sumOf { it.amount }
-        val privateExpense = allMonth.filter {
-            it.scope == FinanceScope.PRIVATE && it.type == FinanceType.EXPENSE
-        }.sumOf { it.amount }
+        monthLabel.text = "${
+            month.month.getDisplayName(TextStyle.FULL, Locale.ITALIAN)
+                .replaceFirstChar { it.uppercase() }
+        } ${month.year}"
 
-        monthLabel.text = "${month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ITALIAN).replaceFirstChar { it.uppercase() }} ${month.year}"
+        balanceValue.text = euro(summary.balance)
+        balanceValue.setTextColor(
+            if (summary.balance < 0) Ge360Brand.Danger else Ge360Brand.ForestDark
+        )
+        balanceDetail.text = "Entrate ${euro(summary.income)} · Uscite ${euro(summary.expense)}"
 
-        balanceValue.text = euro(income - expense)
-        balanceDetail.text = "Entrate ${euro(income)} · Uscite ${euro(expense)}"
-        incomeValue.text = euro(income)
-        expenseValue.text = euro(expense)
+        incomeValue.text = euro(summary.income)
+        expenseValue.text = euro(summary.expense)
 
-        businessValue.text = euro(businessIncome - businessExpense)
-        businessDetail.text = "Entrate ${euro(businessIncome)}\nUscite ${euro(businessExpense)}"
+        businessValue.text = euro(summary.businessBalance)
+        businessDetail.text =
+            "Entrate ${euro(summary.businessIncome)}\nUscite ${euro(summary.businessExpense)}"
 
-        privateValue.text = euro(privateIncome - privateExpense)
-        privateDetail.text = "Entrate ${euro(privateIncome)}\nUscite ${euro(privateExpense)}"
+        privateValue.text = euro(summary.privateBalance)
+        privateDetail.text =
+            "Entrate ${euro(summary.privateIncome)}\nUscite ${euro(summary.privateExpense)}"
 
         visibleCountLabel.text = if (activeFilter == FinanceStore.FILTER_ALL) {
-            "Movimenti · ${rows.size} visibili"
+            "Movimenti · ${screen.rows.size} visibili"
         } else {
-            "Movimenti · ${rows.size} visibili · $activeFilter"
+            "Movimenti · ${screen.rows.size} visibili · $activeFilter"
+        }
+
+        adapter.submit(screen.rows)
+        if (screen.rows.isEmpty()) {
+            listContainer.showMessage(emptyStateView())
+        } else {
+            listContainer.showList()
         }
     }
+
+    private fun emptyStateView(): View {
+        val searching = searchInput.text.isNotBlank() || activeFilter != FinanceStore.FILTER_ALL
+        return if (searching) {
+            geEmptyState(
+                title = "Nessun movimento",
+                message = "Nessun risultato per questa ricerca o questo filtro.",
+                actionLabel = "Azzera filtri"
+            ) {
+                searchInput.setText("")
+                setActiveFilter(FinanceStore.FILTER_ALL)
+            }
+        } else {
+            geEmptyState(
+                title = "Ancora nessun movimento",
+                message = "Registra la prima uscita o entrata: il saldo del mese si aggiorna da solo.",
+                actionLabel = "+ Uscita"
+            ) {
+                showEditor(
+                    FinanceRecord(date = LocalDate.now().toString(), type = FinanceType.EXPENSE),
+                    FinanceType.EXPENSE
+                )
+            }
+        }
+    }
+
+    /**
+     * Un errore di lettura non lascia piu' la schermata vuota e muta.
+     */
+    private fun showLoadError(error: Throwable) {
+        listContainer.showMessage(
+            geEmptyState(
+                title = "Dati non leggibili",
+                message = "Non riesco a leggere l'archivio movimenti.\n${error.message.orEmpty().take(140)}",
+                actionLabel = "Riprova"
+            ) { reload() }
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Lista
+    // -----------------------------------------------------------------------
+
+    /** Le viste di una riga, costruite una volta sola e poi riusate. */
+    private class RowViews(
+        val card: MaterialCardView,
+        val accent: View,
+        val title: TextView,
+        val amount: TextView,
+        val meta: TextView
+    )
+
+    private inner class FinanceHolder(val views: RowViews) : RecyclerView.ViewHolder(views.card)
+
+    private inner class FinanceAdapter : RecyclerView.Adapter<FinanceHolder>() {
+
+        private var items: List<FinanceRecord> = emptyList()
+
+        fun submit(rows: List<FinanceRecord>) {
+            items = rows
+            notifyDataSetChanged()
+        }
+
+        override fun getItemCount() = items.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FinanceHolder {
+            val context = this@ExpensesActivity
+
+            val accent = View(context)
+            val title = TextView(context).apply {
+                applyGe360Title(GeType.H3)
+                maxLines = 1
+            }
+            val amount = TextView(context).apply {
+                textSize = GeType.H3
+                setTypeface(typeface, Typeface.BOLD)
+            }
+            val meta = TextView(context).apply {
+                applyGe360Subtitle(GeType.CAPTION)
+                setPadding(0, context.dp(GeSpace.XS), 0, 0)
+            }
+
+            val texts = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(
+                        title,
+                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    )
+                    addView(amount)
+                })
+                addView(meta)
+            }
+
+            val body = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(
+                    context.dp(GeSpace.MD),
+                    context.dp(GeSpace.MD),
+                    context.dp(GeSpace.MD),
+                    context.dp(GeSpace.MD)
+                )
+                addView(
+                    accent,
+                    LinearLayout.LayoutParams(context.dp(4), context.dp(36)).apply {
+                        marginEnd = context.dp(GeSpace.MD)
+                    }
+                )
+                addView(
+                    texts,
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                )
+            }
+
+            val card = MaterialCardView(context).apply {
+                applyGe360Card()
+                isClickable = true
+                isFocusable = true
+                layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = context.dp(GeSpace.XS)
+                    bottomMargin = context.dp(GeSpace.XS)
+                }
+                addView(body)
+            }
+
+            return FinanceHolder(RowViews(card, accent, title, amount, meta))
+        }
+
+        override fun onBindViewHolder(holder: FinanceHolder, position: Int) {
+            val record = items[position]
+            val views = holder.views
+            val income = record.type == FinanceType.INCOME
+            val color = if (income) Ge360Brand.Success else Ge360Brand.Danger
+
+            views.accent.background = brandRounded(
+                fill = color,
+                stroke = color,
+                radiusDp = GeRadius.SMALL,
+                strokeDp = 0
+            )
+
+            views.title.text = record.category
+            views.amount.text = (if (income) "+" else "−") + euro(record.amount)
+            views.amount.setTextColor(if (income) Ge360Brand.Success else Ge360Brand.Text)
+
+            val scope = if (record.scope == FinanceScope.BUSINESS) "Azienda" else "Privato"
+            val jobsite =
+                if (record.jobsiteCode.isBlank()) "" else " · ${record.jobsiteCode} ${record.jobsiteTitle}"
+            val firefly = when (record.fireflyStatus) {
+                FireflySyncStatus.SYNCED -> " · Firefly ✓"
+                FireflySyncStatus.ERROR -> " · Firefly ⚠"
+                FireflySyncStatus.PENDING -> " · Firefly …"
+            }
+            val note = if (record.note.isBlank()) "" else "\n${record.note}"
+            views.meta.text = "$scope · ${formatDate(record.date)}$jobsite$firefly$note"
+
+            views.card.setOnClickListener { showEditor(record) }
+            views.card.setOnLongClickListener {
+                confirmDelete(record)
+                true
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Editor movimento
+    // -----------------------------------------------------------------------
 
     private fun showEditor(source: FinanceRecord, initialType: FinanceType? = null) {
         val record = source.copy()
@@ -322,83 +522,51 @@ class ExpensesActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(dp(GeSpace.XL), dp(GeSpace.SM), dp(GeSpace.XL), dp(GeSpace.SM))
         }
-
-        fun label(text: String) = TextView(this).apply {
-            this.text = text
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, dp(10), 0, dp(3))
-        }
-
-        content.addView(label("Tipo movimento"))
-        val expenseButton = MaterialButton(this).apply { text = "Uscita" }
-        val incomeButton = MaterialButton(this).apply { text = "Entrata" }
-        content.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(expenseButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(4) })
-            addView(incomeButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(4) })
-        })
-
-        content.addView(label("È un movimento aziendale o privato?"))
-        val businessButton = MaterialButton(this).apply { text = "Azienda" }
-        val privateButton = MaterialButton(this).apply { text = "Privato" }
-        content.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(businessButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(4) })
-            addView(privateButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(4) })
-        })
 
         val scopeHint = TextView(this).apply {
-            textSize = 12f
-            setPadding(dp(2), dp(4), dp(2), dp(4))
+            applyGe360Subtitle(GeType.CAPTION)
+            setPadding(dp(GeSpace.XS), dp(GeSpace.XS), dp(GeSpace.XS), dp(GeSpace.XS))
         }
-        content.addView(scopeHint)
 
-        content.addView(label("Importo €"))
-        val amount = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(if (record.amount > 0) record.amount.toString().replace('.', ',') else "")
-            hint = "0,00"
-            textSize = 20f
-        }
-        content.addView(amount, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)))
+        val amount = geInput(
+            hint = "0,00",
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL,
+            initial = if (record.amount > 0) record.amount.toString().replace('.', ',') else ""
+        ).apply { textSize = GeType.TITLE }
 
-        content.addView(label("Categoria"))
         val category = Spinner(this)
-        content.addView(category, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
 
-        val jobsites = jobsiteStore.list()
+        val jobsites: List<JobsiteRecord> = runCatching { jobsiteStore.list() }.getOrDefault(emptyList())
         val jobsiteLabels = mutableListOf("Nessun cantiere").apply {
             addAll(jobsites.map { "${it.code} · ${it.displayTitle()}" })
         }
         val jobsiteSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@ExpensesActivity, android.R.layout.simple_spinner_dropdown_item, jobsiteLabels)
-            val idx = jobsites.indexOfFirst { it.ge360Id == record.jobsiteId }
-            setSelection(if (idx >= 0) idx + 1 else 0)
+            adapter = ArrayAdapter(
+                this@ExpensesActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                jobsiteLabels
+            )
+            val index = jobsites.indexOfFirst { it.ge360Id == record.jobsiteId }
+            setSelection(if (index >= 0) index + 1 else 0)
         }
         val jobsiteBlock = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(label("Cantiere (facoltativo)"))
-            addView(jobsiteSpinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+            addView(geFieldLabel("Cantiere (facoltativo)"))
+            addView(
+                jobsiteSpinner,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
+            )
         }
-        content.addView(jobsiteBlock)
 
-        content.addView(label("Data (AAAA-MM-GG)"))
-        val date = EditText(this).apply {
-            setText(record.date.ifBlank { LocalDate.now().toString() })
-            isSingleLine = true
-        }
-        content.addView(date, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        val date = geInput(initial = record.date.ifBlank { LocalDate.now().toString() })
 
-        content.addView(label("Nota"))
-        val note = EditText(this).apply {
-            setText(record.note)
-            minLines = 3
-            gravity = Gravity.TOP
-            hint = "Es. acquisto piastrelle, spesa supermercato, acconto cliente…"
-        }
-        content.addView(note, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(90)))
+        val note = geInput(
+            hint = "Es. acquisto piastrelle, spesa supermercato, acconto cliente…",
+            singleLine = false,
+            initial = record.note
+        ).apply { minLines = 3 }
 
         fun categoriesFor(type: FinanceType, scope: FinanceScope): List<String> = when {
             type == FinanceType.EXPENSE && scope == FinanceScope.BUSINESS -> FinanceStore.BUSINESS_EXPENSE_CATEGORIES
@@ -410,59 +578,79 @@ class ExpensesActivity : AppCompatActivity() {
         fun refreshCategories(preferred: String? = null) {
             val values = categoriesFor(selectedType, selectedScope)
             val previous = preferred ?: category.selectedItem?.toString().orEmpty()
-            category.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
+            category.adapter = ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                values
+            )
             val wanted = when {
                 previous in values -> previous
                 record.category in values -> record.category
                 "Altro" in values -> "Altro"
                 else -> values.first()
             }
-            val idx = values.indexOf(wanted)
-            if (idx >= 0) category.setSelection(idx)
-        }
-
-        fun refreshTypeUi() {
-            expenseButton.text = if (selectedType == FinanceType.EXPENSE) "✓ Uscita" else "Uscita"
-            incomeButton.text = if (selectedType == FinanceType.INCOME) "✓ Entrata" else "Entrata"
+            val index = values.indexOf(wanted)
+            if (index >= 0) category.setSelection(index)
         }
 
         fun refreshScopeUi() {
-            businessButton.text = if (selectedScope == FinanceScope.BUSINESS) "✓ Azienda" else "Azienda"
-            privateButton.text = if (selectedScope == FinanceScope.PRIVATE) "✓ Privato" else "Privato"
             scopeHint.text = if (selectedScope == FinanceScope.BUSINESS) {
                 "Movimento dell'impresa. Puoi anche collegarlo a un cantiere."
             } else {
                 "Movimento personale. Non verrà collegato ai cantieri."
             }
-            jobsiteBlock.visibility = if (selectedScope == FinanceScope.BUSINESS) View.VISIBLE else View.GONE
+            jobsiteBlock.visibility =
+                if (selectedScope == FinanceScope.BUSINESS) View.VISIBLE else View.GONE
         }
 
-        expenseButton.setOnClickListener {
+        // I selettori si creano ora: le loro callback usano le funzioni qui
+        // sopra, e la riga di filtri aggiorna da sola il proprio stato visivo.
+        val typeSelector = geFilterRow(
+            listOf("Uscita", "Entrata"),
+            if (selectedType == FinanceType.INCOME) "Entrata" else "Uscita"
+        ) { choice ->
             val previous = category.selectedItem?.toString()
-            selectedType = FinanceType.EXPENSE
-            refreshTypeUi()
+            selectedType = if (choice == "Entrata") FinanceType.INCOME else FinanceType.EXPENSE
             refreshCategories(previous)
         }
-        incomeButton.setOnClickListener {
+        val scopeSelector = geFilterRow(
+            listOf("Azienda", "Privato"),
+            if (selectedScope == FinanceScope.BUSINESS) "Azienda" else "Privato"
+        ) { choice ->
             val previous = category.selectedItem?.toString()
-            selectedType = FinanceType.INCOME
-            refreshTypeUi()
-            refreshCategories(previous)
-        }
-        businessButton.setOnClickListener {
-            val previous = category.selectedItem?.toString()
-            selectedScope = FinanceScope.BUSINESS
-            refreshScopeUi()
-            refreshCategories(previous)
-        }
-        privateButton.setOnClickListener {
-            val previous = category.selectedItem?.toString()
-            selectedScope = FinanceScope.PRIVATE
+            selectedScope = if (choice == "Azienda") FinanceScope.BUSINESS else FinanceScope.PRIVATE
             refreshScopeUi()
             refreshCategories(previous)
         }
 
-        refreshTypeUi()
+        // Montaggio del form, nell'ordine in cui lo si legge.
+        content.addView(geFieldLabel("Tipo movimento"))
+        content.addView(typeSelector)
+        content.addView(geFieldLabel("È un movimento aziendale o privato?"))
+        content.addView(scopeSelector)
+        content.addView(scopeHint)
+        content.addView(geFieldLabel("Importo €"))
+        content.addView(
+            amount,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56))
+        )
+        content.addView(geFieldLabel("Categoria"))
+        content.addView(
+            category,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
+        )
+        content.addView(jobsiteBlock)
+        content.addView(geFieldLabel("Data (AAAA-MM-GG)"))
+        content.addView(
+            date,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
+        )
+        content.addView(geFieldLabel("Nota"))
+        content.addView(
+            note,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(90))
+        )
+
         refreshScopeUi()
         refreshCategories(record.category)
 
@@ -510,19 +698,22 @@ class ExpensesActivity : AppCompatActivity() {
                     record.jobsiteTitle = ""
                 }
 
-                store.save(record)
-                dialog.dismiss()
-                loadData()
-                FireflyFinanceSync.syncAsync(this, record) {
-                    runOnUiThread {
-                        loadData()
-                        if (!it.ok) {
-                            Toast.makeText(
-                                this,
-                                "Salvato sul telefono · Firefly da riprovare",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                geLoad({ store.save(record) }) { outcome ->
+                    outcome.onSuccess {
+                        dialog.dismiss()
+                        reload()
+                        FireflyFinanceSync.syncAsync(this, record) { result ->
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    reload()
+                                    if (!result.ok) {
+                                        toast("Salvato sul telefono · Firefly da riprovare")
+                                    }
+                                }
+                            }
                         }
+                    }.onFailure {
+                        toast("Salvataggio non riuscito: ${it.message}")
                     }
                 }
             }
@@ -534,39 +725,73 @@ class ExpensesActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Elimina movimento")
             .setMessage("Eliminare ${record.category} da ${euro(record.amount)} del ${formatDate(record.date)}?")
-            .setPositiveButton("Elimina") { _, _ -> store.delete(record.id); loadData() }
+            .setPositiveButton("Elimina") { _, _ ->
+                geLoad({ store.delete(record.id) }) { outcome ->
+                    outcome.onSuccess { reload() }
+                        .onFailure { toast("Eliminazione non riuscita: ${it.message}") }
+                }
+            }
             .setNegativeButton("Annulla", null)
             .show()
     }
 
+    // -----------------------------------------------------------------------
+    // Riepiloghi e dati
+    // -----------------------------------------------------------------------
+
     private fun showJobsiteSummary() {
-        val jobsites = jobsiteStore.list().filter { store.forJobsite(it.ge360Id).isNotEmpty() }
+        geLoad({
+            jobsiteStore.list()
+                .mapNotNull { jobsite ->
+                    val summary = store.jobsiteSummary(jobsite.ge360Id)
+                    if (summary.movements == 0) null else jobsite to summary
+                }
+        }) { outcome ->
+            outcome.onSuccess { rows -> renderJobsiteSummary(rows) }
+                .onFailure { toast("Riepilogo non disponibile: ${it.message}") }
+        }
+    }
+
+    private fun renderJobsiteSummary(rows: List<Pair<JobsiteRecord, JobsiteFinanceSummary>>) {
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(8))
+            setPadding(dp(GeSpace.XL), dp(GeSpace.SM), dp(GeSpace.XL), dp(GeSpace.SM))
         }
-        if (jobsites.isEmpty()) {
-            body.addView(TextView(this).apply { text = "Nessun movimento è ancora collegato a un cantiere." })
+        if (rows.isEmpty()) {
+            body.addView(TextView(this).apply {
+                text = "Nessun movimento è ancora collegato a un cantiere."
+                applyGe360Subtitle(GeType.BODY)
+            })
         } else {
-            jobsites.forEach { jobsite ->
-                val s = store.jobsiteSummary(jobsite.ge360Id)
-                body.addView(MaterialCardView(this).apply {
-                    radius = dp(14).toFloat()
-                    addView(LinearLayout(this@ExpensesActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(dp(14), dp(12), dp(14), dp(12))
-                        addView(TextView(this@ExpensesActivity).apply {
-                            text = "${jobsite.code} · ${jobsite.displayTitle()}"
-                            setTypeface(typeface, Typeface.BOLD)
-                            textSize = 16f
+            rows.forEach { (jobsite, summary) ->
+                body.addView(
+                    MaterialCardView(this).apply {
+                        applyGe360Card()
+                        addView(LinearLayout(this@ExpensesActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(
+                                dp(GeSpace.LG),
+                                dp(GeSpace.MD),
+                                dp(GeSpace.LG),
+                                dp(GeSpace.MD)
+                            )
+                            addView(TextView(this@ExpensesActivity).apply {
+                                text = "${jobsite.code} · ${jobsite.displayTitle()}"
+                                applyGe360Title(GeType.H3)
+                            })
+                            addView(TextView(this@ExpensesActivity).apply {
+                                text = "Entrate ${euro(summary.income)} · Uscite ${euro(summary.expense)}\n" +
+                                    "Saldo ${euro(summary.balance)} · ${summary.movements} registrazioni"
+                                applyGe360Subtitle(GeType.BODY_SM)
+                                setPadding(0, dp(GeSpace.XS), 0, 0)
+                            })
                         })
-                        addView(TextView(this@ExpensesActivity).apply {
-                            text = "Entrate ${euro(s.income)} · Uscite ${euro(s.expense)}\nSaldo movimenti ${euro(s.balance)} · ${s.movements} registrazioni"
-                            textSize = 13f
-                            setPadding(0, dp(5), 0, 0)
-                        })
-                    })
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(GeSpace.SM) }
+                )
             }
         }
         AlertDialog.Builder(this)
@@ -592,25 +817,39 @@ class ExpensesActivity : AppCompatActivity() {
                         type = "application/json"
                         putExtra(Intent.EXTRA_TITLE, "ge360-spese-backup.json")
                     }, REQ_EXPORT_JSON)
+
                     1 -> {
                         pendingImportReplace = false
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/json"; addCategory(Intent.CATEGORY_OPENABLE) }, REQ_IMPORT_JSON)
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            type = "application/json"
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                        }, REQ_IMPORT_JSON)
                     }
+
                     2 -> {
                         pendingImportReplace = true
-                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/json"; addCategory(Intent.CATEGORY_OPENABLE) }, REQ_IMPORT_JSON)
+                        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            type = "application/json"
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                        }, REQ_IMPORT_JSON)
                     }
+
                     3 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         type = "text/csv"
                         putExtra(Intent.EXTRA_TITLE, "ge360-spese.csv")
                     }, REQ_EXPORT_CSV)
-                    4 -> {
-                        FireflyFinanceSync.syncPendingAsync(this, store.all()) { result ->
-                            runOnUiThread {
-                                Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
-                                loadData()
+
+                    4 -> geLoad({ store.all() }) { outcome ->
+                        outcome.onSuccess { records ->
+                            FireflyFinanceSync.syncPendingAsync(this, records) { result ->
+                                runOnUiThread {
+                                    if (!isFinishing && !isDestroyed) {
+                                        toast(result.message)
+                                        reload()
+                                    }
+                                }
                             }
-                        }
+                        }.onFailure { toast("Lettura movimenti non riuscita: ${it.message}") }
                     }
                 }
             }
@@ -622,88 +861,46 @@ class ExpensesActivity : AppCompatActivity() {
         if (resultCode != Activity.RESULT_OK || data?.data == null) return
         val uri = data.data!!
         when (requestCode) {
-            REQ_EXPORT_JSON -> writeText(uri, store.exportJson(), "Backup JSON esportato")
-            REQ_EXPORT_CSV -> writeText(uri, store.exportCsv(), "CSV esportato")
+            REQ_EXPORT_JSON -> exportTo(uri, "Backup JSON esportato") { store.exportJson() }
+            REQ_EXPORT_CSV -> exportTo(uri, "CSV esportato") { store.exportCsv() }
             REQ_IMPORT_JSON -> {
-                runCatching {
-                    val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("File non leggibile")
-                    store.importJson(text, pendingImportReplace)
-                }.onSuccess { count ->
-                    Toast.makeText(this, "Importati $count movimenti", Toast.LENGTH_LONG).show()
-                    loadData()
-                }.onFailure {
-                    Toast.makeText(this, "Importazione non riuscita: ${it.message}", Toast.LENGTH_LONG).show()
+                val replace = pendingImportReplace
+                geLoad({
+                    val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("File non leggibile")
+                    store.importJson(text, replace)
+                }) { outcome ->
+                    outcome.onSuccess { count ->
+                        toast("Importati $count movimenti")
+                        reload()
+                    }.onFailure { toast("Importazione non riuscita: ${it.message}") }
                 }
             }
         }
     }
 
-    private fun writeText(uri: android.net.Uri, text: String, message: String) {
-        runCatching {
-            contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(text) } ?: error("File non scrivibile")
-        }.onSuccess { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
-            .onFailure { Toast.makeText(this, "Esportazione non riuscita: ${it.message}", Toast.LENGTH_LONG).show() }
-    }
-
-    private inner class FinanceAdapter : BaseAdapter() {
-        var items: List<FinanceRecord> = emptyList()
-        override fun getCount() = items.size
-        override fun getItem(position: Int) = items[position]
-        override fun getItemId(position: Int) = items[position].id
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val r = items[position]
-            val card = MaterialCardView(this@ExpensesActivity).apply {
-                radius = dp(15).toFloat()
-                cardElevation = dp(1).toFloat()
-                layoutParams = android.widget.AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
-            val body = LinearLayout(this@ExpensesActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(14), dp(10), dp(14), dp(10))
-            }
-            body.addView(LinearLayout(this@ExpensesActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                addView(TextView(this@ExpensesActivity).apply {
-                    text = r.category
-                    textSize = 16f
-                    setTypeface(typeface, Typeface.BOLD)
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(TextView(this@ExpensesActivity).apply {
-                    text = (if (r.type == FinanceType.INCOME) "+" else "−") + euro(r.amount)
-                    textSize = 16f
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-            })
-            body.addView(TextView(this@ExpensesActivity).apply {
-                val scope = if (r.scope == FinanceScope.BUSINESS) "Azienda" else "Privato"
-                val jobsite = if (r.jobsiteCode.isBlank()) "" else " · ${r.jobsiteCode} ${r.jobsiteTitle}"
-                val firefly = when (r.fireflyStatus) {
-                    FireflySyncStatus.SYNCED -> " · Firefly ✓"
-                    FireflySyncStatus.ERROR -> " · Firefly ⚠"
-                    FireflySyncStatus.PENDING -> " · Firefly …"
-                }
-                text = "$scope · ${formatDate(r.date)}$jobsite$firefly${if (r.note.isBlank()) "" else "\n${r.note}"}"
-                textSize = 12f
-                setPadding(0, dp(4), 0, 0)
-            })
-            card.addView(body)
-            return LinearLayout(this@ExpensesActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, dp(4), 0, dp(4))
-                addView(card)
-            }
+    /** Export: serializzazione e scrittura del file fuori dal thread della UI. */
+    private fun exportTo(uri: android.net.Uri, message: String, produce: () -> String) {
+        geLoad({
+            val text = produce()
+            contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(text) }
+                ?: error("File non scrivibile")
+        }) { outcome ->
+            outcome.onSuccess { toast(message) }
+                .onFailure { toast("Esportazione non riuscita: ${it.message}") }
         }
     }
 
-    private class SimpleItemSelectedListener(val block: () -> Unit) : android.widget.AdapterView.OnItemSelectedListener {
-        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) = block()
-        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-    }
+    // -----------------------------------------------------------------------
 
-    private fun euro(value: Double): String = NumberFormat.getCurrencyInstance(Locale.ITALY).format(value)
-    private fun formatDate(value: String): String = runCatching { LocalDate.parse(value).format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) }.getOrDefault(value)
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
+    private fun euro(value: Double): String =
+        NumberFormat.getCurrencyInstance(Locale.ITALY).format(value)
+
+    private fun formatDate(value: String): String = runCatching {
+        LocalDate.parse(value).format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+    }.getOrDefault(value)
 
     companion object {
         private const val REQ_EXPORT_JSON = 501

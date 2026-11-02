@@ -4,6 +4,8 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import android.content.res.Configuration
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.jarvis.JarvisProactiveScheduler
 import it.edilmilan.ge360.core.backup.BackupScratchV9
 import java.io.PrintWriter
@@ -15,6 +17,11 @@ class Ge360Application : Application() {
         // A newly started process has no active GE360 backup/restore workers:
         // reclaim private plaintext scratch remnants BEFORE scheduling any work.
         runCatching { BackupScratchV9.reclaimOnColdStart(this) }
+
+        // La palette va allineata al tema chiaro/scuro prima che qualsiasi
+        // schermata legga un colore. Costa una lettura di risorse.
+        Ge360Brand.sync(this)
+
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching {
@@ -38,6 +45,16 @@ class Ge360Application : Application() {
         Handler(Looper.getMainLooper()).postDelayed({
             runCatching { JarvisProactiveScheduler.schedule(applicationContext) }
         }, 2_500L)
+    }
+
+    /**
+     * Il telefono è passato da chiaro a scuro (o viceversa) mentre l'app era
+     * aperta: la palette va riallineata. Le Activity vengono comunque ricreate
+     * da Android, quindi ridisegnano con i colori nuovi.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Ge360Brand.sync(this)
     }
 
     companion object {

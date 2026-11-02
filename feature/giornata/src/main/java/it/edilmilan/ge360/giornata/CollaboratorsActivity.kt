@@ -290,7 +290,7 @@ class CollaboratorsActivity : AppCompatActivity() {
         dialogBody.addView(amountInput, full(dp(56)))
         dialogBody.addView(noteInput, full(dp(74)))
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(if (existing == null) "Registra pagamento" else "Modifica pagamento")
             .setMessage("Slobodan · settimana ${SlobodanWeeklyPay.periodLabel(weekStart)}")
             .setView(dialogBody)
@@ -298,7 +298,7 @@ class CollaboratorsActivity : AppCompatActivity() {
             .setNegativeButton("Annulla", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val amount = parseMoney(amountInput.text.toString())
                 if (amount <= 0.0) {
                     amountInput.error = "Inserisci un importo valido"

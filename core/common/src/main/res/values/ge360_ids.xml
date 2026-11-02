@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chiave di tag usata da GeThumbnails per capire se una ImageView
+         riciclata sta ancora aspettando la foto che aveva chiesto. -->
+    <item name="ge360_thumb_tag" type="id" />
+</resources>

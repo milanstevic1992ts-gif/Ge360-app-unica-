@@ -301,14 +301,14 @@ class CompensationActivity : AppCompatActivity() {
         form.addView(description)
         form.addView(text("CANTIERE (FACOLTATIVO)", 12f, true))
         form.addView(jobsite)
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Nuovo compenso")
             .setView(form)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("SALVA MATURATO", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val collaboratorName = name.text.toString().trim()
                     require(collaboratorName.isNotEmpty()) { "Inserisci il nome del collaboratore" }
@@ -377,14 +377,14 @@ class CompensationActivity : AppCompatActivity() {
                     "Non verrà creata una seconda Spesa.", 12f, false))
             addView(picker)
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Collega a movimento Spese esistente")
             .setView(container)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("COLLEGA", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val selected = candidates[picker.selectedItemPosition]
                     // Always re-read; a record may have been edited while this dialog was open.
@@ -422,14 +422,14 @@ class CompensationActivity : AppCompatActivity() {
             addView(text("Categoria dell'uscita", 12f, true))
             addView(categories)
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Registra uscita in Spese")
             .setView(container)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("REGISTRA USCITA", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val stableId = "ge360-compensi-payment:${payment.ge360Id}"
                     val existing = finance.getByGe360Id(stableId)
@@ -469,7 +469,7 @@ class CompensationActivity : AppCompatActivity() {
     }
 
     private fun confirmReversal(payment: CompensationPaymentEventV1) {
-        android.app.AlertDialog.Builder(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Storna registrazione di pagamento")
             .setMessage("Questo storno conserva lo storico e ripristina il residuo. " +
                 "Non modifica movimenti bancari né crea o cancella Spese.")
@@ -507,7 +507,7 @@ class CompensationActivity : AppCompatActivity() {
             addView(input)
             addView(paymentDate)
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Registra pagamento dichiarato")
             .setMessage("Registra soltanto un pagamento già effettuato. Questa azione non crea una Spesa e non invia un bonifico.")
             .setView(form)
@@ -515,7 +515,7 @@ class CompensationActivity : AppCompatActivity() {
             .setPositiveButton("CONFERMA", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val cents = parseMoney(input.text.toString())
                     require(cents > 0L && cents <= balance.remainingCents) {
