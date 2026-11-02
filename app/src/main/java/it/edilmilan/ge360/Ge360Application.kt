@@ -6,6 +6,7 @@ import android.os.Looper
 import android.os.Process
 import android.content.res.Configuration
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
+import it.edilmilan.ge360.core.common.ui.GeLog
 import it.edilmilan.ge360.jarvis.JarvisProactiveScheduler
 import it.edilmilan.ge360.core.backup.BackupScratchV9
 import java.io.PrintWriter
@@ -21,6 +22,10 @@ class Ge360Application : Application() {
         // La palette va allineata al tema chiaro/scuro prima che qualsiasi
         // schermata legga un colore. Costa una lettura di risorse.
         Ge360Brand.sync(this)
+
+        // Dopo questa riga gli errori finiscono anche in un file leggibile dal
+        // Centro diagnostico, non solo in logcat.
+        GeLog.install(this)
 
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->

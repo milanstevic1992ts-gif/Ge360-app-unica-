@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.backup.DiagnosticsInspectorV11
+import it.edilmilan.ge360.core.common.ui.GeLog
 import it.edilmilan.ge360.sync.DataHubSyncCoordinator
 import java.text.DateFormat
 import java.util.Date
@@ -168,6 +169,28 @@ class DiagnosticsActivity : AppCompatActivity() {
 
         // Do not display SAF URLs, which may expose names/accounts in screenshots.
 
+        val errorLog = GeLog.recent()
+        if (errorLog.isNotBlank()) {
+            addSection(
+                "ERRORI RECENTI",
+                "Registro locale, dal più recente. Resta sul telefono e non entra nel rapporto condivisibile."
+            )
+            body.addView(card(TextView(this).apply {
+                text = errorLog
+                textSize = 10f
+                setTextColor(Color.parseColor("#4D5359"))
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+            }))
+            body.addView(MaterialButton(this).apply {
+                text = "SVUOTA REGISTRO ERRORI"
+                setOnClickListener {
+                    GeLog.clear()
+                    Toast.makeText(this@DiagnosticsActivity, "Registro errori svuotato", Toast.LENGTH_SHORT).show()
+                    renderStatus()
+                }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(8) })
+        }
+
         if (crash.isNotBlank()) {
             addSection("ULTIMO CRASH", "Estratto del crash recorder locale. Non viene inviato automaticamente.")
             body.addView(card(TextView(this).apply {
@@ -191,6 +214,9 @@ class DiagnosticsActivity : AppCompatActivity() {
             appendLine("Controllo: ${result?.let { formatDate(it.checkedAt) } ?: "non eseguito"}")
             appendLine("Versione: ${identity.versionName} / ${identity.versionCode}")
             appendLine("Storage interno disponibile: ${formatBytes(internal.availableBytes)}")
+            // Solo il conteggio: i testi degli errori possono contenere nomi,
+            // percorsi e risposte del server, e questo rapporto viene condiviso.
+            appendLine("Errori registrati in locale: ${GeLog.entryCount()}")
             if (result != null) append(result.publicSummary())
             else appendLine("Nessuna verifica approfondita eseguita.")
             // No crash stacks, SAF URIs, filesystem paths or credentials.

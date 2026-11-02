@@ -73,8 +73,14 @@ fun Activity.geIsAlive(): Boolean = !isFinishing && !isDestroyed
  */
 fun <T> Activity.geLoad(work: () -> T, onResult: (Result<T>) -> Unit) {
     if (!geIsAlive()) return
+    val origin = this::class.java.simpleName
     GeAsync.execute {
         val outcome = runCatching(work)
+        // Punto di raccolta: ogni fallimento di una schermata migrata finisce
+        // nel registro senza che la schermata debba ricordarsi di loggarlo.
+        outcome.exceptionOrNull()?.let { error ->
+            GeLog.e(origin, "caricamento non riuscito", error)
+        }
         GeAsync.onMain {
             if (geIsAlive()) onResult(outcome)
         }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Regole di rete GE360 — build di debug.
+
+  Questo file sostituisce quello di src/main nei soli build di debug, ed e'
+  volutamente permissivo: durante le prove serve poter puntare l'app a un
+  server in rete locale (http://192.168.x.x) o a un tunnel temporaneo senza
+  dover modificare ogni volta la configurazione di release.
+
+  Il build di release NON usa questo file. Se un server in chiaro deve
+  funzionare anche in release, va aggiunto in src/main/res/xml/.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Permette di ispezionare il traffico con un proxy durante le prove. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

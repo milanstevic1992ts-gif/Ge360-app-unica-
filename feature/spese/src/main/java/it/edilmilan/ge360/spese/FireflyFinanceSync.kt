@@ -5,6 +5,7 @@ import it.edilmilan.ge360.core.bridge.BridgeHttpException
 import it.edilmilan.ge360.core.bridge.BridgeService
 import it.edilmilan.ge360.core.bridge.JsonHttpClient
 import it.edilmilan.ge360.core.bridge.SecureBridgeSettings
+import it.edilmilan.ge360.core.common.ui.GeLog
 import org.json.JSONObject
 import java.io.IOException
 import java.math.BigDecimal
@@ -148,9 +149,19 @@ object FireflyFinanceSync {
         return if (outcomeUnknown) {
             val message = "Esito non confermato · verifica su Firefly prima di riprovare ($detail)"
             store.markFireflyUncertain(record.ge360Id, message)
+            GeLog.e(
+                "Firefly",
+                "esito ignoto per il movimento ${record.ge360Id.take(8)} di ${record.amount} €",
+                error
+            )
             FireflySyncResult(false, message, uncertain = true)
         } else {
             store.markFireflyError(record.ge360Id, detail)
+            GeLog.w(
+                "Firefly",
+                "invio rifiutato per il movimento ${record.ge360Id.take(8)}",
+                error
+            )
             FireflySyncResult(false, detail)
         }
     }
