@@ -29,6 +29,12 @@ import it.edilmilan.ge360.spese.ExpensesActivity
  * Home di bootstrap: non apre SQLite, SharedPreferences di moduli o servizi di sync.
  * Serve a garantire che GE360 possa sempre avviarsi anche in presenza di dati legacy
  * o di un modulo operativo temporaneamente non compatibile.
+ *
+ * Non e' piu' la schermata iniziale: quel ruolo e' di [TodayFragment], che
+ * rispetta lo stesso vincolo (nessuna lettura di dati prima del primo frame) ma
+ * mostra la giornata e le azioni quotidiane invece di un elenco di moduli.
+ * Questa resta come ultima rete di sicurezza: `MainActivity` ci ripiega se
+ * "Oggi" non riesce ad aprirsi.
  */
 class SafeHomeFragment : Fragment() {
 

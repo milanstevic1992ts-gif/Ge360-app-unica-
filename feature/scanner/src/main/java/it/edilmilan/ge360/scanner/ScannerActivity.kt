@@ -93,6 +93,12 @@ class ScannerActivity : AppCompatActivity() {
         contextJobsite = resolveRequestedJobsite()
         setContentView(buildScreen())
         loadDocuments()
+
+        // Arrivo diretto da "Oggi": parte subito la scansione, perche' il gesto
+        // quotidiano e' inquadrare uno scontrino, non sfogliare l'archivio.
+        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_SCAN_NOW, false)) {
+            startScan()
+        }
     }
 
     override fun onResume() {
@@ -603,6 +609,10 @@ class ScannerActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PREFILL_TYPE = "ge360_scanner_prefill_type"
+
+        /** Avvia la scansione appena la schermata si apre. */
+        const val EXTRA_SCAN_NOW = "ge360_scanner_scan_now"
+
         private const val REQ_EXPORT = 601
     }
 }

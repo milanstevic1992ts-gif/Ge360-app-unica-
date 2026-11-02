@@ -102,6 +102,17 @@ class ExpensesActivity : BaseGeActivity() {
         jobsiteStore = JobsiteStore(this).managed()
         setContentView(buildScreen())
         reload()
+
+        // Arrivo diretto da "Oggi": apre subito il form, cosi' segnare uno
+        // scontrino e' un tocco invece di tre.
+        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_NEW_EXPENSE, false)) {
+            val type = if (intent.getBooleanExtra(EXTRA_AS_INCOME, false)) {
+                FinanceType.INCOME
+            } else {
+                FinanceType.EXPENSE
+            }
+            showEditor(FinanceRecord(date = LocalDate.now().toString(), type = type), type)
+        }
     }
 
     override fun onResume() {
@@ -903,6 +914,12 @@ class ExpensesActivity : BaseGeActivity() {
     }.getOrDefault(value)
 
     companion object {
+        /** Apre la schermata con il form del nuovo movimento gia' aperto. */
+        const val EXTRA_NEW_EXPENSE = "ge360_new_expense"
+
+        /** Da usare con [EXTRA_NEW_EXPENSE] per partire da un'entrata. */
+        const val EXTRA_AS_INCOME = "ge360_new_expense_income"
+
         private const val REQ_EXPORT_JSON = 501
         private const val REQ_IMPORT_JSON = 502
         private const val REQ_EXPORT_CSV = 503

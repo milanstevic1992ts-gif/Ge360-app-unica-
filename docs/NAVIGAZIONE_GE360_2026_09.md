@@ -12,9 +12,25 @@ GE360 usa una shell principale con cinque destinazioni stabili:
 
 La barra inferiore serve solo per le destinazioni principali. I moduli operativi esistenti restano Activity indipendenti e non vengono duplicati dentro la shell.
 
-## Home
+## Home → "Oggi"
 
-La Home è una dashboard operativa, non un catalogo di moduli. Mostra KPI, cantieri da controllare, preparazione furgone, alert, stato cantieri ed economia. L'elenco completo degli strumenti è stato spostato in `Altro`.
+La prima destinazione si chiama **Oggi** ed è `TodayFragment`.
+
+Il principio era già scritto qui — *"la Home è una dashboard operativa, non un catalogo di moduli"* — ma la pratica lo contraddiceva: la Home era diventata un elenco di otto card numerate, di cui Cantieri, Preventivi e Rilievi duplicavano la barra in basso, e delle quattro cose che si fanno ogni giorno ne compariva una sola (Spese). Ore, foto e scansione stavano in `Altro`, a tre o quattro tocchi.
+
+"Oggi" contiene, in questo ordine:
+
+1. **il piano del giorno** — in arretrato, oggi, e il conteggio della settimana. Riusa `AgendaDayPlan`, non lo riscrive;
+2. **le quattro azioni quotidiane**, un tocco ciascuna: Ore, Foto, Spesa, Scansiona;
+3. **i collegamenti** a La mia giornata, Agenda, Settimana cantieri, Avvisi Jarvis.
+
+Cantieri, Preventivi e Rilievi **non** compaiono: sono già nella barra, a un tocco.
+
+Due azioni arrivano direttamente al punto, non alla schermata: `ExpensesActivity.EXTRA_NEW_EXPENSE` apre il form del movimento, `ScannerActivity.EXTRA_SCAN_NOW` avvia la scansione. Il gesto quotidiano è segnare uno scontrino, non sfogliare un archivio.
+
+**Vincolo da non perdere.** "Oggi" rispetta la regola che ha fatto nascere `SafeHomeFragment`: niente lettura di dati prima del primo frame. Titolo, azioni e collegamenti si disegnano senza toccare SQLite; il piano del giorno arriva dopo, in background, con ogni fonte protetta separatamente. Se "Oggi" non riesce ad aprirsi, `MainActivity` ripiega su `SafeHomeFragment`.
+
+La dashboard completa (`HomeFragment`: KPI, cantieri da controllare, furgone, economia) resta dietro "Quadro completo".
 
 ## Cantieri
 

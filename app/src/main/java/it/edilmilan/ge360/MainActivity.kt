@@ -106,7 +106,7 @@ class MainActivity : BaseGeActivity() {
         )
 
         val tabs = linkedMapOf(
-            R.id.nav_home to createNavTab("Home", R.drawable.ic_nav_home),
+            R.id.nav_home to createNavTab("Oggi", R.drawable.ic_nav_home),
             R.id.nav_cantieri to createNavTab("Cantieri", R.drawable.ic_nav_jobsites),
             R.id.nav_preventivi to createNavTab("Preventivi", R.drawable.ic_nav_estimates),
             R.id.nav_rilievi to createNavTab("Rilievi", R.drawable.ic_nav_floorplans),
@@ -212,7 +212,10 @@ class MainActivity : BaseGeActivity() {
             R.id.nav_preventivi -> MainSectionFragment.newInstance(MainSectionFragment.SECTION_ESTIMATES)
             R.id.nav_rilievi -> MainSectionFragment.newInstance(MainSectionFragment.SECTION_FLOORPLANS)
             R.id.nav_altro -> MainSectionFragment.newInstance(MainSectionFragment.SECTION_MORE)
-            else -> SafeHomeFragment()
+            // "Oggi" e' la schermata iniziale: come SafeHomeFragment non apre
+            // database prima del primo frame, ma invece di elencare moduli
+            // mostra la giornata e le quattro azioni quotidiane.
+            else -> TodayFragment()
         }
 
         runCatching {
@@ -228,9 +231,27 @@ class MainActivity : BaseGeActivity() {
             }
         }.onFailure { error ->
             Log.e("GE360_NAV", "Errore apertura destinazione $itemId", error)
-            showNavigationRecovery(error)
+            // Se e' la schermata iniziale a non aprirsi, si ripiega sulla Home
+            // di bootstrap invece di mostrare un errore: l'app deve sempre
+            // partire. Per tutto il resto resta la schermata di recupero.
+            if (itemId == R.id.nav_home && showBootstrapHome()) {
+                currentDestination = itemId
+                updateNavSelection(itemId)
+            } else {
+                showNavigationRecovery(error)
+            }
         }
     }
+
+    /** Ultima rete di sicurezza all'avvio: Home leggera, nessun dato letto. */
+    private fun showBootstrapHome(): Boolean = runCatching {
+        if (supportFragmentManager.isStateSaved) return@runCatching false
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.mainContainer, SafeHomeFragment())
+            .commitNow()
+        true
+    }.onFailure { Log.e("GE360_NAV", "Home di bootstrap non disponibile", it) }
+        .getOrDefault(false)
 
     fun openFullDashboard() {
         runCatching {
