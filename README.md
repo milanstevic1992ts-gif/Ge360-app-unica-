@@ -2,7 +2,7 @@
 
 Applicazione Android unica per l'ecosistema **GE360 / EDIL MILAN STEVIC**, progettata come app modulare e offline-first.
 
-## Stato attuale — v0.21.10
+## Stato attuale — v0.21.25
 
 La Home espone **13 moduli operativi**:
 

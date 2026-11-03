@@ -32,7 +32,7 @@ GE360 è offline-first. I dati sensibili devono essere conservati nello storage 
 
 ## HTTP locale
 
-Per compatibilità con servizi LAN esistenti il manifest Android consente tecnicamente traffico cleartext. Il client GE360 lo blocca comunque a livello applicativo: un URL `http://` viene rifiutato finché l'utente non abilita esplicitamente **Consenti HTTP locale non cifrato** per quel servizio.
+Il manifest usa `@xml/network_security_config`. Nella **release** Android blocca HTTP in generale, ammettendolo solo per `ts.net`, `localhost` e `127.0.0.1` secondo `app/src/main/res/xml/network_security_config.xml`; il client Bridge ha inoltre il consenso esplicito `allowInsecureHttp` per il singolo servizio. Nella **debug** `app/src/debug/res/xml/network_security_config.xml` permette HTTP e CA utente per consentire test locali: per questo l'APK debug è adatto al collaudo, non alla distribuzione in produzione.
 
 HTTPS resta preferibile. Non usare HTTP su reti non fidate.
 

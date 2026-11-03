@@ -2,11 +2,6 @@ name: Build GE360 APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/ge360-design-accessibility-20261103
-    paths:
-      - '.github/build-apk-trigger'
 
 permissions:
   contents: read
