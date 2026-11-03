@@ -173,3 +173,16 @@ Da fare a mano, su dispositivo:
 
 Vale la pena attivare `StrictMode` nei build di debug: segnala da solo le
 letture su thread UI che restano negli altri moduli.
+
+
+## Integrazione del 3 novembre 2026 — accessibilità e Home
+
+- `colorOnSecondary` ora usa `ge360_on_secondary`: bianco sul verde scuro in modalità chiara e scuro sulla salvia chiara in modalità notte.
+- L'azione blu di Home ha due coppie dedicate `ge360_action_blue_soft` / `ge360_action_blue_text`, entrambe ad alto contrasto (oltre 7:1 nei colori definiti).
+- `feature/home/src/main/res/layout/fragment_home.xml` usa soltanto riferimenti `@color/ge360_*` per i colori statici; i colori cambiano correttamente con `values-night`.
+- La verifica automatizzata di contrasto include le nuove coppie; la verifica su dispositivo **non è stata eseguita**.
+- Nessuna logica dati, contratto API, scanner/FIR o sincronizzazione è stata modificata.
+
+### Budget GitHub Actions
+
+I quattro workflow del branch sono `workflow_dispatch`-only: non devono avviare job con push o apertura di PR. Sono stati cambiati **solo su questo branch**, non su `main`. Prima di un merge verificare sempre i trigger effettivi del ramo destinatario e autorizzare separatamente build, test, APK e deploy.

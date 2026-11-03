@@ -13,7 +13,7 @@
         <item name="colorOnPrimary">@color/ge360_on_primary</item>
         <item name="colorSecondary">@color/ge360_forest</item>
         <item name="colorSecondaryVariant">@color/ge360_forest_dark</item>
-        <item name="colorOnSecondary">@color/ge360_on_primary</item>
+        <item name="colorOnSecondary">@color/ge360_on_secondary</item>
         <item name="colorSurface">@color/ge360_surface</item>
         <item name="colorOnSurface">@color/ge360_text</item>
         <item name="colorOnBackground">@color/ge360_text</item>

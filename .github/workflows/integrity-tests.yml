@@ -2,32 +2,6 @@ name: Test GE360 Integrity
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-  push:
-    branches:
-      - main
-    paths:
-      - 'app/**'
-      - 'feature/**'
-      - 'scripts/verify-backup-coverage.sh'
-      - 'scripts/verify-database-migrations.sh'
-      - 'scripts/verify-operational-dashboard.sh'
-      - 'scripts/verify-jobsite-hub-finance.sh'
-      - 'scripts/verify-branding.sh'
-      - 'scripts/verify-collaborator-weekly-pay.sh'
-      - 'scripts/verify-external-collaborators.sh'
-      - 'scripts/verify-restyling.sh'
-      - 'scripts/verify-materials-v2.sh'
-      - 'scripts/verify-jobsite-labor-days.sh'
-      - 'scripts/verify-jobsite-cost-analytics.sh'
-      - 'scripts/verify-voice-trainer.sh'
-      - 'scripts/verify-proactive-jarvis-phase8.sh'
-      - 'scripts/verify-proactive-actions-phase9.sh'
-      - 'core/common/**'
-      - 'core/bridge/**'
-      - '.github/workflows/integrity-tests.yml'
 
 permissions:
   contents: read

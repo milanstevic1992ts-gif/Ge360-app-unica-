@@ -13,6 +13,7 @@
     <color name="ge360_primary_dark">#A26609</color>
     <color name="ge360_primary_soft">#2E2619</color>
     <color name="ge360_on_primary">#FFFFFF</color>
+    <color name="ge360_on_secondary">#17181A</color>
     <!-- Ocra come testo/icona sul fondo scuro: va schiarito. -->
     <color name="ge360_accent">#F3B64A</color>
 
@@ -20,6 +21,8 @@
     <color name="ge360_forest_dark">#E6EBE2</color>
     <color name="ge360_forest_soft">#2A2F27</color>
     <color name="ge360_technical_blue">#5BA8E0</color>
+    <color name="ge360_action_blue_soft">#1E2D40</color>
+    <color name="ge360_action_blue_text">#89BFFF</color>
 
     <color name="ge360_background">#17181A</color>
     <color name="ge360_surface">#212220</color>

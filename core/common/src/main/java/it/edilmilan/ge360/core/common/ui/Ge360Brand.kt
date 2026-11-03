@@ -27,6 +27,7 @@ data class Ge360Palette(
     val primaryDark: Int,
     val primarySoft: Int,
     val onPrimary: Int,
+    val onSecondary: Int,
     val accent: Int,
     val forest: Int,
     val forestDark: Int,
@@ -61,6 +62,7 @@ data class Ge360Palette(
             primaryDark = Color.rgb(162, 102, 0),
             primarySoft = Color.rgb(255, 244, 224),
             onPrimary = Color.WHITE,
+            onSecondary = Color.rgb(255, 255, 255),
             accent = Color.rgb(154, 97, 0),
             forest = Color.rgb(56, 66, 52),
             forestDark = Color.rgb(40, 48, 40),
@@ -90,6 +92,7 @@ data class Ge360Palette(
                 primaryDark = c(R.color.ge360_primary_dark),
                 primarySoft = c(R.color.ge360_primary_soft),
                 onPrimary = c(R.color.ge360_on_primary),
+                onSecondary = c(R.color.ge360_on_secondary),
                 accent = c(R.color.ge360_accent),
                 forest = c(R.color.ge360_forest),
                 forestDark = c(R.color.ge360_forest_dark),
@@ -159,6 +162,9 @@ object Ge360Brand {
 
     /** Testo/icona sopra un riempimento [PrimaryDark]. */
     val OnPrimary: Int get() = palette.onPrimary
+
+    /** Testo leggibile sopra il colore secondario in entrambi i temi. */
+    val OnSecondary: Int get() = palette.onSecondary
 
     /** Ocra da usare come TESTO o icona sopra [Surface]/[Background]. */
     val Accent: Int get() = palette.accent

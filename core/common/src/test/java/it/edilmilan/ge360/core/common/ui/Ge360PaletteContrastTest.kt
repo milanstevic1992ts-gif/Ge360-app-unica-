@@ -46,6 +46,8 @@ class Ge360PaletteContrastTest {
         Pair("ge360_accent", "ge360_background", 4.5, "etichetta ocra su fondo"),
         Pair("ge360_accent", "ge360_primary_soft", 4.5, "ocra su pillola chiara"),
         Pair("ge360_on_primary", "ge360_primary_dark", 4.5, "testo sul bottone primario"),
+        Pair("ge360_on_secondary", "ge360_forest", 4.5, "testo sul colore secondario"),
+        Pair("ge360_action_blue_text", "ge360_action_blue_soft", 4.5, "testo CTA blu"),
         Pair("ge360_warning", "ge360_surface", 4.5, "avviso su card"),
         Pair("ge360_success", "ge360_surface", 3.0, "stato positivo"),
         Pair("ge360_success", "ge360_success_soft", 3.0, "stato positivo su badge"),
@@ -86,6 +88,7 @@ class Ge360PaletteContrastTest {
         val mapping = mapOf(
             "primary" to "ge360_primary",
             "primaryDark" to "ge360_primary_dark",
+            "onSecondary" to "ge360_on_secondary",
             "accent" to "ge360_accent",
             "forest" to "ge360_forest",
             "background" to "ge360_background",
