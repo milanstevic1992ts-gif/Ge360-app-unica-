@@ -14,6 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.scanner.DocumentStore
 import it.edilmilan.ge360.scanner.ScannerDocument
 import it.edilmilan.ge360.spese.FinanceStore
@@ -142,7 +143,7 @@ class CompensationActivity : AppCompatActivity() {
     private fun screen(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F6F5F2"))
+            setBackgroundColor(Ge360Brand.Background)
             setPadding(dp(14), dp(8), dp(14), dp(12))
         }
         root.addView(buildScreenHeaderWithSubtitle(
@@ -191,7 +192,7 @@ class CompensationActivity : AppCompatActivity() {
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(14), dp(14), dp(14), dp(14))
-                setBackgroundColor(Color.WHITE)
+                setBackgroundColor(Ge360Brand.Surface)
             }
             card.addView(text("$person · $label", 17f, true))
             card.addView(text("${row.periodStart} · ${row.description.ifBlank { "Prestazione" }}", 12f, false))
@@ -556,7 +557,7 @@ class CompensationActivity : AppCompatActivity() {
     private fun text(value: String, size: Float, bold: Boolean) = TextView(this).apply {
         text = value
         textSize = size
-        setTextColor(Color.parseColor(if (bold) "#27362F" else "#5C625D"))
+        setTextColor(if (bold) Ge360Brand.Text else Ge360Brand.TextSecondary)
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         setPadding(dp(4), dp(8), dp(4), dp(6))
     }

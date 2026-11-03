@@ -2,10 +2,10 @@ package it.edilmilan.ge360.planimetrie
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -18,36 +18,36 @@ class WallProfileView(context: Context) : View(context) {
         }
 
     private val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#ECE8E2")
+        color = Ge360Brand.Border
         strokeWidth = 1f
     }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#F4F1EC")
+        color = Ge360Brand.SurfaceWarm
         style = Paint.Style.FILL
     }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#202327")
+        color = Ge360Brand.Text
         style = Paint.Style.STROKE
         strokeWidth = 5f
         strokeJoin = Paint.Join.ROUND
     }
-    private val openStroke = Paint(stroke).apply { color = Color.parseColor("#B85700") }
+    private val openStroke = Paint(stroke).apply { color = Ge360Brand.Accent }
     private val dimension = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#5E646A")
+        color = Ge360Brand.TextSecondary
         textSize = 24f
         textAlign = Paint.Align.CENTER
     }
     private val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#B85700")
+        color = Ge360Brand.Accent
         style = Paint.Style.FILL
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(Color.WHITE)
+        canvas.drawColor(Ge360Brand.Surface)
         if (walls.isEmpty()) {
             val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.parseColor("#777C82")
+                color = Ge360Brand.TextSecondary
                 textSize = 28f
                 textAlign = Paint.Align.CENTER
             }

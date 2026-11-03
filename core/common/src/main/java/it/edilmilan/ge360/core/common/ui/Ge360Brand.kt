@@ -44,7 +44,9 @@ data class Ge360Palette(
     val warning: Int,
     val warningSoft: Int,
     val danger: Int,
-    val dangerSoft: Int
+    val dangerSoft: Int,
+    val inverse: Int,
+    val onInverse: Int
 ) {
     companion object {
         /**
@@ -56,10 +58,10 @@ data class Ge360Palette(
          */
         val LIGHT_FALLBACK = Ge360Palette(
             primary = Color.rgb(228, 154, 18),
-            primaryDark = Color.rgb(184, 116, 0),
+            primaryDark = Color.rgb(162, 102, 0),
             primarySoft = Color.rgb(255, 244, 224),
             onPrimary = Color.WHITE,
-            accent = Color.rgb(184, 116, 0),
+            accent = Color.rgb(154, 97, 0),
             forest = Color.rgb(56, 66, 52),
             forestDark = Color.rgb(40, 48, 40),
             forestSoft = Color.rgb(239, 243, 236),
@@ -68,15 +70,17 @@ data class Ge360Palette(
             surface = Color.WHITE,
             surfaceWarm = Color.rgb(251, 248, 241),
             text = Color.rgb(31, 36, 33),
-            textSecondary = Color.rgb(107, 115, 108),
+            textSecondary = Color.rgb(103, 111, 104),
             border = Color.rgb(228, 225, 217),
             borderStrong = Color.rgb(211, 205, 194),
             success = Color.rgb(39, 122, 73),
             successSoft = Color.rgb(237, 248, 241),
-            warning = Color.rgb(184, 116, 0),
+            warning = Color.rgb(154, 97, 0),
             warningSoft = Color.rgb(255, 244, 224),
             danger = Color.rgb(180, 35, 24),
-            dangerSoft = Color.rgb(255, 240, 238)
+            dangerSoft = Color.rgb(255, 240, 238),
+            inverse = Color.rgb(40, 48, 40),
+            onInverse = Color.rgb(246, 245, 242)
         )
 
         internal fun resolve(context: Context): Ge360Palette {
@@ -103,7 +107,9 @@ data class Ge360Palette(
                 warning = c(R.color.ge360_warning),
                 warningSoft = c(R.color.ge360_warning_soft),
                 danger = c(R.color.ge360_danger),
-                dangerSoft = c(R.color.ge360_danger_soft)
+                dangerSoft = c(R.color.ge360_danger_soft),
+                inverse = c(R.color.ge360_inverse),
+                onInverse = c(R.color.ge360_on_inverse)
             )
         }
     }
@@ -174,6 +180,18 @@ object Ge360Brand {
     val WarningSoft: Int get() = palette.warningSoft
     val Danger: Int get() = palette.danger
     val DangerSoft: Int get() = palette.dangerSoft
+
+    /**
+     * Riempimento di una card che spicca invertendo il fondo della pagina.
+     *
+     * In tema chiaro e' scura, in tema scuro e' chiara. Il testo sopra va in
+     * [OnInverse], non in [OnPrimary]: quest'ultimo e' bianco fisso e su una
+     * card chiara sparirebbe.
+     */
+    val Inverse: Int get() = palette.inverse
+
+    /** Testo e icone sopra [Inverse]. */
+    val OnInverse: Int get() = palette.onInverse
 }
 
 /** True quando il telefono sta usando il tema scuro. */

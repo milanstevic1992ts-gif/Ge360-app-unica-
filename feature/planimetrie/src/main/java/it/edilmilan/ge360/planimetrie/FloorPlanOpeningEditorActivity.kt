@@ -1,6 +1,5 @@
 package it.edilmilan.ge360.planimetrie
 
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
@@ -17,6 +16,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 
 class FloorPlanOpeningEditorActivity : AppCompatActivity() {
     private lateinit var store: FloorPlanStore
@@ -62,12 +62,12 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
                     text = "Porte / finestre"
                     textSize = 22f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#202327"))
+                    setTextColor(Ge360Brand.Text)
                 })
                 addView(TextView(this@FloorPlanOpeningEditorActivity).apply {
                     text = "Parete ${fmt(wall.length)} m · ${WallDirections.label(wall.direction)}"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#6D7278"))
+                    setTextColor(Ge360Brand.TextSecondary)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
             addView(MaterialButton(this@FloorPlanOpeningEditorActivity).apply {
@@ -82,7 +82,7 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
         summary = TextView(this).apply {
             textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#30343A"))
+            setTextColor(Ge360Brand.Text)
             setPadding(0, dp(10), 0, dp(8))
         }
         root.addView(summary)
@@ -90,7 +90,7 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "La distanza è misurata dall'inizio della parete. Porte e finestre sono solo elementi del rilievo: NON vengono sottratte dai m² lordi delle pareti."
             textSize = 11f
-            setTextColor(Color.parseColor("#74797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, 0, 0, dp(12))
         })
 
@@ -129,7 +129,7 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
             listRoot.addView(TextView(this).apply {
                 text = "Aggiungi una porta o una finestra e indica dove si trova lungo questa parete."
                 textSize = 13f
-                setTextColor(Color.parseColor("#74797F"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(4), dp(10), dp(4), dp(10))
             })
             return
@@ -140,8 +140,8 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
                 radius = dp(14).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor("#E4E6E8")
-                setCardBackgroundColor(Color.WHITE)
+                strokeColor = Ge360Brand.Border
+                setCardBackgroundColor(Ge360Brand.Surface)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { openingActions(opening) }
@@ -156,19 +156,19 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
                             text = opening.type
                             textSize = 15f
                             setTypeface(typeface, Typeface.BOLD)
-                            setTextColor(Color.parseColor("#202327"))
+                            setTextColor(Ge360Brand.Text)
                         })
                         addView(TextView(this@FloorPlanOpeningEditorActivity).apply {
                             text = opening.label().substringAfter(" · ", opening.label())
                             textSize = 12f
-                            setTextColor(Color.parseColor("#6D7278"))
+                            setTextColor(Ge360Brand.TextSecondary)
                             setPadding(0, dp(3), 0, 0)
                         })
                     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     addView(TextView(this@FloorPlanOpeningEditorActivity).apply {
                         text = "›"
                         textSize = 24f
-                        setTextColor(Color.parseColor("#B85700"))
+                        setTextColor(Ge360Brand.Accent)
                     })
                 })
             })
@@ -225,7 +225,7 @@ class FloorPlanOpeningEditorActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "Parete ${fmt(wall.length)} m. L'apertura deve stare interamente dentro la parete e non sovrapporsi alle altre."
             textSize = 11f
-            setTextColor(Color.parseColor("#74797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(3), 0, dp(8))
         })
         root.addView(offset, lp(52))

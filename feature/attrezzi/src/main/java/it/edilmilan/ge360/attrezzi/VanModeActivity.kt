@@ -1,7 +1,6 @@
 package it.edilmilan.ge360.attrezzi
 
 import android.app.DatePickerDialog
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -16,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
@@ -73,7 +73,7 @@ class VanModeActivity : AppCompatActivity() {
     private fun buildScreen(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(12), dp(10), dp(12), dp(12))
-        setBackgroundColor(Color.parseColor("#F6F7F9"))
+        setBackgroundColor(Ge360Brand.Surface)
 
         addView(buildScreenHeaderWithSubtitle(
             context = this@VanModeActivity,
@@ -102,7 +102,7 @@ class VanModeActivity : AppCompatActivity() {
 
         summary = TextView(this@VanModeActivity).apply {
             textSize = 13f
-            setTextColor(Color.parseColor("#454A50"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(4), dp(10), dp(4), dp(8))
         }
         addView(summary)
@@ -125,8 +125,8 @@ class VanModeActivity : AppCompatActivity() {
         radius = dp(18).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E2E4E7")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         setContentPadding(dp(14), dp(13), dp(14), dp(13))
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(6)
@@ -138,13 +138,13 @@ class VanModeActivity : AppCompatActivity() {
             addView(TextView(this@VanModeActivity).apply {
                 text = "📅 Quando prepararla"
                 textSize = 17f
-                setTextColor(Color.parseColor("#15171A"))
+                setTextColor(Ge360Brand.Text)
                 setTypeface(typeface, Typeface.BOLD)
             })
             addView(TextView(this@VanModeActivity).apply {
                 text = "Puoi lasciarla in Dashboard per oggi, domani o una data scelta."
                 textSize = 12f
-                setTextColor(Color.parseColor("#6D7278"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(3), 0, dp(9))
             })
 
@@ -160,7 +160,7 @@ class VanModeActivity : AppCompatActivity() {
 
             planDateLabel = TextView(this@VanModeActivity).apply {
                 textSize = 14f
-                setTextColor(Color.parseColor("#B85700"))
+                setTextColor(Ge360Brand.Accent)
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(dp(2), dp(9), dp(2), dp(5))
             }
@@ -171,8 +171,8 @@ class VanModeActivity : AppCompatActivity() {
                 minLines = 2
                 maxLines = 4
                 gravity = Gravity.TOP
-                setTextColor(Color.parseColor("#15171A"))
-                setHintTextColor(Color.parseColor("#868B91"))
+                setTextColor(Ge360Brand.Text)
+                setHintTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(10), dp(9), dp(10), dp(9))
             }
             addView(planNote, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(82)))
@@ -187,7 +187,7 @@ class VanModeActivity : AppCompatActivity() {
 
             planStatus = TextView(this@VanModeActivity).apply {
                 textSize = 12f
-                setTextColor(Color.parseColor("#6D7278"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(2), dp(5), dp(2), 0)
             }
             addView(planStatus)
@@ -309,14 +309,14 @@ class VanModeActivity : AppCompatActivity() {
         radius = dp(18).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#C9DED0")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         setContentPadding(dp(18), dp(22), dp(18), dp(22))
         addView(TextView(this@VanModeActivity).apply {
             text = "✓ TUTTO PRESO\n${job.code} · checklist completata"
             textSize = 19f
             gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#1C5D35"))
+            setTextColor(Ge360Brand.Success)
             setTypeface(typeface, Typeface.BOLD)
         })
     }
@@ -325,8 +325,8 @@ class VanModeActivity : AppCompatActivity() {
         radius = dp(16).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E2E4E7")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = dp(9)
         }
@@ -336,7 +336,7 @@ class VanModeActivity : AppCompatActivity() {
             addView(TextView(this@VanModeActivity).apply {
                 text = "${if (item.kind == ResourceKind.TOOL) "🔧" else "📦"} ${item.name}"
                 textSize = 18f
-                setTextColor(Color.parseColor("#15171A"))
+                setTextColor(Ge360Brand.Text)
                 setTypeface(typeface, Typeface.BOLD)
             })
             addView(TextView(this@VanModeActivity).apply {
@@ -346,7 +346,7 @@ class VanModeActivity : AppCompatActivity() {
                     "${clean(item.quantity)} ${displayUnit(item)} · DA PRENDERE"
                 }
                 textSize = 13f
-                setTextColor(Color.parseColor("#5E6369"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(4), 0, dp(8))
             })
             addView(LinearLayout(this@VanModeActivity).apply {
@@ -391,7 +391,7 @@ class VanModeActivity : AppCompatActivity() {
     private fun emptyText(value: String) = TextView(this).apply {
         text = value
         textSize = 14f
-        setTextColor(Color.parseColor("#6D7278"))
+        setTextColor(Ge360Brand.TextSecondary)
         gravity = Gravity.CENTER
         setPadding(dp(20), dp(30), dp(20), dp(30))
     }

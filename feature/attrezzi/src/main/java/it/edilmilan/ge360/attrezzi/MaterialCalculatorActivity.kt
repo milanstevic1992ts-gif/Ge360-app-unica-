@@ -21,6 +21,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import java.text.DateFormat
 import java.text.DecimalFormat
@@ -57,7 +58,7 @@ class MaterialCalculatorActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(18))
-            setBackgroundColor(Color.parseColor("#F6F7F9"))
+            setBackgroundColor(Ge360Brand.Surface)
         }
         root.addView(buildScreenHeaderWithSubtitle(
             context = this,
@@ -106,7 +107,7 @@ class MaterialCalculatorActivity : AppCompatActivity() {
         statusLabel = TextView(this).apply {
             text = "Inserisci le misure e premi CALCOLA."
             textSize = 13f
-            setTextColor(Color.parseColor("#5F656B"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(4), dp(10), dp(4), dp(8))
         }
         body.addView(statusLabel)
@@ -151,7 +152,7 @@ class MaterialCalculatorActivity : AppCompatActivity() {
         fieldsContainer.addView(TextView(this).apply {
             text = spec.subtitle
             textSize = 14f
-            setTextColor(Color.parseColor("#555B61"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(3), dp(10), dp(3), dp(8))
         })
 
@@ -160,8 +161,8 @@ class MaterialCalculatorActivity : AppCompatActivity() {
                 radius = dp(14).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor("#E2E4E7")
-                setCardBackgroundColor(Color.WHITE)
+                strokeColor = Ge360Brand.Border
+                setCardBackgroundColor(Ge360Brand.Surface)
                 setContentPadding(dp(14), dp(9), dp(14), dp(9))
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     bottomMargin = dp(7)
@@ -173,7 +174,7 @@ class MaterialCalculatorActivity : AppCompatActivity() {
                         text = input.label
                         textSize = 14f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#202327"))
+                        setTextColor(Ge360Brand.Text)
                     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     val field = EditText(this@MaterialCalculatorActivity).apply {
                         setText(formatInput(input.defaultValue))
@@ -188,7 +189,7 @@ class MaterialCalculatorActivity : AppCompatActivity() {
                         addView(TextView(this@MaterialCalculatorActivity).apply {
                             text = input.suffix
                             textSize = 12f
-                            setTextColor(Color.parseColor("#71767C"))
+                            setTextColor(Ge360Brand.TextSecondary)
                             setPadding(dp(5), 0, 0, 0)
                         })
                     }
@@ -233,7 +234,7 @@ class MaterialCalculatorActivity : AppCompatActivity() {
             text = "RISULTATO"
             textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#777C82"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(2), dp(10), 0, dp(7))
         })
         results.forEach { result ->
@@ -241,8 +242,8 @@ class MaterialCalculatorActivity : AppCompatActivity() {
                 radius = dp(15).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor("#E2E4E7")
-                setCardBackgroundColor(if (result.purchase) Color.WHITE else Color.parseColor("#F1F3F5"))
+                strokeColor = Ge360Brand.Border
+                setCardBackgroundColor(if (result.purchase) Ge360Brand.Surface else Ge360Brand.SurfaceWarm)
                 setContentPadding(dp(14), dp(11), dp(14), dp(11))
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(7) }
                 addView(LinearLayout(this@MaterialCalculatorActivity).apply {
@@ -251,18 +252,18 @@ class MaterialCalculatorActivity : AppCompatActivity() {
                         text = result.name
                         textSize = 16f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#202327"))
+                        setTextColor(Ge360Brand.Text)
                     })
                     addView(TextView(this@MaterialCalculatorActivity).apply {
                         text = "${formatQuantity(result.quantity)} ${result.unit}${if (!result.purchase) " · dato tecnico" else ""}"
                         textSize = 15f
-                        setTextColor(Color.parseColor(if (result.purchase) "#B85700" else "#646A70"))
+                        setTextColor(if (result.purchase) Ge360Brand.Accent else Ge360Brand.TextSecondary)
                         setPadding(0, dp(3), 0, 0)
                     })
                     if (result.note.isNotBlank()) addView(TextView(this@MaterialCalculatorActivity).apply {
                         text = result.note
                         textSize = 11f
-                        setTextColor(Color.parseColor("#74797F"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(0, dp(3), 0, 0)
                     })
                 })
@@ -362,8 +363,8 @@ class MaterialCalculatorActivity : AppCompatActivity() {
         radius = dp(16).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E2E4E7")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         setContentPadding(dp(14), dp(12), dp(14), dp(12))
         addView(LinearLayout(this@MaterialCalculatorActivity).apply {
             orientation = LinearLayout.VERTICAL
@@ -371,12 +372,12 @@ class MaterialCalculatorActivity : AppCompatActivity() {
                 text = title
                 textSize = 16f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#202327"))
+                setTextColor(Ge360Brand.Text)
             })
             addView(TextView(this@MaterialCalculatorActivity).apply {
                 text = subtitle
                 textSize = 12f
-                setTextColor(Color.parseColor("#666C72"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(4), 0, 0)
             })
         })

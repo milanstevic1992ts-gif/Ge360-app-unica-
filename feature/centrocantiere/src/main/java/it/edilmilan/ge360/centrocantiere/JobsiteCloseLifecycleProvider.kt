@@ -24,6 +24,7 @@ import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.cantieri.JobsitesActivity
 import it.edilmilan.ge360.core.common.Ge360Contracts
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.scanner.FirStore
 
 /**
@@ -66,8 +67,8 @@ class JobsiteCloseLifecycleProvider : ContentProvider(), Application.ActivityLif
 
     private fun buildCloseCard(activity: Activity, jobsite: JobsiteRecord): View {
         val archived = jobsite.status == JobsiteStore.STATUS_ARCHIVED
-        val accent = if (archived) Color.parseColor("#2E7D32") else Color.parseColor("#B42318")
-        val soft = if (archived) Color.parseColor("#EFF8F1") else Color.parseColor("#FFF1F0")
+        val accent = if (archived) Ge360Brand.Success else Ge360Brand.Danger
+        val soft = if (archived) Ge360Brand.SuccessSoft else Ge360Brand.DangerSoft
 
         return MaterialCardView(activity).apply {
             tag = CARD_TAG
@@ -91,7 +92,7 @@ class JobsiteCloseLifecycleProvider : ContentProvider(), Application.ActivityLif
                     text = if (archived) "Questo cantiere non è più nell’operativo" else "Lavoro terminato?"
                     textSize = 18f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor("#25282C"))
+                    setTextColor(Ge360Brand.Text)
                     setPadding(0, dp(activity, 3), 0, 0)
                 })
                 addView(TextView(activity).apply {
@@ -101,7 +102,7 @@ class JobsiteCloseLifecycleProvider : ContentProvider(), Application.ActivityLif
                         "Archivia il cantiere e rimuovilo dalle viste operative. Foto, documenti/FIR, cronologia, note, checklist, preventivi, ore, spese e planimetrie non vengono cancellati."
                     }
                     textSize = 11.5f
-                    setTextColor(Color.parseColor("#5E646A"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setPadding(0, dp(activity, 5), 0, dp(activity, 11))
                 })
                 addView(MaterialButton(activity).apply {
@@ -109,7 +110,7 @@ class JobsiteCloseLifecycleProvider : ContentProvider(), Application.ActivityLif
                     text = if (archived) "↩ Riapri cantiere" else "✓ Fine cantiere"
                     textSize = 13f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.WHITE)
+                    setTextColor(Ge360Brand.OnPrimary)
                     backgroundTintList = ColorStateList.valueOf(accent)
                     setOnClickListener {
                         if (archived) confirmReopen(activity, jobsite) else confirmClose(activity, jobsite)

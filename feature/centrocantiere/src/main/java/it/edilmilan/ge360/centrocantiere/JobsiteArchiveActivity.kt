@@ -30,6 +30,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.core.common.Ge360Contracts
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import java.io.File
 import java.text.DateFormat
@@ -102,7 +103,7 @@ class JobsiteArchiveActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            setBackgroundColor(Color.parseColor("#F6F7F8"))
+            setBackgroundColor(Ge360Brand.Surface)
         }
         root.addView(
             buildScreenHeaderWithSubtitle(
@@ -115,7 +116,7 @@ class JobsiteArchiveActivity : AppCompatActivity() {
 
         summaryLabel = TextView(this).apply {
             textSize = 12f
-            setTextColor(Color.parseColor("#5F666D"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(4), dp(6), dp(4), dp(8))
         }
         root.addView(summaryLabel)
@@ -177,8 +178,8 @@ class JobsiteArchiveActivity : AppCompatActivity() {
                 radius = dp(14).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor("#E1E4E7")
-                setCardBackgroundColor(Color.WHITE)
+                strokeColor = Ge360Brand.Border
+                setCardBackgroundColor(Ge360Brand.Surface)
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = dp(7)
                 }
@@ -192,12 +193,12 @@ class JobsiteArchiveActivity : AppCompatActivity() {
                         text = file.title.ifBlank { if (file.category == JobsiteArchiveCategories.PLAN) "Planimetria" else "Documento cliente" }
                         textSize = 15f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#25282C"))
+                        setTextColor(Ge360Brand.Text)
                     })
                     addView(TextView(this@JobsiteArchiveActivity).apply {
                         text = "${file.source} · ${formatDate(file.updatedAt)}${if (file.note.isBlank()) "" else " · ${file.note}"}"
                         textSize = 11f
-                        setTextColor(Color.parseColor("#6D7379"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(0, dp(4), 0, 0)
                     })
                 })
@@ -224,8 +225,8 @@ class JobsiteArchiveActivity : AppCompatActivity() {
                 radius = dp(14).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor(if (internal) "#E4C8C8" else "#E1E4E7")
-                setCardBackgroundColor(Color.WHITE)
+                strokeColor = if (internal) Ge360Brand.Border else Ge360Brand.Border
+                setCardBackgroundColor(Ge360Brand.Surface)
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(7) }
                 isClickable = true
                 setOnClickListener { showMemoEditor(memo.type, memo) }
@@ -236,12 +237,12 @@ class JobsiteArchiveActivity : AppCompatActivity() {
                     addView(TextView(this@JobsiteArchiveActivity).apply {
                         text = prefix + memo.text
                         textSize = 13f
-                        setTextColor(Color.parseColor("#30343A"))
+                        setTextColor(Ge360Brand.Text)
                     })
                     addView(TextView(this@JobsiteArchiveActivity).apply {
                         text = listOf(memo.priority, memo.author, formatDate(memo.updatedAt)).filter { it.isNotBlank() }.joinToString(" · ")
                         textSize = 10f
-                        setTextColor(Color.parseColor("#747A80"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(0, dp(5), 0, 0)
                     })
                 })
@@ -361,7 +362,7 @@ class JobsiteArchiveActivity : AppCompatActivity() {
         if (internal) body.addView(TextView(this).apply {
             text = "🔒 APPUNTO INTERNO · non viene trattato come nota cliente e non deve essere condiviso automaticamente."
             textSize = 11f
-            setTextColor(Color.parseColor("#8B3030"))
+            setTextColor(Ge360Brand.Danger)
             setTypeface(typeface, Typeface.BOLD)
             setPadding(0, 0, 0, dp(6))
         })
@@ -447,12 +448,12 @@ class JobsiteArchiveActivity : AppCompatActivity() {
             text = title
             textSize = 14f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#34393E"))
+            setTextColor(Ge360Brand.Text)
         })
         addView(TextView(this@JobsiteArchiveActivity).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#71777D"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(2), 0, 0)
         })
     }
@@ -472,7 +473,7 @@ class JobsiteArchiveActivity : AppCompatActivity() {
     private fun emptyText(value: String) = TextView(this).apply {
         text = value
         textSize = 12f
-        setTextColor(Color.parseColor("#777D83"))
+        setTextColor(Ge360Brand.TextSecondary)
         setPadding(dp(5), dp(9), dp(5), dp(5))
     }
 

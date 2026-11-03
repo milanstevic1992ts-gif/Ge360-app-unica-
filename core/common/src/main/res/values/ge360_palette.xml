@@ -8,12 +8,12 @@
 -->
 <resources>
     <color name="ge360_primary">#E49A12</color>
-    <color name="ge360_primary_dark">#B87400</color>
+    <color name="ge360_primary_dark">#A26600</color>
     <color name="ge360_primary_soft">#FFF4E0</color>
     <!-- Testo/icona sopra un riempimento primary_dark. -->
     <color name="ge360_on_primary">#FFFFFF</color>
     <!-- Ocra usato come TESTO o icona sopra surface/background. -->
-    <color name="ge360_accent">#B87400</color>
+    <color name="ge360_accent">#9A6100</color>
 
     <color name="ge360_forest">#384234</color>
     <color name="ge360_forest_dark">#283028</color>
@@ -25,15 +25,24 @@
     <color name="ge360_surface_warm">#FBF8F1</color>
 
     <color name="ge360_text">#1F2421</color>
-    <color name="ge360_text_secondary">#6B736C</color>
+    <color name="ge360_text_secondary">#676F68</color>
 
     <color name="ge360_border">#E4E1D9</color>
     <color name="ge360_border_strong">#D3CDC2</color>
 
     <color name="ge360_success">#277A49</color>
     <color name="ge360_success_soft">#EDF8F1</color>
-    <color name="ge360_warning">#B87400</color>
+    <color name="ge360_warning">#9A6100</color>
     <color name="ge360_warning_soft">#FFF4E0</color>
     <color name="ge360_danger">#B42318</color>
     <color name="ge360_danger_soft">#FFF0EE</color>
+
+    <!--
+      Coppia "inverso": card che spicca invertendo il fondo della pagina.
+      In tema chiaro e' scura con testo chiaro, in tema scuro e' chiara con
+      testo scuro. Senza questi token una card scura nel tema chiaro diventava
+      chiara nel tema scuro tenendosi il testo bianco, quindi illeggibile.
+    -->
+    <color name="ge360_inverse">#283028</color>
+    <color name="ge360_on_inverse">#F6F5F2</color>
 </resources>

@@ -10,7 +10,7 @@
 <resources>
     <color name="ge360_primary">#F0A82A</color>
     <!-- Riempimento dei bottoni primari: resta scuro quanto basta per il testo bianco. -->
-    <color name="ge360_primary_dark">#B5720A</color>
+    <color name="ge360_primary_dark">#A26609</color>
     <color name="ge360_primary_soft">#2E2619</color>
     <color name="ge360_on_primary">#FFFFFF</color>
     <!-- Ocra come testo/icona sul fondo scuro: va schiarito. -->
@@ -37,4 +37,8 @@
     <color name="ge360_warning_soft">#2A2318</color>
     <color name="ge360_danger">#E8786C</color>
     <color name="ge360_danger_soft">#2E1D1B</color>
+
+    <!-- Inverso del fondo scuro: card chiara con testo scuro. -->
+    <color name="ge360_inverse">#E6EBE2</color>
+    <color name="ge360_on_inverse">#17181A</color>
 </resources>

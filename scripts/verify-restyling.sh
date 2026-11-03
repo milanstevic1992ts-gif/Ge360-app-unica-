@@ -103,6 +103,44 @@ if [ -n "$first_store" ] && [ -n "$load_day" ] && [ "$first_store" -lt "$load_da
   failures=$((failures + 1))
 fi
 
+# --- Migrazione dei colori verso i token ----------------------------------
+# I colori scritti a mano non seguono il tema scuro: una schermata che ne usa
+# resta chiara quando il telefono passa al buio. Questi file sono gli unici
+# ancora da migrare: l'elenco puo' solo accorciarsi, mai allungarsi.
+#
+# Granularita' per FILE e non per riga, di proposito: dentro una card il
+# riempimento e i testi devono migrare insieme, altrimenti si ottiene un fondo
+# che si inverte con sopra un testo che non si inverte.
+ALLOWED_HARDCODED_COLORS="
+core/common/src/main/java/it/edilmilan/ge360/core/common/ui/Ge360Brand.kt
+feature/home/src/main/java/it/edilmilan/ge360/home/HomeFragment.kt
+feature/cantieri/src/main/java/it/edilmilan/ge360/cantieri/JobsiteProgressActivity.kt
+feature/centrocantiere/src/main/java/it/edilmilan/ge360/centrocantiere/JobsiteTaskPlanActivity.kt
+feature/centrocantiere/src/main/java/it/edilmilan/ge360/centrocantiere/JobsiteCostAnalyticsActivity.kt
+feature/centrocantiere/src/main/java/it/edilmilan/ge360/centrocantiere/CostDonutView.kt
+feature/agenda/src/main/java/it/edilmilan/ge360/agenda/OperationalDayActivity.kt
+"
+
+offenders=""
+while IFS= read -r file; do
+  case "$ALLOWED_HARDCODED_COLORS" in
+    *"$file"*) continue ;;
+  esac
+  offenders="$offenders $file"
+done <<EOF
+$(cd "$ROOT" && grep -rl '"#[0-9A-Fa-f]\{6\}"\|Color\.parseColor\|Color\.rgb(\|Color\.WHITE\|Color\.BLACK' \
+    --include=*.kt app core feature 2>/dev/null | grep -v '/test/' | sort)
+EOF
+
+if [ -n "$offenders" ]; then
+  echo "FALLITO: colori scritti a mano fuori dai file ancora da migrare"
+  for file in $offenders; do
+    echo "         $file"
+  done
+  echo "         usa un token di Ge360Brand, oppure aggiungi il colore alla palette"
+  failures=$((failures + 1))
+fi
+
 if [ "$failures" -gt 0 ]; then
   echo
   echo "Contratti di restyling GE360: $failures asserzioni fallite"

@@ -2,7 +2,6 @@ package it.edilmilan.ge360.home
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.text.InputType
 import android.util.AttributeSet
@@ -128,7 +127,7 @@ class HomeJarvisChatView @JvmOverloads constructor(
                         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                         imeOptions = EditorInfo.IME_ACTION_SEND
                         background = context.brandRounded(
-                            fill = Color.WHITE,
+                            fill = Ge360Brand.Surface,
                             stroke = Ge360Brand.BorderStrong,
                             radiusDp = 16,
                             strokeDp = 1
@@ -341,10 +340,10 @@ class HomeJarvisChatView @JvmOverloads constructor(
             addView(TextView(context).apply {
                 text = line.text
                 textSize = 13f
-                setTextColor(if (user) Color.WHITE else Ge360Brand.ForestDark)
+                setTextColor(if (user) Ge360Brand.OnPrimary else Ge360Brand.ForestDark)
                 setPadding(dp(12), dp(9), dp(12), dp(9))
                 background = context.brandRounded(
-                    fill = if (user) Ge360Brand.PrimaryDark else Color.WHITE,
+                    fill = if (user) Ge360Brand.PrimaryDark else Ge360Brand.Surface,
                     stroke = if (user) Ge360Brand.PrimaryDark else Ge360Brand.Border,
                     radiusDp = 15,
                     strokeDp = 1

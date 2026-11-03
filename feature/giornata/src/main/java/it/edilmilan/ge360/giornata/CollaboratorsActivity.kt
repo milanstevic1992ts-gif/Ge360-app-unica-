@@ -3,7 +3,6 @@ package it.edilmilan.ge360.giornata
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +20,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import it.edilmilan.ge360.spese.ExpensesActivity
 import it.edilmilan.ge360.spese.FinanceRecord
@@ -61,7 +61,7 @@ class CollaboratorsActivity : AppCompatActivity() {
     private fun buildScreen(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F6F5F2"))
+            setBackgroundColor(Ge360Brand.Background)
             setPadding(dp(14), dp(10), dp(14), dp(18))
         }
         root.addView(
@@ -127,8 +127,8 @@ class CollaboratorsActivity : AppCompatActivity() {
         radius = dp(20).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor(if (payment == null) "#E6A22A" else "#8DB69A")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = if (payment == null) Ge360Brand.Accent else Ge360Brand.Success
+        setCardBackgroundColor(Ge360Brand.Surface)
         addView(LinearLayout(this@CollaboratorsActivity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(15), dp(16), dp(15))
@@ -140,13 +140,13 @@ class CollaboratorsActivity : AppCompatActivity() {
                     text = "Slobodan"
                     textSize = 23f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#384234"))
+                    setTextColor(Ge360Brand.Forest)
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 addView(TextView(this@CollaboratorsActivity).apply {
                     text = if (payment == null) "DA PAGARE" else "PAGATO"
                     textSize = 11f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor(if (payment == null) "#B87400" else "#277A49"))
+                    setTextColor(if (payment == null) Ge360Brand.Accent else Ge360Brand.Success)
                     setPadding(dp(10), dp(6), dp(10), dp(6))
                 })
             })
@@ -155,13 +155,13 @@ class CollaboratorsActivity : AppCompatActivity() {
                 text = "Compenso settimanale · ${money(SlobodanWeeklyPay.WEEKLY_AMOUNT)}"
                 textSize = 16f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#1F2421"))
+                setTextColor(Ge360Brand.Text)
                 setPadding(0, dp(8), 0, dp(2))
             })
             addView(TextView(this@CollaboratorsActivity).apply {
                 text = "Settimana ${SlobodanWeeklyPay.periodLabel(weekStart)}"
                 textSize = 12f
-                setTextColor(Color.parseColor("#6B736C"))
+                setTextColor(Ge360Brand.TextSecondary)
             })
 
             if (payment != null) {
@@ -169,7 +169,7 @@ class CollaboratorsActivity : AppCompatActivity() {
                     text = "Registrato ${formatDate(payment.date)} · ${money(payment.amount)}"
                     textSize = 13f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#277A49"))
+                    setTextColor(Ge360Brand.Success)
                     setPadding(0, dp(9), 0, 0)
                 })
             }
@@ -186,8 +186,8 @@ class CollaboratorsActivity : AppCompatActivity() {
         radius = dp(17).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E2E4DF")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         addView(LinearLayout(this@CollaboratorsActivity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(15), dp(13), dp(15), dp(13))
@@ -195,7 +195,7 @@ class CollaboratorsActivity : AppCompatActivity() {
                 text = "🔔 Sabato · ore 19:00"
                 textSize = 15f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#384234"))
+                setTextColor(Ge360Brand.Forest)
             })
             addView(TextView(this@CollaboratorsActivity).apply {
                 text = if (notificationsGranted()) {
@@ -204,7 +204,7 @@ class CollaboratorsActivity : AppCompatActivity() {
                     "Autorizza le notifiche Android per ricevere il promemoria del sabato sera."
                 }
                 textSize = 12f
-                setTextColor(Color.parseColor("#6B736C"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(5), 0, 0)
             })
             if (!notificationsGranted()) {
@@ -220,8 +220,8 @@ class CollaboratorsActivity : AppCompatActivity() {
         radius = dp(14).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E5E6E2")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = dp(7)
         }
@@ -235,12 +235,12 @@ class CollaboratorsActivity : AppCompatActivity() {
                     text = formatDate(record.date)
                     textSize = 13f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#384234"))
+                    setTextColor(Ge360Brand.Forest)
                 })
                 addView(TextView(this@CollaboratorsActivity).apply {
                     text = record.note
                     textSize = 10.5f
-                    setTextColor(Color.parseColor("#747A73"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     maxLines = 2
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -248,7 +248,7 @@ class CollaboratorsActivity : AppCompatActivity() {
                 text = money(record.amount)
                 textSize = 16f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#B87400"))
+                setTextColor(Ge360Brand.Accent)
             })
         })
     }
@@ -256,7 +256,7 @@ class CollaboratorsActivity : AppCompatActivity() {
     private fun simplePersonCard(person: PersonnelRecord): View = MaterialCardView(this).apply {
         radius = dp(14).toFloat()
         cardElevation = 0f
-        setCardBackgroundColor(Color.WHITE)
+        setCardBackgroundColor(Ge360Brand.Surface)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = dp(7)
         }
@@ -267,7 +267,7 @@ class CollaboratorsActivity : AppCompatActivity() {
                 if (person.hourlyRate > 0) append(" · ${money(person.hourlyRate)}/h")
             }
             textSize = 13f
-            setTextColor(Color.parseColor("#384234"))
+            setTextColor(Ge360Brand.Forest)
             setPadding(dp(13), dp(12), dp(13), dp(12))
         })
     }
@@ -344,12 +344,12 @@ class CollaboratorsActivity : AppCompatActivity() {
             text = title
             textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#384234"))
+            setTextColor(Ge360Brand.Forest)
         })
         addView(TextView(this@CollaboratorsActivity).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#747A73"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(2), 0, 0)
         })
     }
@@ -357,7 +357,7 @@ class CollaboratorsActivity : AppCompatActivity() {
     private fun emptyText(value: String) = TextView(this).apply {
         text = value
         textSize = 12f
-        setTextColor(Color.parseColor("#747A73"))
+        setTextColor(Ge360Brand.TextSecondary)
         setPadding(dp(4), dp(10), dp(4), dp(10))
     }
 
