@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.text.InputType
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import java.math.BigDecimal
 import it.edilmilan.ge360.preventivi.MeasuredEstimateDraftV1
 import it.edilmilan.ge360.preventivi.EstimateStatuses
@@ -77,12 +78,12 @@ class FloorPlansActivity : AppCompatActivity() {
                     text = "Rilievi / Planimetrie"
                     textSize = 24f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#202327"))
+                    setTextColor(Ge360Brand.Text)
                 })
                 addView(TextView(this@FloorPlansActivity).apply {
                     text = "Il rilievo nasce indipendente. Poi lo colleghi a preventivo o cantiere."
                     textSize = 12f
-                    setTextColor(Color.parseColor("#74797F"))
+                    setTextColor(Ge360Brand.TextSecondary)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
         })
@@ -104,7 +105,7 @@ class FloorPlansActivity : AppCompatActivity() {
             listRoot.addView(TextView(this).apply {
                 text = "Nessun rilievo ancora. Puoi crearne uno anche prima di avere un cantiere."
                 textSize = 14f
-                setTextColor(Color.parseColor("#74797F"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(4), dp(18), dp(4), dp(18))
             })
             return
@@ -124,8 +125,8 @@ class FloorPlansActivity : AppCompatActivity() {
             radius = dp(16).toFloat()
             cardElevation = 0f
             strokeWidth = dp(1)
-            strokeColor = Color.parseColor("#E4E6E8")
-            setCardBackgroundColor(Color.WHITE)
+            strokeColor = Ge360Brand.Border
+            setCardBackgroundColor(Ge360Brand.Surface)
             isClickable = true
             isFocusable = true
             setOnClickListener { openPlan(plan.ge360Id) }
@@ -137,24 +138,24 @@ class FloorPlansActivity : AppCompatActivity() {
                     text = plan.title
                     textSize = 17f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#202327"))
+                    setTextColor(Ge360Brand.Text)
                 })
                 addView(TextView(this@FloorPlansActivity).apply {
                     text = listOf(plan.kind, "$roomCount ambienti", linked).joinToString(" · ")
                     textSize = 12f
-                    setTextColor(Color.parseColor(if (linked == "Non collegato") "#B85700" else "#277A49"))
+                    setTextColor(if (linked == "Non collegato") Ge360Brand.Accent else Ge360Brand.Success)
                     setPadding(0, dp(5), 0, 0)
                 })
                 if (plan.clientName.isNotBlank()) addView(TextView(this@FloorPlansActivity).apply {
                     text = "Cliente: ${plan.clientName}"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#666B71"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setPadding(0, dp(4), 0, 0)
                 })
                 addView(TextView(this@FloorPlansActivity).apply {
                     text = "Aggiornato ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.ITALY).format(Date(plan.updatedAt))}"
                     textSize = 11f
-                    setTextColor(Color.parseColor("#8A8E93"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setPadding(0, dp(4), 0, 0)
                 })
                 addView(MaterialButton(this@FloorPlansActivity).apply {
@@ -189,7 +190,7 @@ class FloorPlansActivity : AppCompatActivity() {
                                 "geometria stanza invariata rispetto alla selezione") +
                             " · preventivi non modificati"
                         textSize = 11f
-                        setTextColor(Color.parseColor(if (stale > 0) "#B85700" else "#277A49"))
+                        setTextColor(if (stale > 0) Ge360Brand.Accent else Ge360Brand.Success)
                     })
                 }
             })

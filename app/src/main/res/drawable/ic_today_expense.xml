@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spesa o incasso: banconota. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FF000000" android:pathData="M3,5C1.9,5 1,5.9 1,7v10c0,1.1 0.9,2 2,2h18c1.1,0 2,-0.9 2,-2V7c0,-1.1 -0.9,-2 -2,-2zM3,7h18v10H3zM12,8.5c-1.9,0 -3.5,1.6 -3.5,3.5s1.6,3.5 3.5,3.5s3.5,-1.6 3.5,-3.5S13.9,8.5 12,8.5z"/>
+    <path android:fillColor="#FF000000" android:pathData="M12,10.3c-0.9,0 -1.7,0.8 -1.7,1.7s0.8,1.7 1.7,1.7s1.7,-0.8 1.7,-1.7S12.9,10.3 12,10.3z"/>
+    <path android:fillColor="#FF000000" android:pathData="M4.5,10.8h2v2.4h-2zM17.5,10.8h2v2.4h-2z"/>
+</vector>

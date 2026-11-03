@@ -1,7 +1,7 @@
 package it.edilmilan.ge360.attrezzi
 
-import android.app.AlertDialog
 import android.content.Intent
+import androidx.appcompat.app.AlertDialog
 import it.edilmilan.ge360.core.common.Ge360Contracts
 import android.graphics.Typeface
 import android.os.Bundle

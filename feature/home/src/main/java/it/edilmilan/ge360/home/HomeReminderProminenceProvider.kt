@@ -5,7 +5,6 @@ import android.app.Application
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -77,7 +76,7 @@ class HomeReminderProminenceProvider : ContentProvider(), Application.ActivityLi
                 is MaterialButton -> if (view.text.toString().contains("NOTA")) {
                     view.textSize = 12f
                     view.minHeight = dp(dashboard, 50)
-                    view.setTextColor(Color.WHITE)
+                    view.setTextColor(Ge360Brand.OnPrimary)
                 }
                 is TextView -> {
                     when {

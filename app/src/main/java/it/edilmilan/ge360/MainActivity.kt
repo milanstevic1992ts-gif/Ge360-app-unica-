@@ -1,7 +1,6 @@
 package it.edilmilan.ge360
 
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -10,16 +9,25 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import it.edilmilan.ge360.agenda.AgendaActivity
 import it.edilmilan.ge360.agenda.AgendaEntry
 import it.edilmilan.ge360.backup.BackupScheduler
 import it.edilmilan.ge360.backup.JobsiteReplicaCoordinator
 import it.edilmilan.ge360.cantieri.JobsitesActivity
+import it.edilmilan.ge360.core.common.ui.BaseGeActivity
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
+import it.edilmilan.ge360.core.common.ui.GeRadius
+import it.edilmilan.ge360.core.common.ui.GeSpace
+import it.edilmilan.ge360.core.common.ui.GeType
+import it.edilmilan.ge360.core.common.ui.dp
 import it.edilmilan.ge360.giornata.CollaboratorPaymentReminderScheduler
 import it.edilmilan.ge360.home.HomeFragment
 import it.edilmilan.ge360.planimetrie.FloorPlansActivity
@@ -27,10 +35,15 @@ import it.edilmilan.ge360.preventivi.EstimatesActivity
 import it.edilmilan.ge360.scanner.ScannerActivity
 import it.edilmilan.ge360.spese.ExpensesActivity
 import it.edilmilan.ge360.storage.JobsitePersistenceCoordinator
+import it.edilmilan.ge360.core.common.R as CommonR
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : BaseGeActivity() {
+
+    /** Una voce della barra in basso: icona sopra, etichetta sotto. */
+    private class NavTab(val container: LinearLayout, val icon: ImageView, val label: TextView)
+
     private var currentDestination = R.id.nav_home
-    private lateinit var navTabs: Map<Int, TextView>
+    private lateinit var navTabs: Map<Int, NavTab>
     private var servicesStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,19 +78,19 @@ class MainActivity : AppCompatActivity() {
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-            ).apply { bottomMargin = dp(78) }
+            ).apply { bottomMargin = dp(BAR_HEIGHT_DP) }
         )
 
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(7), dp(7), dp(7), dp(5))
+            setPadding(dp(GeSpace.SM), dp(GeSpace.SM), dp(GeSpace.SM), dp(GeSpace.SM))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 setColor(Ge360Brand.Surface)
                 cornerRadii = floatArrayOf(
-                    dp(22).toFloat(), dp(22).toFloat(),
-                    dp(22).toFloat(), dp(22).toFloat(),
+                    dp(GeRadius.PILL).toFloat(), dp(GeRadius.PILL).toFloat(),
+                    dp(GeRadius.PILL).toFloat(), dp(GeRadius.PILL).toFloat(),
                     0f, 0f, 0f, 0f
                 )
                 setStroke(dp(1), Ge360Brand.Border)
@@ -88,72 +101,98 @@ class MainActivity : AppCompatActivity() {
             bottomBar,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(78)
+                dp(BAR_HEIGHT_DP)
             ).apply { gravity = Gravity.BOTTOM }
         )
 
         val tabs = linkedMapOf(
-            R.id.nav_home to createNavTab("Home", "⌂"),
-            R.id.nav_cantieri to createNavTab("Cantieri", "▣"),
-            R.id.nav_preventivi to createNavTab("Preventivi", "€"),
-            R.id.nav_rilievi to createNavTab("Rilievi", "⌗"),
-            R.id.nav_altro to createNavTab("Altro", "•••")
+            R.id.nav_home to createNavTab("Oggi", R.drawable.ic_nav_home),
+            R.id.nav_cantieri to createNavTab("Cantieri", R.drawable.ic_nav_jobsites),
+            R.id.nav_preventivi to createNavTab("Preventivi", R.drawable.ic_nav_estimates),
+            R.id.nav_rilievi to createNavTab("Rilievi", R.drawable.ic_nav_floorplans),
+            R.id.nav_altro to createNavTab("Altro", R.drawable.ic_nav_more)
         )
+
         tabs.forEach { (destination, tab) ->
             bottomBar.addView(
-                tab,
+                tab.container,
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
                     marginStart = dp(2)
                     marginEnd = dp(2)
                 }
             )
-            tab.setOnClickListener {
+            tab.container.setOnClickListener {
                 val reselected = destination == currentDestination
                 showDestination(destination, force = reselected)
             }
         }
         navTabs = tabs
 
-        val quickAdd = TextView(this).apply {
-            gravity = Gravity.CENTER
-            text = "+"
-            textSize = 29f
-            includeFontPadding = false
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            isClickable = true
-            isFocusable = true
+        val quickAdd = FloatingActionButton(this).apply {
+            setImageResource(CommonR.drawable.ic_ge360_add)
             contentDescription = "Aggiungi rapidamente"
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Ge360Brand.PrimaryDark)
-                setStroke(dp(3), Ge360Brand.PrimarySoft)
-            }
-            elevation = dp(15).toFloat()
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Ge360Brand.PrimaryDark)
+            imageTintList = android.content.res.ColorStateList.valueOf(Ge360Brand.OnPrimary)
             setOnClickListener { showQuickAdd() }
         }
         root.addView(
             quickAdd,
-            FrameLayout.LayoutParams(dp(58), dp(58)).apply {
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
-                marginEnd = dp(18)
-                bottomMargin = dp(91)
+                marginEnd = dp(GeSpace.LG)
+                bottomMargin = dp(BAR_HEIGHT_DP + GeSpace.MD)
             }
         )
+
+        // Su telefoni a gesti la barra finiva sotto la maniglia di sistema:
+        // qui le lasciamo lo spazio che il sistema dichiara.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            bottomBar.updateLayoutParams<FrameLayout.LayoutParams> { height = dp(BAR_HEIGHT_DP) + bottom }
+            bottomBar.setPadding(
+                dp(GeSpace.SM),
+                dp(GeSpace.SM),
+                dp(GeSpace.SM),
+                dp(GeSpace.SM) + bottom
+            )
+            content.updateLayoutParams<FrameLayout.LayoutParams> { bottomMargin = dp(BAR_HEIGHT_DP) + bottom }
+            quickAdd.updateLayoutParams<FrameLayout.LayoutParams> {
+                bottomMargin = dp(BAR_HEIGHT_DP + GeSpace.MD) + bottom
+            }
+            insets
+        }
 
         return root
     }
 
-    private fun createNavTab(label: String, glyph: String): TextView = TextView(this).apply {
-        gravity = Gravity.CENTER
-        text = "$glyph\n$label"
-        textSize = 10.2f
-        includeFontPadding = false
-        setTextColor(Ge360Brand.TextSecondary)
-        isClickable = true
-        isFocusable = true
-        contentDescription = label
-        setPadding(dp(3), dp(6), dp(3), dp(5))
+    private fun createNavTab(label: String, iconRes: Int): NavTab {
+        val icon = ImageView(this).apply {
+            setImageResource(iconRes)
+            setColorFilter(Ge360Brand.TextSecondary)
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+        }
+        val text = TextView(this).apply {
+            this.text = label
+            textSize = GeType.MICRO
+            includeFontPadding = false
+            setTextColor(Ge360Brand.TextSecondary)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(GeSpace.XS), 0, 0)
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            contentDescription = label
+            setPadding(dp(2), dp(GeSpace.SM), dp(2), dp(GeSpace.SM))
+            addView(icon)
+            addView(text)
+        }
+        return NavTab(container, icon, text)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -173,7 +212,10 @@ class MainActivity : AppCompatActivity() {
             R.id.nav_preventivi -> MainSectionFragment.newInstance(MainSectionFragment.SECTION_ESTIMATES)
             R.id.nav_rilievi -> MainSectionFragment.newInstance(MainSectionFragment.SECTION_FLOORPLANS)
             R.id.nav_altro -> MainSectionFragment.newInstance(MainSectionFragment.SECTION_MORE)
-            else -> SafeHomeFragment()
+            // "Oggi" e' la schermata iniziale: come SafeHomeFragment non apre
+            // database prima del primo frame, ma invece di elencare moduli
+            // mostra la giornata e le quattro azioni quotidiane.
+            else -> TodayFragment()
         }
 
         runCatching {
@@ -189,9 +231,27 @@ class MainActivity : AppCompatActivity() {
             }
         }.onFailure { error ->
             Log.e("GE360_NAV", "Errore apertura destinazione $itemId", error)
-            showNavigationRecovery(error)
+            // Se e' la schermata iniziale a non aprirsi, si ripiega sulla Home
+            // di bootstrap invece di mostrare un errore: l'app deve sempre
+            // partire. Per tutto il resto resta la schermata di recupero.
+            if (itemId == R.id.nav_home && showBootstrapHome()) {
+                currentDestination = itemId
+                updateNavSelection(itemId)
+            } else {
+                showNavigationRecovery(error)
+            }
         }
     }
+
+    /** Ultima rete di sicurezza all'avvio: Home leggera, nessun dato letto. */
+    private fun showBootstrapHome(): Boolean = runCatching {
+        if (supportFragmentManager.isStateSaved) return@runCatching false
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.mainContainer, SafeHomeFragment())
+            .commitNow()
+        true
+    }.onFailure { Log.e("GE360_NAV", "Home di bootstrap non disponibile", it) }
+        .getOrDefault(false)
 
     fun openFullDashboard() {
         runCatching {
@@ -206,15 +266,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateNavSelection(itemId: Int) {
         if (!::navTabs.isInitialized) return
-        navTabs.forEach { (destination, view) ->
+        navTabs.forEach { (destination, tab) ->
             val selected = destination == itemId
-            view.alpha = if (selected) 1f else 0.82f
-            view.setTextColor(if (selected) Ge360Brand.PrimaryDark else Ge360Brand.TextSecondary)
-            view.setTypeface(view.typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
-            view.background = if (selected) {
+            val tint = if (selected) Ge360Brand.Accent else Ge360Brand.TextSecondary
+
+            tab.icon.setColorFilter(tint)
+            tab.label.setTextColor(tint)
+            tab.label.setTypeface(tab.label.typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
+            tab.container.background = if (selected) {
                 GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(16).toFloat()
+                    cornerRadius = dp(GeRadius.CARD).toFloat()
                     setColor(Ge360Brand.PrimarySoft)
                 }
             } else null
@@ -258,7 +320,7 @@ class MainActivity : AppCompatActivity() {
                 addView(TextView(this@MainActivity).apply {
                     text = "Torna alla Home"
                     textSize = 14f
-                    setTextColor(Color.WHITE)
+                    setTextColor(Ge360Brand.OnPrimary)
                     gravity = Gravity.CENTER
                     setTypeface(typeface, Typeface.BOLD)
                     setPadding(dp(20), dp(13), dp(20), dp(13))
@@ -347,9 +409,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
     companion object {
         private const val STATE_DESTINATION = "main_destination"
+
+        /** Altezza della barra in basso, senza contare gli inset di sistema. */
+        private const val BAR_HEIGHT_DP = 72
     }
 }

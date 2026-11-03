@@ -81,3 +81,7 @@ jobs:
         run: gradle :core:bridge:testDebugUnitTest --stacktrace
       - name: Test Jarvis proactive policies
         run: gradle :feature:jarvis:testDebugUnitTest --stacktrace
+      - name: Test fiscal engine 2026 parameters
+        run: gradle :feature:fisco:testDebugUnitTest --stacktrace
+      - name: Test Firefly duplicate protection
+        run: gradle :feature:spese:testDebugUnitTest --stacktrace

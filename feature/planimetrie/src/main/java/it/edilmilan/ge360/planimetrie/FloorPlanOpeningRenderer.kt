@@ -1,32 +1,32 @@
 package it.edilmilan.ge360.planimetrie
 
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import kotlin.math.hypot
 
 /** Disegna le aperture sopra il segmento muro senza alterare alcuna quantità. */
 object FloorPlanOpeningRenderer {
     private val gapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = Ge360Brand.Surface
         style = Paint.Style.STROKE
         strokeWidth = 10f
         strokeCap = Paint.Cap.SQUARE
     }
     private val doorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#B85700")
+        color = Ge360Brand.Accent
         style = Paint.Style.STROKE
         strokeWidth = 3f
         strokeCap = Paint.Cap.ROUND
     }
     private val windowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#3E7185")
+        color = Ge360Brand.TechnicalBlue
         style = Paint.Style.STROKE
         strokeWidth = 3f
         strokeCap = Paint.Cap.SQUARE
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#50565C")
+        color = Ge360Brand.TextSecondary
         textSize = 16f
         textAlign = Paint.Align.CENTER
         isFakeBoldText = true

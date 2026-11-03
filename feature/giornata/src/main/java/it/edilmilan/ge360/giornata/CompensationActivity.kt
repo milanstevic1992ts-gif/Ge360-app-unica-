@@ -14,6 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.scanner.DocumentStore
 import it.edilmilan.ge360.scanner.ScannerDocument
 import it.edilmilan.ge360.spese.FinanceStore
@@ -142,7 +143,7 @@ class CompensationActivity : AppCompatActivity() {
     private fun screen(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F6F5F2"))
+            setBackgroundColor(Ge360Brand.Background)
             setPadding(dp(14), dp(8), dp(14), dp(12))
         }
         root.addView(buildScreenHeaderWithSubtitle(
@@ -191,7 +192,7 @@ class CompensationActivity : AppCompatActivity() {
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(14), dp(14), dp(14), dp(14))
-                setBackgroundColor(Color.WHITE)
+                setBackgroundColor(Ge360Brand.Surface)
             }
             card.addView(text("$person · $label", 17f, true))
             card.addView(text("${row.periodStart} · ${row.description.ifBlank { "Prestazione" }}", 12f, false))
@@ -301,14 +302,14 @@ class CompensationActivity : AppCompatActivity() {
         form.addView(description)
         form.addView(text("CANTIERE (FACOLTATIVO)", 12f, true))
         form.addView(jobsite)
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Nuovo compenso")
             .setView(form)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("SALVA MATURATO", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val collaboratorName = name.text.toString().trim()
                     require(collaboratorName.isNotEmpty()) { "Inserisci il nome del collaboratore" }
@@ -377,14 +378,14 @@ class CompensationActivity : AppCompatActivity() {
                     "Non verrà creata una seconda Spesa.", 12f, false))
             addView(picker)
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Collega a movimento Spese esistente")
             .setView(container)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("COLLEGA", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val selected = candidates[picker.selectedItemPosition]
                     // Always re-read; a record may have been edited while this dialog was open.
@@ -422,14 +423,14 @@ class CompensationActivity : AppCompatActivity() {
             addView(text("Categoria dell'uscita", 12f, true))
             addView(categories)
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Registra uscita in Spese")
             .setView(container)
             .setNegativeButton("Annulla", null)
             .setPositiveButton("REGISTRA USCITA", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val stableId = "ge360-compensi-payment:${payment.ge360Id}"
                     val existing = finance.getByGe360Id(stableId)
@@ -469,7 +470,7 @@ class CompensationActivity : AppCompatActivity() {
     }
 
     private fun confirmReversal(payment: CompensationPaymentEventV1) {
-        android.app.AlertDialog.Builder(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Storna registrazione di pagamento")
             .setMessage("Questo storno conserva lo storico e ripristina il residuo. " +
                 "Non modifica movimenti bancari né crea o cancella Spese.")
@@ -507,7 +508,7 @@ class CompensationActivity : AppCompatActivity() {
             addView(input)
             addView(paymentDate)
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Registra pagamento dichiarato")
             .setMessage("Registra soltanto un pagamento già effettuato. Questa azione non crea una Spesa e non invia un bonifico.")
             .setView(form)
@@ -515,7 +516,7 @@ class CompensationActivity : AppCompatActivity() {
             .setPositiveButton("CONFERMA", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 runCatching {
                     val cents = parseMoney(input.text.toString())
                     require(cents > 0L && cents <= balance.remainingCents) {
@@ -556,7 +557,7 @@ class CompensationActivity : AppCompatActivity() {
     private fun text(value: String, size: Float, bold: Boolean) = TextView(this).apply {
         text = value
         textSize = size
-        setTextColor(Color.parseColor(if (bold) "#27362F" else "#5C625D"))
+        setTextColor(if (bold) Ge360Brand.Text else Ge360Brand.TextSecondary)
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         setPadding(dp(4), dp(8), dp(4), dp(6))
     }

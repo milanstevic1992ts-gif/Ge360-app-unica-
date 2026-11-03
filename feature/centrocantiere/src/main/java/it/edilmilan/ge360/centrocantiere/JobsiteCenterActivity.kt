@@ -1,8 +1,7 @@
 package it.edilmilan.ge360.centrocantiere
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -24,6 +23,7 @@ import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.core.common.Ge360Contracts
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.galleria.GalleryActivity
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.DailyStore
@@ -101,7 +101,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(22))
-            setBackgroundColor(Color.parseColor("#F6F7F8"))
+            setBackgroundColor(Ge360Brand.Surface)
         }
 
         root.addView(LinearLayout(this).apply {
@@ -116,13 +116,13 @@ class JobsiteCenterActivity : AppCompatActivity() {
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = jobsite.displayTitle()
                     textSize = 23f
-                    setTextColor(Color.parseColor("#17191C"))
+                    setTextColor(Ge360Brand.Text)
                     setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = listOf(jobsite.code, jobsite.workType, jobsite.status).filter { it.isNotBlank() }.joinToString(" · ")
                     textSize = 12f
-                    setTextColor(Color.parseColor("#666B71"))
+                    setTextColor(Ge360Brand.TextSecondary)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         })
@@ -141,7 +141,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
         body.addView(sectionTitle("CHECKLIST LAVORI", "Tocca un'attività: Da fare → In corso → Fatto. Tieni premuto per scegliere Bloccato o Non necessario."))
         checklistSubtitle = TextView(this).apply {
             textSize = 12f
-            setTextColor(Color.parseColor("#666B71"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(4), 0, dp(4), dp(8))
         }
         body.addView(checklistSubtitle)
@@ -196,15 +196,15 @@ class JobsiteCenterActivity : AppCompatActivity() {
         radius = dp(15).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E0E3E6")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         isClickable = true
         isFocusable = true
         setOnClickListener { action() }
         addView(TextView(this@JobsiteCenterActivity).apply {
             text = title
             textSize = 13f
-            setTextColor(Color.parseColor("#25282C"))
+            setTextColor(Ge360Brand.Text)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(13), 0, dp(10), 0)
@@ -232,15 +232,15 @@ class JobsiteCenterActivity : AppCompatActivity() {
             radius = dp(18).toFloat()
             cardElevation = 0f
             strokeWidth = dp(1)
-            strokeColor = Color.parseColor("#E0E3E6")
-            setCardBackgroundColor(Color.WHITE)
+            strokeColor = Ge360Brand.Border
+            setCardBackgroundColor(Ge360Brand.Surface)
             addView(LinearLayout(this@JobsiteCenterActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(15), dp(14), dp(15), dp(14))
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = "Avanzamento checklist · ${flow.completionPercent}%"
                     textSize = 15f
-                    setTextColor(Color.parseColor("#25282C"))
+                    setTextColor(Ge360Brand.Text)
                     setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(ProgressBar(this@JobsiteCenterActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -250,7 +250,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = "${flow.done} fatte · ${flow.inProgress} in corso · ${flow.todo} da fare${if (flow.blocked > 0) " · ⚠ ${flow.blocked} bloccate" else ""}"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#666B71"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setPadding(0, dp(6), 0, dp(10))
                 })
                 addView(metricRow("ORE", formatMinutes(minutes), "FOTO", gallery.total.toString(), "DOCUMENTI", documents.toString()))
@@ -260,7 +260,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
                     addView(TextView(this@JobsiteCenterActivity).apply {
                         text = "Preventivo collegato · ${estimate.number} · ${money(estimate.finalTotal)} · ${estimate.status}"
                         textSize = 12f
-                        setTextColor(Color.parseColor("#76511F"))
+                        setTextColor(Ge360Brand.Accent)
                         setTypeface(typeface, Typeface.BOLD)
                         setPadding(0, dp(11), 0, 0)
                     })
@@ -273,7 +273,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
             summaryContainer.addView(MaterialCardView(this).apply {
                 radius = dp(16).toFloat()
                 cardElevation = 0f
-                setCardBackgroundColor(Color.WHITE)
+                setCardBackgroundColor(Ge360Brand.Surface)
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
                 addView(LinearLayout(this@JobsiteCenterActivity).apply {
                     orientation = LinearLayout.VERTICAL
@@ -281,14 +281,14 @@ class JobsiteCenterActivity : AppCompatActivity() {
                     addView(TextView(this@JobsiteCenterActivity).apply {
                         text = "Ore per persona"
                         textSize = 13f
-                        setTextColor(Color.parseColor("#25282C"))
+                        setTextColor(Ge360Brand.Text)
                         setTypeface(typeface, Typeface.BOLD)
                     })
                     breakdown.forEach { row ->
                         addView(TextView(this@JobsiteCenterActivity).apply {
                             text = "${row.collaborator} · ${formatMinutes(row.minutes)}${if (row.hasMissingRate) " · tariffa da completare" else ""}"
                             textSize = 12f
-                            setTextColor(Color.parseColor("#565C62"))
+                            setTextColor(Ge360Brand.TextSecondary)
                             setPadding(0, dp(5), 0, 0)
                         })
                     }
@@ -315,7 +315,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
                 checklistContainer.addView(TextView(this).apply {
                     text = task.phase.uppercase(Locale.ITALY)
                     textSize = 11f
-                    setTextColor(Color.parseColor("#767C82"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setTypeface(typeface, Typeface.BOLD)
                     setPadding(dp(4), dp(12), dp(4), dp(5))
                 })
@@ -326,18 +326,18 @@ class JobsiteCenterActivity : AppCompatActivity() {
 
     private fun taskCard(task: WorkflowTask): View {
         val statusColor = when (task.status) {
-            WorkflowStatuses.DONE -> "#277A49"
-            WorkflowStatuses.IN_PROGRESS -> "#B85700"
-            WorkflowStatuses.BLOCKED -> "#B42318"
-            WorkflowStatuses.NOT_NEEDED -> "#777C82"
-            else -> "#4F5963"
+            WorkflowStatuses.DONE -> Ge360Brand.Success
+            WorkflowStatuses.IN_PROGRESS -> Ge360Brand.Accent
+            WorkflowStatuses.BLOCKED -> Ge360Brand.Danger
+            WorkflowStatuses.NOT_NEEDED -> Ge360Brand.TextSecondary
+            else -> Ge360Brand.TextSecondary
         }
         return MaterialCardView(this).apply {
             radius = dp(14).toFloat()
             cardElevation = 0f
             strokeWidth = dp(1)
-            strokeColor = Color.parseColor("#E1E4E7")
-            setCardBackgroundColor(Color.WHITE)
+            strokeColor = Ge360Brand.Border
+            setCardBackgroundColor(Ge360Brand.Surface)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(7) }
             isClickable = true
             isFocusable = true
@@ -364,18 +364,18 @@ class JobsiteCenterActivity : AppCompatActivity() {
                             else -> "☐"
                         }
                         textSize = 20f
-                        setTextColor(Color.parseColor(statusColor))
+                        setTextColor(statusColor)
                     }, LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT))
                     addView(TextView(this@JobsiteCenterActivity).apply {
                         text = task.title
                         textSize = 14f
-                        setTextColor(Color.parseColor("#25282C"))
+                        setTextColor(Ge360Brand.Text)
                         setTypeface(typeface, Typeface.BOLD)
                     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     addView(TextView(this@JobsiteCenterActivity).apply {
                         text = task.status
                         textSize = 10f
-                        setTextColor(Color.parseColor(statusColor))
+                        setTextColor(statusColor)
                         setTypeface(typeface, Typeface.BOLD)
                     })
                 })
@@ -390,7 +390,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
                     addView(TextView(this@JobsiteCenterActivity).apply {
                         text = listOf(task.detail, meta).filter { it.isNotBlank() }.joinToString("\n")
                         textSize = 11f
-                        setTextColor(Color.parseColor("#686E74"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(dp(32), dp(4), 0, 0)
                     })
                 }
@@ -409,7 +409,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
             notesContainer.addView(MaterialCardView(this).apply {
                 radius = dp(13).toFloat()
                 cardElevation = 0f
-                setCardBackgroundColor(Color.WHITE)
+                setCardBackgroundColor(Ge360Brand.Surface)
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(7) }
                 setOnLongClickListener {
                     AlertDialog.Builder(this@JobsiteCenterActivity)
@@ -423,7 +423,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = "${if (note.pinned) "📌 " else ""}${note.text}"
                     textSize = 13f
-                    setTextColor(Color.parseColor("#35393E"))
+                    setTextColor(Ge360Brand.Text)
                     setPadding(dp(13), dp(11), dp(13), dp(11))
                 })
             })
@@ -461,13 +461,13 @@ class JobsiteCenterActivity : AppCompatActivity() {
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = row.title
                     textSize = 13f
-                    setTextColor(Color.parseColor("#30343A"))
+                    setTextColor(Ge360Brand.Text)
                     setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(TextView(this@JobsiteCenterActivity).apply {
                     text = "${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale.ITALY).format(Date(row.timestamp))}${if (row.detail.isBlank()) "" else " · ${row.detail}"}"
                     textSize = 11f
-                    setTextColor(Color.parseColor("#71777D"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setPadding(0, dp(3), 0, 0)
                 })
             })
@@ -616,13 +616,13 @@ class JobsiteCenterActivity : AppCompatActivity() {
         addView(TextView(this@JobsiteCenterActivity).apply {
             text = title
             textSize = 13f
-            setTextColor(Color.parseColor("#4C5359"))
+            setTextColor(Ge360Brand.TextSecondary)
             setTypeface(typeface, Typeface.BOLD)
         })
         addView(TextView(this@JobsiteCenterActivity).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#7A8086"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(2), 0, 0)
         })
     }
@@ -639,13 +639,13 @@ class JobsiteCenterActivity : AppCompatActivity() {
         addView(TextView(this@JobsiteCenterActivity).apply {
             text = label
             textSize = 9f
-            setTextColor(Color.parseColor("#7B8187"))
+            setTextColor(Ge360Brand.TextSecondary)
             setTypeface(typeface, Typeface.BOLD)
         })
         addView(TextView(this@JobsiteCenterActivity).apply {
             text = value
             textSize = 16f
-            setTextColor(Color.parseColor("#24272B"))
+            setTextColor(Ge360Brand.Text)
             setTypeface(typeface, Typeface.BOLD)
             setPadding(0, dp(2), 0, 0)
         })
@@ -660,7 +660,7 @@ class JobsiteCenterActivity : AppCompatActivity() {
     private fun emptyText(value: String) = TextView(this).apply {
         text = value
         textSize = 12f
-        setTextColor(Color.parseColor("#72787E"))
+        setTextColor(Ge360Brand.TextSecondary)
         setPadding(dp(5), dp(10), dp(5), dp(10))
     }
 

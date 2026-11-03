@@ -23,6 +23,7 @@ import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import it.edilmilan.ge360.cantieri.JobsitesActivity
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.preventivi.EstimateRecord
 import it.edilmilan.ge360.preventivi.EstimateRoom
 import it.edilmilan.ge360.preventivi.EstimateRoomStore
@@ -81,7 +82,7 @@ class FloorPlanEditorActivity : AppCompatActivity() {
                 titleView = TextView(this@FloorPlanEditorActivity).apply {
                     textSize = 22f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#202327"))
+                    setTextColor(Ge360Brand.Text)
                 }
                 statusView = TextView(this@FloorPlanEditorActivity).apply {
                     textSize = 12f
@@ -104,14 +105,14 @@ class FloorPlanEditorActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "1. Aggiungi gli ambienti  ·  2. trascinali per comporre la pianta  ·  3. collega a preventivo o cantiere. Lo snap allinea automaticamente i muri vicini."
             textSize = 11f
-            setTextColor(Color.parseColor("#74797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(2), dp(7), dp(2), 0)
         })
 
         totalView = TextView(this).apply {
             textSize = 14f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#30343A"))
+            setTextColor(Ge360Brand.Text)
             setPadding(0, dp(14), 0, dp(8))
         }
         root.addView(totalView)
@@ -142,7 +143,7 @@ class FloorPlanEditorActivity : AppCompatActivity() {
             if (plan.estimateId.isNotBlank()) add("preventivo")
         }
         statusView.text = if (links.isEmpty()) "Rilievo indipendente · non collegato" else "Collegato a ${links.joinToString(" + ")}"
-        statusView.setTextColor(Color.parseColor(if (links.isEmpty()) "#B85700" else "#277A49"))
+        statusView.setTextColor(if (links.isEmpty()) Ge360Brand.Accent else Ge360Brand.Success)
         totalView.text = "${rooms.size} ambienti · superficie rilevata ${fmt(rooms.sumOf { it.floorArea() })} m²"
         canvas.rooms = rooms
         canvas.wallProfiles = rooms.associate { it.ge360Id to store.walls(it.ge360Id) }
@@ -155,7 +156,7 @@ class FloorPlanEditorActivity : AppCompatActivity() {
             roomRoot.addView(TextView(this).apply {
                 text = "Nessun ambiente. Premi + Ambiente e scegli il metodo più comodo per il rilievo."
                 textSize = 13f
-                setTextColor(Color.parseColor("#74797F"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(4), dp(10), dp(4), dp(10))
             })
             return
@@ -167,8 +168,8 @@ class FloorPlanEditorActivity : AppCompatActivity() {
                 radius = dp(14).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor("#E4E6E8")
-                setCardBackgroundColor(Color.WHITE)
+                strokeColor = Ge360Brand.Border
+                setCardBackgroundColor(Ge360Brand.Surface)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { roomActions(room) }
@@ -180,7 +181,7 @@ class FloorPlanEditorActivity : AppCompatActivity() {
                         text = "${room.name} · ${room.roomType}"
                         textSize = 15f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#202327"))
+                        setTextColor(Ge360Brand.Text)
                     })
                     addView(TextView(this@FloorPlanEditorActivity).apply {
                         text = buildString {
@@ -189,7 +190,7 @@ class FloorPlanEditorActivity : AppCompatActivity() {
                             if (openings > 0) append(" · ").append(openings).append(if (openings == 1) " apertura" else " aperture")
                         }
                         textSize = 12f
-                        setTextColor(Color.parseColor("#6D7278"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(0, dp(4), 0, 0)
                     })
                 })
@@ -255,7 +256,7 @@ class FloorPlanEditorActivity : AppCompatActivity() {
         val height = number("Altezza ambiente m", room.height)
         val helper = TextView(this).apply {
             textSize = 11f
-            setTextColor(Color.parseColor("#74797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(5), 0, dp(8))
         }
 

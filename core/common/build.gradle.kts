@@ -22,7 +22,12 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
+    // api: il design system espone RecyclerView e AppCompat nelle sue firme
+    // (GeListContainer, BaseGeActivity), quindi i moduli feature li ereditano
+    // senza doverli ridichiarare uno per uno.
+    api("androidx.core:core-ktx:1.15.0")
+    api("androidx.appcompat:appcompat:1.7.0")
+    api("androidx.recyclerview:recyclerview:1.3.2")
     api("com.google.android.material:material:1.12.0")
     testImplementation("junit:junit:4.13.2")
 }

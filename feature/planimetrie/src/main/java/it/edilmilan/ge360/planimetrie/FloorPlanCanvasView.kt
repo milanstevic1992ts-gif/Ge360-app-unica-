@@ -2,12 +2,12 @@ package it.edilmilan.ge360.planimetrie
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -25,16 +25,16 @@ class FloorPlanCanvasView(context: Context) : View(context) {
         }
     var onRoomMoved: ((FloorPlanRoom) -> Unit)? = null
 
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#F4F1EC"); style = Paint.Style.FILL }
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#222529"); style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.SurfaceWarm; style = Paint.Style.FILL }
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.Text; style = Paint.Style.STROKE; strokeWidth = 3f }
     private val manualStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#B85700"); style = Paint.Style.STROKE; strokeWidth = 3f
+        color = Ge360Brand.Accent; style = Paint.Style.STROKE; strokeWidth = 3f
         pathEffect = android.graphics.DashPathEffect(floatArrayOf(12f, 8f), 0f)
     }
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#222529"); textSize = 30f; isFakeBoldText = true }
-    private val subTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#666B71"); textSize = 22f }
-    private val dimensionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#6B7076"); textSize = 17f; textAlign = Paint.Align.CENTER }
-    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#ECE8E2"); strokeWidth = 1f }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.Text; textSize = 30f; isFakeBoldText = true }
+    private val subTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.TextSecondary; textSize = 22f }
+    private val dimensionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.TextSecondary; textSize = 17f; textAlign = Paint.Align.CENTER }
+    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.Border; strokeWidth = 1f }
     private val hitRects = linkedMapOf<String, RectF>()
 
     private var scale = 50f
@@ -46,9 +46,9 @@ class FloorPlanCanvasView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(Color.WHITE)
+        canvas.drawColor(Ge360Brand.Surface)
         if (rooms.isEmpty()) {
-            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#777C82"); textSize = 30f; textAlign = Paint.Align.CENTER }
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Ge360Brand.TextSecondary; textSize = 30f; textAlign = Paint.Align.CENTER }
             canvas.drawText("Aggiungi il primo ambiente", width / 2f, height / 2f, p)
             return
         }

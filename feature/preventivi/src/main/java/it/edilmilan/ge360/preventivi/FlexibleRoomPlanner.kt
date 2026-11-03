@@ -1,6 +1,6 @@
 package it.edilmilan.ge360.preventivi
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.content.Context
 import android.graphics.Typeface
 import android.text.Editable

@@ -1,30 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tema GE360.
+
+  I colori non sono piu' scritti qui in esadecimale: arrivano da
+  core/common/res/values/ge360_palette.xml, che ha un gemello in values-night/.
+  Il parent e' DayNight, quindi il tema scuro segue l'impostazione del telefono
+  senza una riga di codice in piu'.
+
+  Le differenze vere tra chiaro e scuro (barra di stato chiara o scura) stanno
+  in values-night/themes.xml.
+-->
 <resources>
-    <style name="Theme.GE360" parent="Theme.MaterialComponents.Light.NoActionBar">
+    <style name="Theme.GE360" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <!-- EDIL MILAN STEVIC: arancione cantiere + verde scuro del marchio -->
-        <item name="colorPrimary">#B87400</item>
-        <item name="colorPrimaryVariant">#8E5900</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#384234</item>
-        <item name="colorSecondaryVariant">#283028</item>
-        <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="colorSurface">#FFFFFF</item>
-        <item name="colorOnSurface">#1F2421</item>
-        <item name="colorOnBackground">#1F2421</item>
-        <item name="android:colorAccent">#E49A12</item>
+        <item name="colorPrimary">@color/ge360_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/ge360_primary_dark</item>
+        <item name="colorOnPrimary">@color/ge360_on_primary</item>
+        <item name="colorSecondary">@color/ge360_forest</item>
+        <item name="colorSecondaryVariant">@color/ge360_forest_dark</item>
+        <item name="colorOnSecondary">@color/ge360_on_primary</item>
+        <item name="colorSurface">@color/ge360_surface</item>
+        <item name="colorOnSurface">@color/ge360_text</item>
+        <item name="colorOnBackground">@color/ge360_text</item>
+        <item name="colorError">@color/ge360_danger</item>
+        <item name="android:colorAccent">@color/ge360_primary</item>
 
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowBackground">#F6F5F2</item>
-        <item name="android:colorBackground">#F6F5F2</item>
-        <item name="android:textColorPrimary">#1F2421</item>
-        <item name="android:textColorSecondary">#6B736C</item>
-        <item name="android:statusBarColor">#F6F5F2</item>
-        <item name="android:navigationBarColor">#F6F5F2</item>
+        <item name="android:windowBackground">@color/ge360_background</item>
+        <item name="android:colorBackground">@color/ge360_background</item>
+        <item name="android:textColorPrimary">@color/ge360_text</item>
+        <item name="android:textColorSecondary">@color/ge360_text_secondary</item>
+        <item name="android:textColorHint">@color/ge360_text_secondary</item>
+        <item name="android:statusBarColor">@color/ge360_background</item>
+        <item name="android:navigationBarColor">@color/ge360_surface</item>
 
         <!-- Questi stili si propagano ai moduli che usano MaterialButton/CardView. -->
         <item name="materialButtonStyle">@style/Widget.GE360.Button</item>
         <item name="materialCardViewStyle">@style/Widget.GE360.Card</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.GE360.Dialog</item>
     </style>
 
     <style name="Widget.GE360.Button" parent="Widget.MaterialComponents.Button">
@@ -38,8 +52,18 @@
     <style name="Widget.GE360.Card" parent="Widget.MaterialComponents.CardView">
         <item name="cardCornerRadius">18dp</item>
         <item name="cardElevation">0dp</item>
-        <item name="strokeColor">#E4E1D9</item>
+        <item name="strokeColor">@color/ge360_border</item>
         <item name="strokeWidth">1dp</item>
-        <item name="cardBackgroundColor">#FFFFFF</item>
+        <item name="cardBackgroundColor">@color/ge360_surface</item>
+    </style>
+
+    <!-- I dialog dell'app sono tanti e tutti di sistema: senza questo, in tema
+         scuro restavano bianchi. -->
+    <style name="ThemeOverlay.GE360.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorSurface">@color/ge360_surface</item>
+        <item name="colorOnSurface">@color/ge360_text</item>
+        <item name="android:textColorPrimary">@color/ge360_text</item>
+        <item name="android:textColorSecondary">@color/ge360_text_secondary</item>
+        <item name="colorPrimary">@color/ge360_accent</item>
     </style>
 </resources>

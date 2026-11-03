@@ -1,7 +1,7 @@
 package it.edilmilan.ge360.core.common.ui
 
 import android.content.Context
-import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.ImageButton
@@ -30,13 +30,13 @@ fun buildScreenHeader(
     val header = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, context.dp(2), 0, context.dp(8))
+        setPadding(0, 0, 0, context.dp(GeSpace.SM))
     }
 
     if (onBack != null) {
         header.addView(
             headerIconButton(context, R.drawable.ic_ge360_back, "Indietro", onBack),
-            LinearLayout.LayoutParams(context.dp(48), context.dp(48))
+            LinearLayout.LayoutParams(context.dp(GeTouch.MINIMUM), context.dp(GeTouch.MINIMUM))
         )
     }
 
@@ -46,7 +46,7 @@ fun buildScreenHeader(
             addView(context.ge360Eyebrow("EDIL MILAN STEVIC"))
             addView(TextView(context).apply {
                 text = title
-                applyGe360Title(23f)
+                applyGe360Title(GeType.TITLE)
                 gravity = Gravity.START
                 setPadding(0, context.dp(2), 0, 0)
             })
@@ -59,7 +59,7 @@ fun buildScreenHeader(
     actions.forEach { action ->
         header.addView(
             headerIconButton(context, action.icon, action.description, action.onClick),
-            LinearLayout.LayoutParams(context.dp(48), context.dp(48))
+            LinearLayout.LayoutParams(context.dp(GeTouch.MINIMUM), context.dp(GeTouch.MINIMUM))
         )
     }
 
@@ -72,7 +72,7 @@ private fun headerIconButton(context: Context, icon: Int, description: String, o
         setColorFilter(Ge360Brand.Forest)
         contentDescription = description
         background = null
-        val outValue = android.util.TypedValue()
+        val outValue = TypedValue()
         context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValue, true)
         setBackgroundResource(outValue.resourceId)
         setOnClickListener { onClick() }
@@ -90,12 +90,12 @@ fun buildScreenHeaderWithSubtitle(
     val header = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, context.dp(2), 0, context.dp(9))
+        setPadding(0, 0, 0, context.dp(GeSpace.SM))
     }
 
     header.addView(
         headerIconButton(context, R.drawable.ic_ge360_back, "Indietro", onBack),
-        LinearLayout.LayoutParams(context.dp(48), context.dp(48))
+        LinearLayout.LayoutParams(context.dp(GeTouch.MINIMUM), context.dp(GeTouch.MINIMUM))
     )
 
     header.addView(
@@ -104,13 +104,13 @@ fun buildScreenHeaderWithSubtitle(
             addView(context.ge360Eyebrow("EDIL MILAN STEVIC"))
             addView(TextView(context).apply {
                 text = title
-                applyGe360Title(22f)
+                applyGe360Title(GeType.TITLE)
                 setPadding(0, context.dp(1), 0, 0)
             })
             if (!subtitle.isNullOrBlank()) {
                 addView(TextView(context).apply {
                     text = subtitle
-                    applyGe360Subtitle(12.5f)
+                    applyGe360Subtitle(GeType.CAPTION)
                     setPadding(0, context.dp(2), 0, 0)
                 })
             }
@@ -123,7 +123,7 @@ fun buildScreenHeaderWithSubtitle(
     if (trailingLabel != null && onTrailingClick != null) {
         header.addView(MaterialButton(context).apply {
             text = trailingLabel
-            minHeight = context.dp(42)
+            minHeight = context.dp(GeTouch.MINIMUM - 6)
             applyGe360Secondary()
             setOnClickListener { onTrailingClick() }
         })

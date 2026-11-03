@@ -1,6 +1,6 @@
 package it.edilmilan.ge360.home
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent

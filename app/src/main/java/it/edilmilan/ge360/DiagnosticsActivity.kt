@@ -2,7 +2,6 @@ package it.edilmilan.ge360
 
 import android.content.Intent
 import android.content.pm.PackageInfo
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +17,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.backup.DiagnosticsInspectorV11
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
+import it.edilmilan.ge360.core.common.ui.GeLog
 import it.edilmilan.ge360.sync.DataHubSyncCoordinator
 import java.text.DateFormat
 import java.util.Date
@@ -44,7 +45,7 @@ class DiagnosticsActivity : AppCompatActivity() {
     private fun buildScreen(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F6F7F9"))
+            setBackgroundColor(Ge360Brand.Surface)
             setPadding(dp(16), dp(14), dp(16), dp(20))
         }
 
@@ -61,12 +62,12 @@ class DiagnosticsActivity : AppCompatActivity() {
                     text = "Centro diagnostico"
                     textSize = 25f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#17191C"))
+                    setTextColor(Ge360Brand.Text)
                 })
                 addView(TextView(this@DiagnosticsActivity).apply {
                     text = "Verifica manuale · senza correzioni automatiche"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#6C7278"))
+                    setTextColor(Ge360Brand.TextSecondary)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         })
@@ -168,12 +169,34 @@ class DiagnosticsActivity : AppCompatActivity() {
 
         // Do not display SAF URLs, which may expose names/accounts in screenshots.
 
+        val errorLog = GeLog.recent()
+        if (errorLog.isNotBlank()) {
+            addSection(
+                "ERRORI RECENTI",
+                "Registro locale, dal più recente. Resta sul telefono e non entra nel rapporto condivisibile."
+            )
+            body.addView(card(TextView(this).apply {
+                text = errorLog
+                textSize = 10f
+                setTextColor(Ge360Brand.TextSecondary)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+            }))
+            body.addView(MaterialButton(this).apply {
+                text = "SVUOTA REGISTRO ERRORI"
+                setOnClickListener {
+                    GeLog.clear()
+                    Toast.makeText(this@DiagnosticsActivity, "Registro errori svuotato", Toast.LENGTH_SHORT).show()
+                    renderStatus()
+                }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply { topMargin = dp(8) })
+        }
+
         if (crash.isNotBlank()) {
             addSection("ULTIMO CRASH", "Estratto del crash recorder locale. Non viene inviato automaticamente.")
             body.addView(card(TextView(this).apply {
                 text = crash.take(4000)
                 textSize = 10f
-                setTextColor(Color.parseColor("#4D5359"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(12), dp(12), dp(12), dp(12))
             }))
             body.addView(MaterialButton(this).apply {
@@ -191,6 +214,9 @@ class DiagnosticsActivity : AppCompatActivity() {
             appendLine("Controllo: ${result?.let { formatDate(it.checkedAt) } ?: "non eseguito"}")
             appendLine("Versione: ${identity.versionName} / ${identity.versionCode}")
             appendLine("Storage interno disponibile: ${formatBytes(internal.availableBytes)}")
+            // Solo il conteggio: i testi degli errori possono contenere nomi,
+            // percorsi e risposte del server, e questo rapporto viene condiviso.
+            appendLine("Errori registrati in locale: ${GeLog.entryCount()}")
             if (result != null) append(result.publicSummary())
             else appendLine("Nessuna verifica approfondita eseguita.")
             // No crash stacks, SAF URIs, filesystem paths or credentials.
@@ -199,9 +225,9 @@ class DiagnosticsActivity : AppCompatActivity() {
 
     private fun addMetricStrip(report: DiagnosticsInspectorV11.Report) {
         val cells = listOf(
-            Triple("OK", report.successful, Color.parseColor("#E5F4EF")),
-            Triple("ATTENZIONI", report.warnings, Color.parseColor("#FFF3DE")),
-            Triple("ERRORI", report.errors, Color.parseColor("#FCE7EB"))
+            Triple("OK", report.successful, Ge360Brand.SuccessSoft),
+            Triple("ATTENZIONI", report.warnings, Ge360Brand.WarningSoft),
+            Triple("ERRORI", report.errors, Ge360Brand.DangerSoft)
         )
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         cells.forEachIndexed { index, (label, count, backgroundColor) ->
@@ -216,14 +242,14 @@ class DiagnosticsActivity : AppCompatActivity() {
                         text = count.toString()
                         textSize = 24f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#183448"))
+                        setTextColor(Ge360Brand.TechnicalBlue)
                         gravity = Gravity.CENTER
                     })
                     addView(TextView(this@DiagnosticsActivity).apply {
                         text = label
                         textSize = 10f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#4B5967"))
+                        setTextColor(Ge360Brand.TechnicalBlue)
                         gravity = Gravity.CENTER
                     })
                 })
@@ -240,10 +266,10 @@ class DiagnosticsActivity : AppCompatActivity() {
 
     private fun addFindingRow(item: DiagnosticsInspectorV11.Finding) {
         val color = when (item.level) {
-            DiagnosticsInspectorV11.Level.OK -> Color.parseColor("#137F6D")
-            DiagnosticsInspectorV11.Level.ATTENZIONE -> Color.parseColor("#AB6819")
-            DiagnosticsInspectorV11.Level.ERRORE -> Color.parseColor("#B63242")
-            DiagnosticsInspectorV11.Level.INFO -> Color.parseColor("#3766A0")
+            DiagnosticsInspectorV11.Level.OK -> Ge360Brand.Success
+            DiagnosticsInspectorV11.Level.ATTENZIONE -> Ge360Brand.Warning
+            DiagnosticsInspectorV11.Level.ERRORE -> Ge360Brand.Danger
+            DiagnosticsInspectorV11.Level.INFO -> Ge360Brand.TechnicalBlue
         }
         body.addView(card(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -257,13 +283,13 @@ class DiagnosticsActivity : AppCompatActivity() {
             addView(TextView(this@DiagnosticsActivity).apply {
                 text = item.detail
                 textSize = 12f
-                setTextColor(Color.parseColor("#394451"))
+                setTextColor(Ge360Brand.TechnicalBlue)
                 setPadding(0, dp(5), 0, 0)
             })
             if (item.nextStep.isNotBlank()) addView(TextView(this@DiagnosticsActivity).apply {
                 text = "Da fare: ${item.nextStep}"
                 textSize = 11f
-                setTextColor(Color.parseColor("#536273"))
+                setTextColor(Ge360Brand.TechnicalBlue)
                 setPadding(0, dp(6), 0, 0)
             })
         }))
@@ -274,13 +300,13 @@ class DiagnosticsActivity : AppCompatActivity() {
             text = title
             textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#73797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(3), dp(18), dp(3), dp(2))
         })
         body.addView(TextView(this).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#858A90"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(3), 0, dp(3), dp(8))
         })
     }
@@ -293,12 +319,12 @@ class DiagnosticsActivity : AppCompatActivity() {
                 text = label
                 textSize = 12f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#30343A"))
+                setTextColor(Ge360Brand.Text)
             })
             addView(TextView(this@DiagnosticsActivity).apply {
                 text = value
                 textSize = 11f
-                setTextColor(Color.parseColor("#666C72"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(3), 0, 0)
             })
         }))
@@ -308,8 +334,8 @@ class DiagnosticsActivity : AppCompatActivity() {
         radius = dp(14).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E1E4E7")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = dp(7)
         }

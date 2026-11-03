@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Regole di rete GE360 — build di release.
+
+  Prima il manifest dichiarava usesCleartextTraffic="true" per tutta l'app:
+  qualunque richiesta poteva partire in HTTP verso qualunque host. Serviva per
+  raggiungere il server di casa, ma valeva anche per tutto il resto.
+
+  Qui il traffico in chiaro e' vietato per default e permesso solo dove serve
+  davvero. Il codice ha gia' una seconda serratura indipendente:
+  BridgeServiceConfig.allowInsecureHttp, che va abilitata a mano per servizio.
+
+  SE AGGIUNGI UN SERVER IN HTTP: va aggiunto qui dentro, altrimenti nel build
+  di release la richiesta viene bloccata dal sistema prima di partire. Nei build
+  di debug non serve: src/debug/res/xml/network_security_config.xml permette il
+  chiaro verso tutto, cosi' le prove in rete locale restano comode.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+      Tailscale: la tailnet e' una rete privata cifrata a monte di HTTP, e il
+      server GE360 vive qui (ge360-server.<tailnet>.ts.net).
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ts.net</domain>
+    </domain-config>
+
+    <!-- Servizi sullo stesso telefono, es. un bridge in ascolto in locale. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

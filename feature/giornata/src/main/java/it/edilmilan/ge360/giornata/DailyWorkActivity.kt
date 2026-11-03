@@ -259,7 +259,7 @@ class DailyWorkActivity : AppCompatActivity() {
             val rate = store.hourlyRate(name)
             if (rate > 0.0) "$name · ${rate.euro()}/h" else "$name · tariffa non configurata"
         }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Tariffe collaboratori")
             .setItems(labels) { _, position ->
                 if (store.runningSession() != null) return@setItems

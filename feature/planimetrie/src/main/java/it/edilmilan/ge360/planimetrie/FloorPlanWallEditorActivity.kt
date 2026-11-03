@@ -18,6 +18,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 
 class FloorPlanWallEditorActivity : AppCompatActivity() {
     private lateinit var store: FloorPlanStore
@@ -70,12 +71,12 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
                     text = room.name
                     textSize = 22f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#202327"))
+                    setTextColor(Ge360Brand.Text)
                 })
                 addView(TextView(this@FloorPlanWallEditorActivity).apply {
                     text = "Pareti quotate · snap 90°"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#6D7278"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     setPadding(0, dp(2), 0, 0)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
@@ -91,7 +92,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
         summary = TextView(this).apply {
             textSize = 14f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#30343A"))
+            setTextColor(Ge360Brand.Text)
             setPadding(dp(2), dp(12), dp(2), dp(10))
         }
         root.addView(summary)
@@ -99,7 +100,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "Inserisci i muri in ordine. Ogni nuova parete parte dalla precedente. Tocca una parete per porte e finestre. Le aperture restano comprese nei m² lordi."
             textSize = 11f
-            setTextColor(Color.parseColor("#74797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(dp(2), 0, dp(2), dp(12))
         })
 
@@ -131,7 +132,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
             text = "PARETI"
             textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#767B82"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(20), 0, dp(8))
         })
 
@@ -154,7 +155,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
             if (valid && room.height > 0.0) append(" · pareti lorde ${fmt(room.wallArea())} m²")
             if (room.height > 0.0) append(" · H ${fmt(room.height)} m")
         }
-        summary.setTextColor(Color.parseColor(if (valid) "#277A49" else "#B85700"))
+        summary.setTextColor(if (valid) Ge360Brand.Success else Ge360Brand.Accent)
         renderWalls(walls)
     }
 
@@ -164,7 +165,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
             wallsRoot.addView(TextView(this).apply {
                 text = "Nessuna parete. Premi + Parete, oppure “Da rettangolo” se hai già L × W."
                 textSize = 13f
-                setTextColor(Color.parseColor("#74797F"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(dp(4), dp(10), dp(4), dp(10))
             })
             return
@@ -177,8 +178,8 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
                 radius = dp(14).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
-                strokeColor = Color.parseColor("#E4E6E8")
-                setCardBackgroundColor(Color.WHITE)
+                strokeColor = Ge360Brand.Border
+                setCardBackgroundColor(Ge360Brand.Surface)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { wallActions(wall) }
@@ -195,7 +196,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
                             text = "Parete ${index + 1} · ${fmt(wall.length)} m"
                             textSize = 15f
                             setTypeface(typeface, Typeface.BOLD)
-                            setTextColor(Color.parseColor("#202327"))
+                            setTextColor(Ge360Brand.Text)
                         })
                         addView(TextView(this@FloorPlanWallEditorActivity).apply {
                             text = buildList {
@@ -204,14 +205,14 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
                                 if (userNote.isNotBlank()) add(userNote)
                             }.joinToString(" · ")
                             textSize = 12f
-                            setTextColor(Color.parseColor(if (openingLabel.isBlank()) "#6D7278" else "#B85700"))
+                            setTextColor(if (openingLabel.isBlank()) Ge360Brand.TextSecondary else Ge360Brand.Accent)
                             setPadding(0, dp(3), 0, 0)
                         })
                     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     addView(TextView(this@FloorPlanWallEditorActivity).apply {
                         text = "›"
                         textSize = 24f
-                        setTextColor(Color.parseColor("#B85700"))
+                        setTextColor(Ge360Brand.Accent)
                     })
                 })
             })
@@ -250,7 +251,7 @@ class FloorPlanWallEditorActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = "Lunghezza + direzione. La parete parte automaticamente dal punto finale della precedente."
             textSize = 11f
-            setTextColor(Color.parseColor("#74797F"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(3), 0, dp(8))
         })
         root.addView(length, lp(52))

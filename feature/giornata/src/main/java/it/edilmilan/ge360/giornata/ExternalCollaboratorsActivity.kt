@@ -22,6 +22,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import it.edilmilan.ge360.core.common.ui.buildScreenHeaderWithSubtitle
 import it.edilmilan.ge360.spese.ExpensesActivity
 import it.edilmilan.ge360.spese.FinanceRecord
@@ -65,7 +66,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
     private fun buildScreen(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F6F5F2"))
+            setBackgroundColor(Ge360Brand.Background)
             setPadding(dp(14), dp(10), dp(14), dp(18))
         }
         root.addView(
@@ -120,8 +121,8 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
         radius = dp(20).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E4B75F")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Accent
+        setCardBackgroundColor(Ge360Brand.Surface)
         addView(LinearLayout(this@ExternalCollaboratorsActivity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(15), dp(16), dp(15))
@@ -129,19 +130,19 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                 text = "Squadra esterna"
                 textSize = 22f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#384234"))
+                setTextColor(Ge360Brand.Forest)
             })
             addView(TextView(this@ExternalCollaboratorsActivity).apply {
                 text = "$activeCount attivi · $paymentsCount pagamenti registrati"
                 textSize = 12f
-                setTextColor(Color.parseColor("#6B736C"))
+                setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(4), 0, 0)
             })
             addView(TextView(this@ExternalCollaboratorsActivity).apply {
                 text = "Pagato questo mese: ${money(monthPaid)}"
                 textSize = 16f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#B87400"))
+                setTextColor(Ge360Brand.Accent)
                 setPadding(0, dp(10), 0, 0)
             })
         })
@@ -154,8 +155,8 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
             radius = dp(18).toFloat()
             cardElevation = 0f
             strokeWidth = dp(1)
-            strokeColor = Color.parseColor(if (person.active) "#E2E4DF" else "#D7D7D4")
-            setCardBackgroundColor(Color.WHITE)
+            strokeColor = if (person.active) Ge360Brand.Border else Ge360Brand.Border
+            setCardBackgroundColor(Ge360Brand.Surface)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(9)
             }
@@ -170,13 +171,13 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                         text = person.name
                         textSize = 19f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#384234"))
+                        setTextColor(Ge360Brand.Forest)
                     }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     addView(TextView(this@ExternalCollaboratorsActivity).apply {
                         text = if (person.active) "ATTIVO" else "NON ATTIVO"
                         textSize = 10f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor(if (person.active) "#277A49" else "#777C82"))
+                        setTextColor(if (person.active) Ge360Brand.Success else Ge360Brand.TextSecondary)
                     })
                 })
 
@@ -184,7 +185,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                     text = ExternalCollaboratorLedger.trade(person)
                     textSize = 13f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#B87400"))
+                    setTextColor(Ge360Brand.Accent)
                     setPadding(0, dp(4), 0, 0)
                 })
 
@@ -192,7 +193,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                     addView(TextView(this@ExternalCollaboratorsActivity).apply {
                         text = "☎ ${person.phone}"
                         textSize = 12f
-                        setTextColor(Color.parseColor("#4E5750"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(0, dp(5), 0, 0)
                         isClickable = true
                         setOnClickListener {
@@ -204,7 +205,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                     addView(TextView(this@ExternalCollaboratorsActivity).apply {
                         text = person.note
                         textSize = 11.5f
-                        setTextColor(Color.parseColor("#747A73"))
+                        setTextColor(Ge360Brand.TextSecondary)
                         setPadding(0, dp(5), 0, 0)
                         maxLines = 3
                     })
@@ -214,7 +215,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                         text = "Ultimo pagamento: ${money(last.amount)} · ${formatDate(last.date)}"
                         textSize = 11.5f
                         setTypeface(typeface, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#384234"))
+                        setTextColor(Ge360Brand.Forest)
                         setPadding(0, dp(7), 0, 0)
                     })
                 }
@@ -241,8 +242,8 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
         radius = dp(14).toFloat()
         cardElevation = 0f
         strokeWidth = dp(1)
-        strokeColor = Color.parseColor("#E5E6E2")
-        setCardBackgroundColor(Color.WHITE)
+        strokeColor = Ge360Brand.Border
+        setCardBackgroundColor(Ge360Brand.Surface)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = dp(7)
         }
@@ -256,7 +257,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                     text = ExternalCollaboratorLedger.personNameFrom(record)
                     textSize = 13f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#384234"))
+                    setTextColor(Ge360Brand.Forest)
                 })
                 addView(TextView(this@ExternalCollaboratorsActivity).apply {
                     text = buildString {
@@ -264,7 +265,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                         if (record.jobsiteTitle.isNotBlank()) append(" · ${record.jobsiteTitle}")
                     }
                     textSize = 10.5f
-                    setTextColor(Color.parseColor("#747A73"))
+                    setTextColor(Ge360Brand.TextSecondary)
                     maxLines = 2
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -272,7 +273,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
                 text = money(record.amount)
                 textSize = 16f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#B87400"))
+                setTextColor(Ge360Brand.Accent)
             })
         })
     }
@@ -313,14 +314,14 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
         form.addView(noteInput, full(dp(88)))
         form.addView(activeCheck)
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(if (existing == null) "Nuovo collaboratore esterno" else "Modifica collaboratore esterno")
             .setView(form)
             .setPositiveButton("SALVA", null)
             .setNegativeButton("Annulla", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val name = nameInput.text.toString().trim()
                 val trade = tradeInput.text.toString().trim()
                 if (name.isBlank()) {
@@ -378,7 +379,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
         form.addView(jobSpinner, full(dp(54)))
         form.addView(noteInput, full(dp(76)))
 
-        val dialog = android.app.AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Registra pagamento")
             .setMessage("${person.name} · ${ExternalCollaboratorLedger.trade(person)}")
             .setView(form)
@@ -386,7 +387,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
             .setNegativeButton("Annulla", null)
             .create()
         dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val amount = parseMoney(amountInput.text.toString())
                 if (amount <= 0.0) {
                     amountInput.error = "Inserisci un importo valido"
@@ -423,12 +424,12 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
             text = title
             textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#384234"))
+            setTextColor(Ge360Brand.Forest)
         })
         addView(TextView(this@ExternalCollaboratorsActivity).apply {
             text = subtitle
             textSize = 11f
-            setTextColor(Color.parseColor("#747A73"))
+            setTextColor(Ge360Brand.TextSecondary)
             setPadding(0, dp(2), 0, 0)
         })
     }
@@ -436,7 +437,7 @@ class ExternalCollaboratorsActivity : AppCompatActivity() {
     private fun emptyText(value: String) = TextView(this).apply {
         text = value
         textSize = 12f
-        setTextColor(Color.parseColor("#747A73"))
+        setTextColor(Ge360Brand.TextSecondary)
         setPadding(dp(4), dp(10), dp(4), dp(10))
     }
 
