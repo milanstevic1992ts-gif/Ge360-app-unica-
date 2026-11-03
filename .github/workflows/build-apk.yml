@@ -2,6 +2,11 @@ name: Build GE360 APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/ge360-design-accessibility-20261103
+    paths:
+      - '.github/build-apk-trigger'
 
 permissions:
   contents: read
@@ -25,6 +30,10 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Verify static GE360 contracts
+        run: |
+          for f in scripts/verify-*.sh; do bash "$f"; done
+
       - name: Build installable debug APK
         run: gradle :app:assembleDebug --stacktrace
 
@@ -33,6 +42,8 @@ jobs:
         continue-on-error: true
         run: |
           gradle \
+            :core:common:testDebugUnitTest \
+            :core:backup:testDebugUnitTest \
             :feature:agenda:testDebugUnitTest \
             :feature:giornata:testDebugUnitTest \
             :feature:attrezzi:testDebugUnitTest \
