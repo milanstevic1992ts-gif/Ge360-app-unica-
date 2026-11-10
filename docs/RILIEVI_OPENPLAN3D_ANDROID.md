@@ -7,10 +7,13 @@
 - Backend: https://github.com/milanstevic1992ts-gif/ge360-rilievi-backend-
 - App di destinazione: feature/planimetrie di GE360 App Unica
 
-I 27 file HTML/CSS/JS essenziali del frontend sono copiati negli asset Android
+I 27 file HTML/CSS/JS essenziali del frontend, più il modulo aggiuntivo di scambio
+con Preventivi, sono copiati negli asset Android
 in feature/planimetrie/src/main/assets/rilievi/. L'originale resta immutato.
-Solo js/app.js ha due adattamenti locali: esportazione dei blob tramite
-GE360Native.postMessage e riutilizzo di saveBlob per Esporta JSON.
+js/app.js è adattato per esportazione dei blob tramite GE360Native.postMessage,
+riutilizzo di saveBlob per Esporta JSON e passaggio esplicito delle metrature;
+l'HTML offre il pulsante «Invia misure ai Preventivi». Il contratto aggiuntivo
+si trova in js/estimate-handoff.js.
 
 Non si usa una pagina GitHub esterna: l'interfaccia è dentro l'APK.
 
@@ -59,11 +62,47 @@ La repository backend NON viene modificata in questa integrazione:
 i suoi workflow si attivano automaticamente su push/PR e consumerebbero
 runner GitHub, in contrasto con l'obiettivo di evitare crediti.
 
+## Rilievo avanzato → bozza Preventivi (trasferimento controllato)
+
+Dopo il calcolo completato nel pannello Risultato, premere **INVIA MISURE AI
+PREVENTIVI**. Il pulsante richiede un risultato *PROCESSED*, con versione e
+fingerprint coincidente con lo schizzo corrente. Se ci sono modifiche alle
+quote, ripetere **RICALCOLA** prima del trasferimento.
+
+La schermata Android mostra un riepilogo per ambiente: m² di pavimento,
+soffitto, pareti nette e lorde, pittura/rivestimenti quando presenti,
+battiscopa in metri lineari e avvisi su qualità/affidabilità. Scegliere
+una **nuova bozza** oppure un preventivo già in stato Bozza/Da controllare;
+richiede una spunta di verifica esplicita prima di scrivere i dati.
+
+Contratto di trasporto: ge360.rilievi.to_estimate.v1. Contiene soltanto
+planId, versione, fingerprint, denominazione, stato e misure per stanza.
+Nessuna API key, importo economico, foto o archivio delle note viene
+trasmesso al modulo Preventivi.
+
+Ogni misura importata è salvata come riga in EstimateStore:
+- prezzo unitario ZERO, included=false e optional=false;
+- categoria «Quantità tecniche da verificare», senza effetto sul totale;
+- identificativo sorgente: OPENPLAN3D/<planId>/<roomId>/<metratura>;
+- marcatore di origine nel campo note interne;
+- stessa sorgente non importabile due volte nello stesso preventivo.
+
+I contratti accettati o in altri stati non sono disponibili come
+destinazione. L'importazione non modifica il rilievo nativo FloorPlanStore.
+Per importare un secondo calcolo della stessa pianta, creare una nuova
+revisione/bozza: non si sovrascrive la vecchia metratura.
+
+**Importante:** m² pittura, m² pareti e m² rivestimento possono sovrapporsi.
+Sono dati di riferimento, **NON** voci economiche da sommare. L'operatore
+deve scegliere le lavorazioni, le relative quantità di capitolato e i
+prezzi nella sezione Preventivi prima di inviare un'offerta al cliente.
+
 ## Privacy / backup / contratto tra moduli
 
 - Il nuovo disegnatore NON sostituisce il modulo nativo FloorPlanStore.
-- Non esiste ancora import automatico né sincronizzazione bidirezionale tra
-  gli archivi WebView/SQLite o tra Rilievi avanzati e Preventivi.
+- **È disponibile il trasferimento MANUALE di quantità dal risultato professionale
+  verso una bozza Preventivi**, dopo una doppia verifica dell'operatore.
+  Non esistono sincronizzazione automatica né import totale dei due archivi.
 - WebView localStorage e IndexedDB **non sono inclusi** nel backup ZIP GE360.
   Il JSON esportato contiene il rilievo trasmissibile al backend, NON una copia
   completa della libreria e delle foto locali: conservare le immagini a parte.
@@ -97,13 +136,15 @@ runner GitHub, in contrasto con l'obiettivo di evitare crediti.
 - Il PDF/DXF calcolato dal server è un elaborato tecnico di lavoro e va
   verificato prima di usarlo per preventivi definitivi o documenti ufficiali.
 - L'elaborazione in WebView non crea automaticamente righe nel modulo
-  Preventivi: il collegamento metrico/cantiere è una fase distinta.
+  Preventivi: serve premere «Invia misure ai Preventivi» e confermare.
+  Non crea fasi di cantiere, prezzi, varianti economiche o documenti accettati.
 
 ## Collaudo solo locale — SENZA GitHub Actions
 
 Dopo il checkout su Debian con Android SDK e JDK 17:
 
 python3 scripts/verify-rilievi-integration.py
+node --test scripts/test-rilievi-estimate-handoff.mjs
 ./gradlew :feature:planimetrie:testDebugUnitTest :app:assembleDebug
 
 Test sul dispositivo:
@@ -115,6 +156,8 @@ Test sul dispositivo:
 6. CALCOLO, stato/progresso, superfici, versioni e PDF/DXF/PNG;
 7. condivisione/esportazione, rotazione schermo e ritorno, comportamento
    con backend spento o fuori rete;
-8. backup ZIP nativo e nessuna modifica ai vecchi rilievi/accordi.
+8. importazione di 2 ambienti nella bozza: tutte le righe escluse e totale invariato;
+9. provare doppio invio dello stesso planId, calcolo vecchio e preventivo accettato;
+10. backup ZIP nativo e nessuna modifica ai vecchi rilievi/accordi.
 
 **Non effettuare merge né distribuire l'APK prima della build e del collaudo.**
