@@ -60,12 +60,10 @@ object AdvancedSurveyEstimateFlow {
         targetId: String?
     ) {
         val quotes = EstimateStore(activity)
-        val contracts = EstimateLifecycleStore(activity)
         val target = try {
             targetId?.let(quotes::getByGe360Id)
         } finally {
             quotes.close()
-            contracts.close()
         }
 
         if (targetId != null && target == null) {
@@ -86,7 +84,7 @@ object AdvancedSurveyEstimateFlow {
         box.addView(TextView(activity).apply {
             text = (
                 "Destinazione: " +
-                    (target?.number?.ifBlank { target.title } ?: "Nuova bozza") +
+                    (target?.let { it.number.ifBlank { it.title } } ?: "Nuova bozza") +
                     "\n\n" + SurveyEstimateTransferV1.preview(source)
                 )
             textSize = 13f
