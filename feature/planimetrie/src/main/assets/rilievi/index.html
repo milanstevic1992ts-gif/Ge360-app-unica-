@@ -14,12 +14,13 @@
       <button id="settingsBtn" class="round-btn" aria-label="Impostazioni">⚙</button>
     </header>
     <div class="dash-actions">
-      <button id="newPlanBtn" class="new-plan">＋ NUOVO RILIEVO</button>
+      <button id="newFreePlanBtn" class="new-plan">✏ NUOVO RILIEVO LIBERO</button>
+      <button id="newPlanBtn" class="new-plan new-plan-guided">📐 NUOVO RILIEVO GUIDATO</button>
       <button id="serverBadge" class="server-badge offline" type="button" aria-label="Apri diagnostica connessione">● Debian non collegato</button>
     </div>
     <main class="library-wrap">
       <div id="emptyLibrary" class="empty-library">
-        <div class="empty-icon">📐</div><h2>Nessun rilievo</h2><p>Premi “Nuovo rilievo” e disegna la forma con un dito.</p>
+        <div class="empty-icon">📐</div><h2>Nessun rilievo</h2><p>Scegli <b>Libero</b> per disegnare senza quote obbligatorie oppure <b>Guidato</b> per misurare passo passo.</p>
       </div>
       <div id="planGrid" class="plan-grid"></div>
     </main>
@@ -37,7 +38,9 @@
     </header>
     <main id="stageWrap">
       <canvas id="stage"></canvas>
-      <div id="emptyHint" class="empty-hint"><div class="finger">☝️</div><div class="hint-title">Disegna come su un foglio</div><div class="hint-text">Trascina il dito per un muro o fai più lati di seguito.<br><b>Quando lasci il dito ti chiedo subito la misura.</b></div></div>
+      <button id="surveyModeBtn" class="survey-mode-pill" type="button" aria-label="Cambia modalità rilievo">📐 RILIEVO GUIDATO</button>
+      <button id="surveyFreeNoteBtn" class="survey-free-note hidden" type="button">📝 APPUNTO / FOTO LIBERI</button>
+      <div id="emptyHint" class="empty-hint"><div class="finger">☝️</div><div class="hint-title">Disegna come su un foglio</div><div id="emptyHintText" class="hint-text">Trascina il dito per un muro o fai più lati di seguito.<br><b>Quando lasci il dito ti chiedo subito la misura.</b></div></div>
       <button id="statusPill" class="status-pill hidden" type="button" aria-label="Apri controllo geometrico"></button>
       <div id="constructionLegend" class="construction-legend hidden">
         <span data-construction-state="demolish"><i class="demo"></i>DEMOLIRE</span>
