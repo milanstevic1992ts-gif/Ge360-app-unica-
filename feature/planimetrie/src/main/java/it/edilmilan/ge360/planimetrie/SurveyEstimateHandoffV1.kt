@@ -93,8 +93,8 @@ object SurveyEstimateTransferV1 {
     fun containsPlan(quote: EstimateRecord, planId: String): Boolean =
         quote.items.any { it.priceListCode.startsWith("$CODE_PREFIX$planId/") }
 
-    fun reviewWarnings(import: SurveyEstimateHandoffV1): List<String> = buildList {
-        import.rooms.forEach { room ->
+    fun reviewWarnings(source: SurveyEstimateHandoffV1): List<String> = buildList {
+        source.rooms.forEach { room ->
             if (room.quality.isNotBlank() && room.quality.uppercase(Locale.ROOT) != "OK") {
                 add("${room.name}: qualità ${room.quality} — verificare le quote sul rilievo")
             }
@@ -107,12 +107,12 @@ object SurveyEstimateTransferV1 {
         }
     }
 
-    fun preview(import: SurveyEstimateHandoffV1): String = buildString {
-        appendLine("Rilievo: ${import.planName}")
-        appendLine("Versione calcolo: ${import.version} · ${import.rooms.size} ambienti")
+    fun preview(source: SurveyEstimateHandoffV1): String = buildString {
+        appendLine("Rilievo: ${source.planName}")
+        appendLine("Versione calcolo: ${source.version} · ${source.rooms.size} ambienti")
         appendLine("Le quantità derivano dal calcolo Debian. Sono ESCLUSE dal totale e a € 0.")
         appendLine("Non vengono assegnate lavorazioni automaticamente.")
-        import.rooms.forEach { room ->
+        source.rooms.forEach { room ->
             appendLine()
             appendLine(room.name.uppercase(Locale.ITALY))
             METRICS.forEach { metric ->
@@ -121,7 +121,7 @@ object SurveyEstimateTransferV1 {
                 }
             }
         }
-        val warnings = reviewWarnings(import)
+        val warnings = reviewWarnings(source)
         if (warnings.isNotEmpty()) {
             appendLine()
             appendLine("DA VERIFICARE:")
@@ -129,16 +129,16 @@ object SurveyEstimateTransferV1 {
         }
     }.trim()
 
-    fun buildDraftItems(import: SurveyEstimateHandoffV1): List<EstimateItem> {
+    fun buildDraftItems(source: SurveyEstimateHandoffV1): List<EstimateItem> {
         val out = mutableListOf<EstimateItem>()
-        import.rooms.forEach { room ->
-            METRICS.forEach { metric ->
-                val raw = room.metrics[metric.key] ?: return@forEach
+        source.rooms.forEach { room ->
+            METRICS.forEach metricLoop@ { metric ->
+                val raw = room.metrics[metric.key] ?: return@metricLoop
                 val amount = BigDecimal.valueOf(raw).setScale(2, RoundingMode.HALF_UP).toDouble()
-                if (amount <= 0.0) return@forEach
+                if (amount <= 0.0) return@metricLoop
                 out += EstimateItem(
                     ge360Id = UUID.randomUUID().toString(),
-                    priceListCode = "$CODE_PREFIX${import.planId}/${room.roomId}/${metric.key}",
+                    priceListCode = "$CODE_PREFIX${source.planId}/${room.roomId}/${metric.key}",
                     section = "Dati del rilievo",
                     room = room.name,
                     category = "Quantità tecniche da verificare",
@@ -151,9 +151,9 @@ object SurveyEstimateTransferV1 {
                     priceMode = "unit",
                     included = false,
                     optional = false,
-                    internalNote = "$SOURCE_MARKER plan=${import.planId}; " +
-                        "room=${room.roomId}; version=${import.version}; " +
-                        "fingerprint=${import.fingerprint}; quality=${room.quality}",
+                    internalNote = "$SOURCE_MARKER plan=${source.planId}; " +
+                        "room=${room.roomId}; version=${source.version}; " +
+                        "fingerprint=${source.fingerprint}; quality=${room.quality}",
                     total = 0.0
                 )
             }
