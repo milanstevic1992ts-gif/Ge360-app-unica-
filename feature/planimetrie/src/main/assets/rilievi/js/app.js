@@ -212,8 +212,11 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
       notes: plan ? (plan.notes || []).length : notes.length,
       works: plan ? (plan.works || []).length : works.length,
       photos: plan ? (plan.photos || []).length : 0,
+      // Lo schizzo libero NON produce superfici attendibili senza calcolo server.
+      // Evitiamo di presentare pixel del disegno come metri quadri reali.
       floorM2: Number.isFinite(serverFloor) ? serverFloor :
-        (plan && plan.surfaceSummary && Number.isFinite(plan.surfaceSummary.floorM2) ? plan.surfaceSummary.floorM2 : null),
+        (normalizeSurveyMode(plan ? plan.surveyMode : surveyMode) === SURVEY_MODE.FREE ? null :
+          (plan && plan.surfaceSummary && Number.isFinite(plan.surfaceSummary.floorM2) ? plan.surfaceSummary.floorM2 : null)),
       authoritative: !!authoritative
     };
   }
@@ -416,7 +419,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
       h3.textContent = plan.name || 'Rilievo';
       var meta = document.createElement('div');
       meta.className = 'plan-meta';
-      meta.textContent = (normalizeSurveyMode(plan.surveyMode) === SURVEY_MODE.FREE ? '✏ Libero · ' : '📐 Guidato · ') + s.walls + ' muri · ' + (s.rooms ? s.rooms + ' ambienti · ' : '') + (s.works ? s.works + ' lavori · ' : '') + (s.notes ? s.notes + ' appunti · ' : '') + (s.photos ? s.photos + ' foto · ' : '') + (Number.isFinite(s.floorM2) ? s.floorM2.toFixed(1).replace('.', ',') + ' m²' + (s.authoritative ? ' server · ' : ' indicativi · ') : '') + (s.missing ? s.missing + ' misure mancanti' : 'misure complete') + ' · ' + date;
+      meta.textContent = (normalizeSurveyMode(plan.surveyMode) === SURVEY_MODE.FREE ? '✏ Libero · ' : '📐 Guidato · ') + s.walls + ' muri · ' + (s.rooms ? s.rooms + ' ambienti · ' : '') + (s.works ? s.works + ' lavori · ' : '') + (s.notes ? s.notes + ' appunti · ' : '') + (s.photos ? s.photos + ' foto · ' : '') + (Number.isFinite(s.floorM2) ? s.floorM2.toFixed(1).replace('.', ',') + ' m²' + (s.authoritative ? ' server · ' : ' indicativi · ') : '') + (normalizeSurveyMode(plan.surveyMode) === SURVEY_MODE.FREE ? 'quote facoltative' : (s.missing ? s.missing + ' misure mancanti' : 'misure complete')) + ' · ' + date;
       if (offlineQueue.has(plan.id)) {
         var pendingSync = document.createElement('span');
         pendingSync.className = 'backend-badge pending';
