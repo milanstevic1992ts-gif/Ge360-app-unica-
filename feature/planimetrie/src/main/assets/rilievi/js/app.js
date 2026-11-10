@@ -4738,6 +4738,13 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
     var geometryStale = resultOverride ? false : isResultStale(res, payloadFingerprint(planPayload(plan)));
     var reportDirty = resultOverride ? false : !!(plan.backend && plan.backend.reportDirty);
     $('resultStale').classList.toggle('hidden', !geometryStale && !reportDirty);
+    var transferButton = $('resultToEstimateBtn');
+    transferButton.disabled = !!resultOverride || !!resultOverrideVersion ||
+      !!geometryStale || res.status !== 'PROCESSED';
+    transferButton.title = transferButton.disabled
+      ? 'Servono un calcolo completato e la versione corrente senza modifiche alle quote'
+      : 'Scegli una bozza Preventivi e importa solo dati tecnici esclusi dal totale';
+
     $('resultStale').firstChild.nodeValue = geometryStale
       ? 'Il rilievo è cambiato dopo questo calcolo. '
       : 'Hai aggiunto o modificato lavorazioni dopo l’ultimo PDF. ';
