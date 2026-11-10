@@ -29,6 +29,7 @@ FILES = [
     "js/construction-visuals.js",
     "js/geometry-diagnostics.js",
     "js/estimate-handoff.js",
+    "js/survey-mode.js",
     "js/laser-client.js",
     "js/offline-queue.js",
     "js/opening-presets.js",
@@ -124,6 +125,20 @@ if flow_file.exists():
 if "receiveNativeMessage" not in activity or '"estimate-draft"' not in activity:
     errors.append("Il bridge Android non riceve il contratto dei rilievi")
 
+mode_module = ASSETS / "js/survey-mode.js"
+if mode_module.exists():
+    mode_source = mode_module.read_text(encoding="utf-8")
+    for required in ('normalizeSurveyMode', 'surveyModePolicy', 'freeSketchPolyline'):
+        if required not in mode_source:
+            errors.append(f"Modalità libera: manca {required}")
+for required in ('newFreePlanBtn', 'surveyModeBtn', 'surveyFreeNoteBtn'):
+    if required not in index_path.read_text(encoding="utf-8"):
+        errors.append(f"Interfaccia rilievo libero: manca {required}")
+for required in ('freeSketchPolyline(points, viewZoom, rdp)', 'surveyMode = normalizeSurveyMode(plan.surveyMode)',
+                 'plan.surveyMode = normalizeSurveyMode(surveyMode)', 'openFreeSurveyNote'):
+    if required not in frontend:
+        errors.append(f"Logica rilievo libero: manca {required}")
+
 if shutil.which("node"):
     tests = subprocess.run(
         ["node", "--test", str(ROOT / "scripts/test-rilievi-estimate-handoff.mjs")],
@@ -131,6 +146,14 @@ if shutil.which("node"):
     )
     if tests.returncode != 0:
         errors.append("Test JS del passaggio metrature falliti:\n" + tests.stdout[-1000:] + tests.stderr[-500:])
+    free_tests = subprocess.run(
+        ["node", "--test", str(ROOT / "scripts/test-rilievi-free-mode.mjs")],
+        text=True, capture_output=True
+    )
+    if free_tests.returncode != 0:
+        errors.append("Test JS del rilievo libero falliti:\n" +
+                      free_tests.stdout[-1000:] + free_tests.stderr[-500:])
+
 
 if errors:
     print("INTEGRAZIONE RILIEVI: ERRORI")
