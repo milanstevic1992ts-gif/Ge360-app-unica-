@@ -285,6 +285,47 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     openPlan(plan.id);
   }
 
+  function updateSurveyModeUi() {
+    var free = surveyModePolicy(surveyMode).free;
+    $('surveyModeBtn').textContent = modeLabel(surveyMode);
+    $('surveyModeBtn').classList.toggle('is-free', free);
+    $('surveyModeBtn').setAttribute('aria-pressed', String(free));
+    $('surveyFreeNoteBtn').classList.toggle('hidden', !free);
+    $('doneBtn').querySelector('span:last-child').textContent = free ? 'SALVA' : 'FATTO';
+    $('emptyHintText').innerHTML = free
+      ? 'Disegna i muri o le forme come preferisci, anche senza squadra.<br><b>Le quote non sono obbligatorie: salva e riprendi quando vuoi.</b>'
+      : 'Trascina il dito per un muro o fai più lati di seguito.<br><b>Quando lasci il dito ti chiedo subito la misura.</b>';
+  }
+
+  function toggleSurveyMode() {
+    var plan = currentPlan();
+    if (!plan) return;
+    surveyMode = surveyMode === SURVEY_MODE.FREE ? SURVEY_MODE.GUIDED : SURVEY_MODE.FREE;
+    // Il cambio riguarda solo i tratti FUTURI. Non corregge, modifica,
+    // misura o cancella alcuna parete già disegnata.
+    currentStroke = null;
+    setMode('draw', false);
+    persistActive();
+    updateSurveyModeUi();
+    updateUI();
+    render();
+    toast(surveyMode === SURVEY_MODE.FREE
+      ? 'Modalità libera: forme e quote facoltative'
+      : 'Modalità guidata: le nuove pareti richiederanno la misura');
+  }
+
+  function openFreeSurveyNote() {
+    if (!currentPlan()) return;
+    closeTools();
+    openNoteEditor({
+      type: 'plan',
+      id: activePlanId,
+      label: 'Appunti e foto liberi del rilievo',
+      roomName: null,
+      context: { surveyMode: 'free' }
+    });
+  }
+
   function openPlan(id) {
     var plan = library.find(function (p) { return p.id === id; });
     if (!plan) return;
@@ -634,16 +675,24 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     activePointerId = null;
     if (!points || points.length < 2 || pathLength(points) < 45 / viewZoom) { render(); return; }
 
-    var simp = straightenPolyline(simplify(points), {
-      axisToleranceDeg: 25,
-      minSegment: 1 / viewZoom
-    });
+    var policy = surveyModePolicy(surveyMode);
+    var simp = policy.free
+      ? freeSketchPolyline(points, viewZoom, rdp)
+      : straightenPolyline(simplify(points), {
+          axisToleranceDeg: 25,
+          minSegment: 1 / viewZoom
+        });
     if (simp.length < 2) return;
 
-    var cornerSnap = snapPolylineCornersToWalls(simp, walls, {
-      threshold: 46 / viewZoom,
-      axisToleranceDeg: 25
-    });
+    // Libero: nessun asse obbligatorio, nessuna rettifica degli angoli o
+    // aggancio dei nuovi estremi alle vecchie pareti. Il tracciato resta
+    // un semplice schizzo finché l'utente non inserisce le misure.
+    var cornerSnap = policy.snapToExistingWalls
+      ? snapPolylineCornersToWalls(simp, walls, {
+          threshold: 46 / viewZoom,
+          axisToleranceDeg: 25
+        })
+      : { points: simp, wallUpdates: [] };
     simp = cornerSnap.points;
 
     checkpoint();
@@ -669,7 +718,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     surfaceCache = null;
 
     for (var i = 1; i < simp.length; i++) {
-      if (dist(simp[i - 1], simp[i]) < 24 / viewZoom) continue;
+      if (dist(simp[i - 1], simp[i]) < (policy.free ? 6 : 24) / viewZoom) continue;
       var wall = {
         id: uid('w'),
         strokeId: stroke.id,
@@ -687,8 +736,12 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     vibrate(25);
 
     if (stroke.wallIds.length) {
-      toast(stroke.wallIds.length === 1 ? 'Inserisci subito la misura' : stroke.wallIds.length + ' lati: inserisci le misure');
-      openNextMissing(stroke.wallIds[0]);
+      if (policy.autoRequestMeasures) {
+        toast(stroke.wallIds.length === 1 ? 'Inserisci subito la misura' : stroke.wallIds.length + ' lati: inserisci le misure');
+        openNextMissing(stroke.wallIds[0]);
+      } else {
+        toast('Schizzo libero salvato ✓ · Le misure puoi aggiungerle in seguito');
+      }
     }
   }
 
@@ -5979,6 +6032,15 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     var missing = walls.filter(function (w) { return !w.lengthCm; }).length;
     var statusPill = $('statusPill');
     statusPill.classList.remove('geom-ok','geom-warn','geom-error');
+    if (surveyModePolicy(surveyMode).free) {
+      statusPill.textContent = has
+        ? '✏ Schizzo libero · ' + walls.length + ' segmenti · misure facoltative'
+        : '✏ Schizzo libero';
+      $('measureLabel').textContent = 'MISURE';
+      updateSurveyModeUi();
+      return;
+    }
+
     if (missing) {
       statusPill.textContent = walls.length + ' muri · ' + missing + ' da misurare';
     } else if (has) {
