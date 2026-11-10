@@ -630,3 +630,7 @@
 .status-pill.geom-warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
 .status-pill.geom-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
 @media(max-width:390px){.geometry-check-footer{grid-template-columns:1fr}.geometry-issue-actions{justify-content:stretch}.geometry-issue-actions button{flex:1}}
+
+/* App Unica: il passaggio a Preventivi occupa una riga intera anche su telefoni stretti. */
+#resultToEstimateBtn{grid-column:1/-1;min-height:54px;white-space:normal;padding:10px 8px}
+#resultToEstimateBtn:disabled{opacity:.5;cursor:not-allowed}
