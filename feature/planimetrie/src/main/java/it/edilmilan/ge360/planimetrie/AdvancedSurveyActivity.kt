@@ -213,8 +213,7 @@ class AdvancedSurveyActivity : AppCompatActivity() {
         when (runCatching { JSONObject(raw).optString("type") }.getOrNull()) {
             "save" -> receiveExportMessage(raw)
             "estimate-draft" -> runCatching {
-                SurveyEstimateTransferV1.parse(raw)
-            }.onSuccess { draft ->
+                val draft = SurveyEstimateTransferV1.parse(raw)
                 AdvancedSurveyEstimateFlow.open(this, draft)
             }.onFailure { error ->
                 Toast.makeText(
