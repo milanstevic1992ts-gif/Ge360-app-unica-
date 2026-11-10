@@ -5238,6 +5238,17 @@ import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnos
   }
 
   async function saveBlob(blob, filename) {
+    // GE360 App Unica: persisti JSON, PDF, DXF e immagini via Storage Access Framework.
+    // Il bridge accetta richieste SOLO dall'origine locale appassets, mai dal backend.
+    if (window.GE360Native && typeof window.GE360Native.postMessage === 'function') {
+      if (blob.size > 10 * 1024 * 1024) throw new Error('File oltre 10 MB: aprilo dal server Debian');
+      var base64 = await blobToBase64(blob);
+      window.GE360Native.postMessage(JSON.stringify({
+        type: 'save', filename: filename,
+        mime: blob.type || 'application/octet-stream', base64: base64
+      }));
+      return;
+    }
     var fs = nativePlugin('Filesystem');
     var share = nativePlugin('Share');
     if (fs && share) {
@@ -5283,19 +5294,19 @@ import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnos
   }
 
 
-  function exportJson() {
+  async function exportJson() {
     persistActive();
     var plan = currentPlan();
     if (!plan || !plan.walls || !plan.walls.length) return toast('Prima fai uno schizzo');
     var missing = plan.walls.filter(function (w) { return !w.lengthCm; }).length;
     if (missing) toast(missing + ' muri senza misura: verranno calcolati dal server');
     var blob = new Blob([JSON.stringify(planPayload(plan), null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'GE360-' + (plan.name || 'rilievo').replace(/[^a-z0-9_-]+/gi, '-') + '.json';
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    var filename = 'GE360-' + (plan.name || 'rilievo').replace(/[^a-z0-9_-]+/gi, '-') + '.json';
+    try {
+      await saveBlob(blob, filename);
+    } catch (error) {
+      toast('Esportazione non riuscita: ' + (error && error.message || error));
+    }
   }
 
 
