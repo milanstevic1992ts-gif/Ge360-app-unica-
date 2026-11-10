@@ -634,3 +634,25 @@
 /* App Unica: il passaggio a Preventivi occupa una riga intera anche su telefoni stretti. */
 #resultToEstimateBtn{grid-column:1/-1;min-height:54px;white-space:normal;padding:10px 8px}
 #resultToEstimateBtn:disabled{opacity:.5;cursor:not-allowed}
+
+
+/* GE360: scelte modalità rilievo, senza coprire il canvas o le zoom actions. */
+.new-plan-guided{
+  height:48px;margin-top:8px;background:#eef2ff;color:#1e3a8a;
+  box-shadow:none;border:1px solid #b6c6f8;font-size:14px
+}
+.survey-mode-pill,.survey-free-note{
+  position:absolute;left:10px;z-index:9;max-width:calc(100% - 145px);
+  min-height:42px;padding:8px 11px;border:1px solid #94a3b8;
+  border-radius:12px;background:rgba(255,255,255,.97);
+  box-shadow:0 4px 12px rgba(15,23,42,.13);
+  color:#0f172a;font-size:11px;line-height:1.25;font-weight:900;
+  white-space:normal;text-align:left
+}
+.survey-mode-pill{top:11px}
+.survey-mode-pill.is-free{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}
+.survey-free-note{top:63px;background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.survey-free-note.hidden{display:none}
+@media(max-width:370px){
+  .survey-mode-pill,.survey-free-note{max-width:calc(100% - 130px);font-size:10px;padding:7px}
+}
