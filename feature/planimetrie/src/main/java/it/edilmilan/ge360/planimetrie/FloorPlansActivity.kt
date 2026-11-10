@@ -89,6 +89,30 @@ class FloorPlansActivity : AppCompatActivity() {
         })
 
         root.addView(MaterialButton(this).apply {
+            text = "RILIEVO AVANZATO · Disegno touch + calcolo Debian"
+            setOnClickListener {
+                AlertDialog.Builder(this@FloorPlansActivity)
+                    .setTitle("GE360 · Rilievo avanzato")
+                    .setMessage(
+                        "Apri il disegnatore GE360 OpenPlan3D, utilizzabile anche offline.\n\n" +
+                            "Attenzione: per ora utilizza un archivio web separato da questi " +
+                            "rilievi nativi e NON incluso nel backup ZIP GE360. " +
+                            "Esporta regolarmente il JSON.\n\n" +
+                            "Il calcolo professionale richiede un backend Debian configurato " +
+                            "nelle impostazioni con un indirizzo HTTPS/Tailscale e API key. " +
+                            "I rilievi esistenti non vengono modificati."
+                    )
+                    .setPositiveButton("Apri") { _, _ ->
+                        startActivity(Intent(this@FloorPlansActivity, AdvancedSurveyActivity::class.java))
+                    }
+                    .setNegativeButton("Annulla", null)
+                    .show()
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
+            topMargin = dp(10)
+        })
+
+        root.addView(MaterialButton(this).apply {
             text = "+ Nuovo rilievo"
             setOnClickListener { newPlanDialog() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(18) })
