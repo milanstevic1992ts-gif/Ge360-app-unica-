@@ -15,6 +15,7 @@ import { createPdfReader } from './pdf-reader.js';
 import { wallConstructionMetrics, summarizeConstruction, constructionWorkLines } from './construction-quantities.js';
 import { constructionVisual, activeConstructionStates } from './construction-visuals.js';
 import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnostics.js';
+import { buildEstimateHandoff } from './estimate-handoff.js';
 
 (function () {
   'use strict';
@@ -5272,6 +5273,25 @@ import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnos
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
 
+  function transferResultToEstimate() {
+    var plan = resultPlan();
+    if (!plan || !plan.backend || !plan.backend.result) return toast('Nessun calcolo da trasferire');
+    if (resultOverride || resultOverrideVersion) {
+      return toast('Torna alla versione corrente per inviare le misure al Preventivo');
+    }
+    if (!window.GE360Native || typeof window.GE360Native.postMessage !== 'function') {
+      return toast('Trasferimento diretto disponibile nell’app GE360 Unica');
+    }
+    try {
+      var result = plan.backend.result;
+      var fingerprint = payloadFingerprint(planPayload(plan));
+      var payload = buildEstimateHandoff(plan, result, fingerprint);
+      window.GE360Native.postMessage(JSON.stringify(payload));
+    } catch (error) {
+      toast(error && error.message ? error.message : 'Impossibile trasferire il rilievo');
+    }
+  }
+
   async function downloadResult(kind) {
     var plan = resultPlan();
     if (!plan || !plan.backend) return;
@@ -7082,6 +7102,7 @@ import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnos
   $('resultStaleBtn').addEventListener('click', recalcFromResult);
   $('resultEditBtn').addEventListener('click', function () { var id = resultPlanId; closeResult(); if (id && id !== activePlanId) openPlan(id); });
   $('resultPdfBtn').addEventListener('click', openResultPdfInReader);
+  $('resultToEstimateBtn').addEventListener('click', transferResultToEstimate);
   $('resultDxfBtn').addEventListener('click', function () { downloadResult('dxf'); });
   $('resultPngBtn').addEventListener('click', function () { downloadResult('png'); });
   $('planName').addEventListener('change', function () { persistActive(); });
