@@ -676,9 +676,8 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     var points = currentStroke;
     currentStroke = null;
     activePointerId = null;
-    if (!points || points.length < 2 || pathLength(points) < 45 / viewZoom) { render(); return; }
-
     var policy = surveyModePolicy(surveyMode);
+    if (!points || points.length < 2 || pathLength(points) < (policy.free ? 12 : 45) / viewZoom) { render(); return; }
     var simp = policy.free
       ? freeSketchPolyline(points, viewZoom, rdp)
       : straightenPolyline(simplify(points), {
