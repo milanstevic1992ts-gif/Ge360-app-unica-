@@ -78,7 +78,8 @@ class AdvancedSurveyActivity : AppCompatActivity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
-            settings.allowContentAccess = false
+            // Necessario per leggere foto scelte esplicitamente tramite Android Files.
+            settings.allowContentAccess = true
             settings.javaScriptCanOpenWindowsAutomatically = false
             settings.setSupportMultipleWindows(false)
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
