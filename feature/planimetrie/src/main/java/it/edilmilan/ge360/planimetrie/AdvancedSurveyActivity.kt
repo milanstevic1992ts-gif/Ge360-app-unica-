@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.view.Gravity
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -20,6 +21,11 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.JavaScriptReplyProxy
+import org.json.JSONObject
 import com.google.android.material.button.MaterialButton
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 
@@ -34,6 +40,8 @@ class AdvancedSurveyActivity : AppCompatActivity() {
 
     private var browser: WebView? = null
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
+    private data class PendingExport(val name: String, val mime: String, val bytes: ByteArray)
+    private var pendingExport: PendingExport? = null
     private val assets by lazy {
         WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -163,6 +171,27 @@ class AdvancedSurveyActivity : AppCompatActivity() {
                 }
             }
         }
+        // Origin-scoped WebMessage instead of addJavascriptInterface:
+        // untrusted pages and iframe origins cannot call native export methods.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(
+                web, "GE360Native", setOf("https://appassets.androidplatform.net"),
+                object : WebViewCompat.WebMessageListener {
+                    override fun onPostMessage(
+                        view: WebView,
+                        message: WebMessageCompat,
+                        sourceOrigin: Uri,
+                        isMainFrame: Boolean,
+                        replyProxy: JavaScriptReplyProxy
+                    ) {
+                        if (isMainFrame && sourceOrigin.scheme == "https" &&
+                            sourceOrigin.host == ASSET_HOST &&
+                            view.url.orEmpty().startsWith(START_URL)
+                        ) receiveExportMessage(message.data)
+                    }
+                }
+            )
+        }
         browser = web
         root.addView(
             web,
@@ -174,13 +203,64 @@ class AdvancedSurveyActivity : AppCompatActivity() {
         }
     }
 
-    @Deprecated("Activity file chooser compatibility")
+    /** A user-driven SAF document creation; data stays in local process memory. */
+    private fun receiveExportMessage(raw: String?) {
+        if (raw == null || raw.length > MAX_MESSAGE_CHARS || pendingExport != null) return
+        runCatching {
+            val json = JSONObject(raw)
+            require(json.optString("type") == "save")
+            val filename = json.optString("filename", "GE360-Rilievo.json")
+                .replace(Regex("[^A-Za-z0-9À-ÿ._ -]"), "_")
+                .take(110).trim().ifBlank { "GE360-Rilievo.json" }
+            val mime = json.optString("mime").takeIf { it in MIME_TYPES }
+                ?: "application/octet-stream"
+            val base64 = json.optString("base64")
+            require(base64.isNotEmpty() && base64.length < MAX_MESSAGE_CHARS)
+            val bytes = Base64.decode(base64, Base64.DEFAULT)
+            require(bytes.isNotEmpty() && bytes.size <= MAX_EXPORT_BYTES)
+            pendingExport = PendingExport(filename, mime, bytes)
+            startActivityForResult(
+                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = mime
+                    putExtra(Intent.EXTRA_TITLE, filename)
+                },
+                FILE_EXPORT_REQUEST
+            )
+        }.onFailure {
+            pendingExport = null
+            Toast.makeText(
+                this, "Esportazione non disponibile: controlla dimensione e formato",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    @Deprecated("Activity file chooser / export compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == FILE_CHOOSER_REQUEST) {
-            val result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-            pendingFiles?.onReceiveValue(if (resultCode == Activity.RESULT_OK) result else null)
-            pendingFiles = null
+        when (requestCode) {
+            FILE_CHOOSER_REQUEST -> {
+                val result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+                pendingFiles?.onReceiveValue(if (resultCode == Activity.RESULT_OK) result else null)
+                pendingFiles = null
+            }
+            FILE_EXPORT_REQUEST -> {
+                val export = pendingExport
+                pendingExport = null
+                if (resultCode == Activity.RESULT_OK && export != null && data?.data != null) {
+                    runCatching {
+                        contentResolver.openOutputStream(data.data!!, "w")?.use { output ->
+                            output.write(export.bytes)
+                            output.flush()
+                        } ?: error("Destinazione non scrivibile")
+                    }.onSuccess {
+                        Toast.makeText(this, "Documento salvato: ${export.name}", Toast.LENGTH_LONG).show()
+                    }.onFailure {
+                        Toast.makeText(this, "Salvataggio fallito: prova un'altra cartella", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
         }
     }
 
@@ -208,6 +288,7 @@ class AdvancedSurveyActivity : AppCompatActivity() {
     override fun onDestroy() {
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
+        pendingExport = null
         browser?.let { web ->
             (web.parent as? ViewGroup)?.removeView(web)
             web.stopLoading()
@@ -223,5 +304,13 @@ class AdvancedSurveyActivity : AppCompatActivity() {
         private const val START_URL =
             "https://appassets.androidplatform.net/assets/rilievi/index.html"
         private const val FILE_CHOOSER_REQUEST = 2801
+        private const val FILE_EXPORT_REQUEST = 2802
+        private const val MAX_EXPORT_BYTES = 10 * 1024 * 1024
+        private const val MAX_MESSAGE_CHARS = 15 * 1024 * 1024
+        private val MIME_TYPES = setOf(
+            "application/json", "application/pdf", "image/png", "image/jpeg",
+            "image/webp", "image/svg+xml", "application/dxf", "image/vnd.dxf",
+            "application/octet-stream"
+        )
     }
 }
