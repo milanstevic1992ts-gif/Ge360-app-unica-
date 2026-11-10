@@ -188,7 +188,7 @@ class AdvancedSurveyActivity : AppCompatActivity() {
                         if (isMainFrame && sourceOrigin.scheme == "https" &&
                             sourceOrigin.host == ASSET_HOST &&
                             view.url.orEmpty().startsWith(START_URL)
-                        ) receiveExportMessage(message.data)
+                        ) receiveNativeMessage(message.data)
                     }
                 }
             )
@@ -201,6 +201,27 @@ class AdvancedSurveyActivity : AppCompatActivity() {
         setContentView(root)
         if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
             web.loadUrl(START_URL)
+        }
+    }
+
+    /**
+     * Routing unico dell'origin-scoped bridge. Il corpo del messaggio non e'
+     * mai un comando arbitrario: sono accettati solo i due contratti noti.
+     */
+    private fun receiveNativeMessage(raw: String?) {
+        if (raw == null || raw.length > MAX_MESSAGE_CHARS) return
+        when (runCatching { JSONObject(raw).optString("type") }.getOrNull()) {
+            "save" -> receiveExportMessage(raw)
+            "estimate-draft" -> runCatching {
+                SurveyEstimateTransferV1.parse(raw)
+            }.onSuccess { draft ->
+                AdvancedSurveyEstimateFlow.open(this, draft)
+            }.onFailure { error ->
+                Toast.makeText(
+                    this, error.message ?: "Il rilievo non può essere trasferito",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
