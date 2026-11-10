@@ -16,6 +16,7 @@ import { wallConstructionMetrics, summarizeConstruction, constructionWorkLines }
 import { constructionVisual, activeConstructionStates } from './construction-visuals.js';
 import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnostics.js';
 import { buildEstimateHandoff } from './estimate-handoff.js';
+import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline, modeLabel } from './survey-mode.js';
 
 (function () {
   'use strict';
@@ -32,6 +33,7 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
   var settings = { serverUrl: '', apiKey: '', bridgeConfigured: false, bridgeConnected: false, bridgeAddress: '', bridgeEndpoint: '', bridgePairedAt: null };
   var activePlanId = null;
   var mode = 'draw';
+  var surveyMode = SURVEY_MODE.GUIDED;
   var rawStrokes = [];
   var walls = [];
   var openings = [];
@@ -220,6 +222,7 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
     var plan = currentPlan();
     if (!plan) return;
     plan.name = ($('planName').value.trim() || 'Rilievo').slice(0, 40);
+    plan.surveyMode = normalizeSurveyMode(surveyMode);
     plan.updatedAt = new Date().toISOString();
     plan.rawStrokes = clone(rawStrokes);
     plan.walls = clone(walls);
@@ -255,11 +258,13 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
     requestAnimationFrame(resize);
   }
 
-  function newPlan() {
+  function newPlan(requestedMode) {
+    var creationMode = normalizeSurveyMode(requestedMode);
     var now = new Date().toISOString();
     var plan = {
       id: uid('plan'),
-      name: 'Rilievo ' + new Date().toLocaleDateString('it-IT'),
+      name: (creationMode === SURVEY_MODE.FREE ? 'Rilievo libero ' : 'Rilievo ') + new Date().toLocaleDateString('it-IT'),
+      surveyMode: creationMode,
       createdAt: now,
       updatedAt: now,
       rawStrokes: [],
@@ -284,6 +289,7 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
     var plan = library.find(function (p) { return p.id === id; });
     if (!plan) return;
     activePlanId = id;
+    surveyMode = normalizeSurveyMode(plan.surveyMode);
     rawStrokes = clone(plan.rawStrokes || []);
     walls = clone(plan.walls || []);
     openings = clone(plan.openings || []);
@@ -322,6 +328,7 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
     $('planName').value = plan.name || 'Rilievo';
     setMode('draw', false);
     showEditor();
+    updateSurveyModeUi();
     updateViewControls();
     updateUI();
     refreshSurfaceCache();
@@ -368,7 +375,7 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
       h3.textContent = plan.name || 'Rilievo';
       var meta = document.createElement('div');
       meta.className = 'plan-meta';
-      meta.textContent = s.walls + ' muri · ' + (s.rooms ? s.rooms + ' ambienti · ' : '') + (s.works ? s.works + ' lavori · ' : '') + (s.notes ? s.notes + ' appunti · ' : '') + (s.photos ? s.photos + ' foto · ' : '') + (Number.isFinite(s.floorM2) ? s.floorM2.toFixed(1).replace('.', ',') + ' m²' + (s.authoritative ? ' server · ' : ' indicativi · ') : '') + (s.missing ? s.missing + ' misure mancanti' : 'misure complete') + ' · ' + date;
+      meta.textContent = (normalizeSurveyMode(plan.surveyMode) === SURVEY_MODE.FREE ? '✏ Libero · ' : '📐 Guidato · ') + s.walls + ' muri · ' + (s.rooms ? s.rooms + ' ambienti · ' : '') + (s.works ? s.works + ' lavori · ' : '') + (s.notes ? s.notes + ' appunti · ' : '') + (s.photos ? s.photos + ' foto · ' : '') + (Number.isFinite(s.floorM2) ? s.floorM2.toFixed(1).replace('.', ',') + ' m²' + (s.authoritative ? ' server · ' : ' indicativi · ') : '') + (s.missing ? s.missing + ' misure mancanti' : 'misure complete') + ' · ' + date;
       if (offlineQueue.has(plan.id)) {
         var pendingSync = document.createElement('span');
         pendingSync.className = 'backend-badge pending';
@@ -380,7 +387,9 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
       var actions = document.createElement('div');
       actions.className = 'plan-actions';
       actions.appendChild(makeButton('APRI', 'open-plan', function () { openPlan(plan.id); }));
-      actions.appendChild(makeButton(calcBusy ? '…' : 'CALCOLA', 'send-plan', function () { sendPlan(plan.id); }));
+      if (normalizeSurveyMode(plan.surveyMode) === SURVEY_MODE.GUIDED || (plan.walls || []).some(function (w) { return Number.isFinite(w.lengthCm) && w.lengthCm > 0; })) {
+        actions.appendChild(makeButton(calcBusy ? '…' : 'CALCOLA', 'send-plan', function () { sendPlan(plan.id); }));
+      }
       if (plan.backend && plan.backend.result) {
         actions.appendChild(makeButton('RISULTATO', 'send-plan result-plan', function () { openResult(plan.id); }));
         actions.appendChild(makeButton('PDF (' + knownPdfVersionCount(plan) + ')', 'pdf-plan', function () { openPdfArchive(plan.id); }));
@@ -6907,7 +6916,10 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
     render();
   });
 
-  $('newPlanBtn').addEventListener('click', newPlan);
+  $('newPlanBtn').addEventListener('click', function () { newPlan(SURVEY_MODE.GUIDED); });
+  $('newFreePlanBtn').addEventListener('click', function () { newPlan(SURVEY_MODE.FREE); });
+  $('surveyModeBtn').addEventListener('click', toggleSurveyMode);
+  $('surveyFreeNoteBtn').addEventListener('click', openFreeSurveyNote);
   $('serverBadge').addEventListener('click', openConnectionDiagnostics);
   $('settingsBtn').addEventListener('click', openSettings);
   $('closeSettingsBtn').addEventListener('click', closeSettings);
@@ -6973,7 +6985,10 @@ import { buildEstimateHandoff } from './estimate-handoff.js';
   $('doorBtn').addEventListener('click', function () { setMode('door'); });
   $('windowBtn').addEventListener('click', function () { setMode('window'); });
   $('measureBtn').addEventListener('click', startMeasureMode);
-  $('doneBtn').addEventListener('click', openWorks);
+  $('doneBtn').addEventListener('click', function () {
+    if (surveyModePolicy(surveyMode).openWorksOnDone) openWorks();
+    else { persistActive(true); showDashboard(); }
+  });
   $('undoBtn').addEventListener('click', undo);
   $('saveBtn').addEventListener('click', function () { persistActive(true); });
   $('toolsBtn').addEventListener('click', openTools);
