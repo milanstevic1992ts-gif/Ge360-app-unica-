@@ -28,6 +28,7 @@ FILES = [
     "js/construction-quantities.js",
     "js/construction-visuals.js",
     "js/geometry-diagnostics.js",
+    "js/estimate-handoff.js",
     "js/laser-client.js",
     "js/offline-queue.js",
     "js/opening-presets.js",
@@ -88,7 +89,7 @@ for required in (
         errors.append(f"WebView/SAF: simbolo mancante {required}")
 
 frontend = (ASSETS / "js/app.js").read_text(encoding="utf-8") if (ASSETS / "js/app.js").exists() else ""
-for required in ("GE360Native.postMessage", "saveBlob(blob, filename)", "async function exportJson()"):
+for required in ("GE360Native.postMessage", "saveBlob(blob, filename)", "async function exportJson()", "transferResultToEstimate", "buildEstimateHandoff"):
     if required not in frontend:
         errors.append(f"Frontend export: simbolo mancante {required}")
 
@@ -103,6 +104,33 @@ if 'AdvancedSurveyActivity' not in manifest:
     errors.append("AdvancedSurveyActivity non registrata nel manifest")
 if 'AdvancedSurveyActivity::class.java' not in navigation:
     errors.append("L'accesso da Rilievi nativi non e' collegato")
+
+bridge_file = ROOT / "feature/planimetrie/src/main/java/it/edilmilan/ge360/planimetrie/SurveyEstimateHandoffV1.kt"
+flow_file = ROOT / "feature/planimetrie/src/main/java/it/edilmilan/ge360/planimetrie/AdvancedSurveyEstimateFlow.kt"
+for file in (bridge_file, flow_file):
+    if not file.exists():
+        errors.append(f"Handoff Preventivi non trovato: {file.name}")
+if bridge_file.exists():
+    code = bridge_file.read_text(encoding="utf-8")
+    for required in ('ge360.rilievi.to_estimate.v1', 'included = false', 'unitPrice = 0.0', 'containsPlan'):
+        if required not in code:
+            errors.append(f"Handoff misure: {required} non rilevato")
+if flow_file.exists():
+    code = flow_file.read_text(encoding="utf-8")
+    for required in ('EstimateStatuses.DRAFT', 'EstimateStatuses.REVIEW', 'lifecycle.isLocked', 'agreed.isChecked'):
+        if required not in code:
+            errors.append(f"Conferma Preventivi: {required} non rilevato")
+
+if "receiveNativeMessage" not in activity or '"estimate-draft"' not in activity:
+    errors.append("Il bridge Android non riceve il contratto dei rilievi")
+
+if shutil.which("node"):
+    tests = subprocess.run(
+        ["node", "--test", str(ROOT / "scripts/test-rilievi-estimate-handoff.mjs")],
+        text=True, capture_output=True
+    )
+    if tests.returncode != 0:
+        errors.append("Test JS del passaggio metrature falliti:\n" + tests.stdout[-1000:] + tests.stderr[-500:])
 
 if errors:
     print("INTEGRAZIONE RILIEVI: ERRORI")
