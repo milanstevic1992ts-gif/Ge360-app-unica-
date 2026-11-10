@@ -17,6 +17,39 @@ si trova in js/estimate-handoff.js.
 
 Non si usa una pagina GitHub esterna: l'interfaccia è dentro l'APK.
 
+## Rilievo LIBERO oppure GUIDATO
+
+La dashboard Rilievi avanzati propone due pulsanti distinti:
+
+- **NUOVO RILIEVO LIBERO**: schizzo con il dito senza correzione forzata
+  degli angoli e senza snap a muri vicini; nessuna richiesta immediata di
+  quote, nessun obbligo di selezionare lavorazioni o collegare un preventivo.
+  **SALVA** chiude la sessione tornando alla libreria, offline.
+- **NUOVO RILIEVO GUIDATO**: comportamento storico, con raddrizzamento,
+  snap, inserimento sequenziale delle misure e scelta lavorazioni.
+
+Sul canvas è sempre presente il pulsante **RILIEVO LIBERO / GUIDATO**:
+si può cambiare modalità senza eliminare o risagomare le pareti già
+disegnate. Il cambio vale soltanto per i tratti futuri. I rilievi
+preesistenti senza campo \`surveyMode\` continuano come GUIDATI.
+
+In modalità libera appare anche **APPUNTO / FOTO LIBERI**: è una nota
+legata all'intero rilievo e utilizzabile persino senza pareti riconosciute.
+La nota e le foto restano nel browser storage/IndexedDB locale; i file
+fotografici **non** entrano nell'export JSON geometrico e non fanno parte
+del backup ZIP dei rilievi nativi.
+
+Il disegno libero può avere lati non misurati, segmenti obliqui o aperti.
+Per questo i metri quadri NON vengono esposti come dato definitivo della
+scheda in assenza di un calcolo professionale verificato. Si possono
+aggiungere le misure tramite MISURE e avviare CALCOLO in un secondo momento;
+il backend richiede almeno una parete misurata e potrà contrassegnare
+parti come stimate o da verificare. Il pulsante PREVENTIVI resta disponibile
+solo dopo un calcolo completato e con fingerprint corrispondente.
+
+Non considerare le proporzioni dello schizzo libero come misure metriche:
+una planimetria commerciale/tecnica richiede verifica delle quote.
+
 ## Uso
 
 1. Aprire GE360 App Unica → Rilievi.
@@ -145,6 +178,7 @@ Dopo il checkout su Debian con Android SDK e JDK 17:
 
 python3 scripts/verify-rilievi-integration.py
 node --test scripts/test-rilievi-estimate-handoff.mjs
+node --test scripts/test-rilievi-free-mode.mjs
 ./gradlew :feature:planimetrie:testDebugUnitTest :app:assembleDebug
 
 Test sul dispositivo:
@@ -156,8 +190,12 @@ Test sul dispositivo:
 6. CALCOLO, stato/progresso, superfici, versioni e PDF/DXF/PNG;
 7. condivisione/esportazione, rotazione schermo e ritorno, comportamento
    con backend spento o fuori rete;
-8. importazione di 2 ambienti nella bozza: tutte le righe escluse e totale invariato;
-9. provare doppio invio dello stesso planId, calcolo vecchio e preventivo accettato;
-10. backup ZIP nativo e nessuna modifica ai vecchi rilievi/accordi.
+8. rilievo LIBERO offline con tratti obliqui: nessuna richiesta automatica di misura,
+   nessuno snap, salvataggio e riapertura conservano il tipo di rilievo;
+9. appunto/foto liberi anche senza muri; «Fatto» non chiede lavorazioni;
+10. cambio libero → guidato → libero: non alterare i segmenti già tracciati;
+11. importazione di 2 ambienti nella bozza: tutte le righe escluse e totale invariato;
+12. provare doppio invio dello stesso planId, calcolo vecchio e preventivo accettato;
+13. backup ZIP nativo e nessuna modifica ai vecchi rilievi/accordi.
 
 **Non effettuare merge né distribuire l'APK prima della build e del collaudo.**
