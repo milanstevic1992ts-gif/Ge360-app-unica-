@@ -89,13 +89,21 @@ object EstimateAcceptanceEngine {
             }
             jobs.save(job)
 
-            // Idempotente: non duplicare fasi, non azzerare progressi/ore/conti.
-            if (jobs.progressItems(job.ge360Id).isEmpty()) {
-                record.items.asSequence()
-                    .filter { it.included && !it.optional && it.category != "Prezzo ambiente" }
-                    .forEachIndexed { index, item ->
+            // Idempotenza anche se la prima attivazione è stata interrotta
+            // a metà trasferimento delle singole lavorazioni.
+            val recorded = jobs.progressItems(job.ge360Id).map { it.ge360Id }.toSet()
+            record.items.asSequence()
+                .filter { it.included && !it.optional && it.category != "Prezzo ambiente" }
+                .forEachIndexed { index, item ->
+                    val sourceId = item.ge360Id.ifBlank { index.toString() }
+                    val phaseId = UUID.nameUUIDFromBytes(
+                        ("ge360:accepted:phase:" + record.ge360Id + ":" + sourceId)
+                            .toByteArray(StandardCharsets.UTF_8)
+                    ).toString()
+                    if (phaseId !in recorded) {
                         jobs.saveProgressItem(
                             JobsiteProgressItem(
+                                ge360Id = phaseId,
                                 jobsiteId = job.ge360Id,
                                 phase = item.room.ifBlank { item.section.ifBlank { "Lavorazioni" } },
                                 title = item.name,
@@ -108,7 +116,7 @@ object EstimateAcceptanceEngine {
                             )
                         )
                     }
-            }
+                }
 
             // Può essere ripetuto dopo un crash; non riscrive lo snapshot.
             val linkNeedsSave = record.jobsiteId != job.ge360Id ||
