@@ -82,6 +82,9 @@ export function createOpenPlan3DMirror({
   let suspended = true;
   let pendingSync = false;
   let syncing = false;
+  // Revision of the JS state, captured BEFORE digesting/transmitting a snapshot.
+  // A later change must never be acknowledged by an older in-flight transfer.
+  let revision = 0;
   let knownPhotos = new Set();
   let photoPipeline = Promise.resolve();
 
@@ -115,17 +118,18 @@ export function createOpenPlan3DMirror({
   }
 
   function markDirty() {
-    try { nativeObject.postMessage(JSON.stringify({ type: 'mirror-dirty' })); }
+    try { nativeObject.postMessage(JSON.stringify({ type: 'mirror-dirty', revision })); }
     catch (_) { /* The next backup must refuse an unsynchronized mirror. */ }
   }
 
   async function sendLibrary() {
+    const snapshotRevision = revision;
     const library = validatePlans(getPlans());
     const raw = JSON.stringify({ schema: MIRROR_SCHEMA, plans: library, extras: getExtras() });
     const bytes = new TextEncoder().encode(raw);
     if (bytes.length > 50 * 1024 * 1024) throw new Error('Libreria OpenPlan3D oltre 50 MB');
     const digest = await sha256(bytes);
-    await request('mirror-library-begin');
+    await request('mirror-library-begin', { revision: snapshotRevision });
     const chunks = byteChunks(bytes);
     for (let i = 0; i < chunks.length; i++) {
       await request('mirror-library-chunk', { index: i, base64: toBase64(chunks[i]) });
@@ -268,6 +272,7 @@ export function createOpenPlan3DMirror({
   }
 
   function queueLibrary() {
+    revision++;
     pendingSync = true;
     if (suspended) return;
     markDirty();
