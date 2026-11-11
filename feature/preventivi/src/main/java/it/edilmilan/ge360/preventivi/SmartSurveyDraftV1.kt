@@ -20,6 +20,8 @@ data class SmartSurveyRoomV1(
     var wallsManual: Double = 0.0,
     var ceilingManual: Double = 0.0,
     var perimeterManual: Double = 0.0,
+    var tilingHeight: Double = 0.0,
+    var tilingWallsManual: Double = 0.0,
     var floorChoice: String = "da-decidere",
     var wetChoice: String = "da-decidere",
     var pricingMode: String = RoomPricing.MEASURE,
@@ -33,6 +35,7 @@ data class SmartSurveyRoomV1(
     fun ceiling() = if (ceilingManual > 0) ceilingManual else floor()
     fun perimeter() = if (perimeterManual > 0) perimeterManual else if (length > 0 && width > 0) 2 * (length + width) else 0.0
     fun walls() = if (wallsManual > 0) wallsManual else if (height > 0) perimeter() * height else 0.0
+    fun tilingWalls() = if (tilingWallsManual > 0) tilingWallsManual else if (tilingHeight > 0) perimeter() * tilingHeight else 0.0
     fun toRoom(estimateId: String, index: Int) = EstimateRoom(
         ge360Id = id, estimateGe360Id = estimateId,
         name = name.trim().ifBlank { "Ambiente ${index + 1}" }, type = type,
@@ -45,6 +48,7 @@ data class SmartSurveyRoomV1(
         put("length", length); put("width", width); put("height", height)
         put("floorManual", floorManual); put("wallsManual", wallsManual)
         put("ceilingManual", ceilingManual); put("perimeterManual", perimeterManual)
+        put("tilingHeight", tilingHeight); put("tilingWallsManual", tilingWallsManual)
         put("floorChoice", floorChoice); put("wetChoice", wetChoice)
         put("pricingMode", pricingMode); put("bodyPrice", bodyPrice)
         put("workCodes", JSONArray(workCodes.toList()))
@@ -70,6 +74,7 @@ data class SmartSurveyRoomV1(
                 length = n("length"), width = n("width"), height = n("height"),
                 floorManual = n("floorManual"), wallsManual = n("wallsManual"),
                 ceilingManual = n("ceilingManual"), perimeterManual = n("perimeterManual"),
+                tilingHeight = n("tilingHeight"), tilingWallsManual = n("tilingWallsManual"),
                 floorChoice = o.optString("floorChoice", SmartSurveyDraftV1.UNKNOWN),
                 wetChoice = o.optString("wetChoice", SmartSurveyDraftV1.UNKNOWN),
                 pricingMode = o.optString("pricingMode", RoomPricing.MEASURE)
@@ -172,7 +177,9 @@ object SmartSurveyDraftV1 {
             QuantityBasis.CEILING -> room.ceiling()
             QuantityBasis.WALLS -> room.walls()
             QuantityBasis.WALLS_CEILING -> room.walls() + room.ceiling()
-            QuantityBasis.WALLS_FLOOR -> room.walls() + room.floor()
+            QuantityBasis.WALLS_FLOOR -> if (room.type == RoomTypes.BATHROOM && template.code == "PIASTRELLE") {
+                if (room.tilingWalls() > 0) room.tilingWalls() + room.floor() else 0.0
+            } else room.walls() + room.floor()
             QuantityBasis.PERIMETER -> room.perimeter()
             QuantityBasis.MANUAL -> 0.0 // nessuna quantità inventata
         }
@@ -194,7 +201,9 @@ object SmartSurveyDraftV1 {
         if (names.distinct().size != names.size) add("Ambientazioni con nomi uguali: distinguerle")
         session.rooms.forEach { room ->
             if (room.floor() <= 0) add("${room.name}: pavimento non misurato")
-            if (room.walls() <= 0) add("${room.name}: pareti non misurate")
+            if (room.type != RoomTypes.BALCONY && room.walls() <= 0) add("${room.name}: pareti non misurate")
+            if (room.type == RoomTypes.BATHROOM && "PIASTRELLE" in room.workCodes && room.tilingWalls() <= 0 && "PIASTRELLE" !in room.quantities)
+                add("${room.name}: altezza rivestimenti o m² piastrelle da indicare")
             if (room.type == RoomTypes.BATHROOM) {
                 if (room.floorChoice == UNKNOWN) add("${room.name}: confermare demolizione / sovrapposizione / mantenimento pavimento")
                 if (room.wetChoice == UNKNOWN) add("${room.name}: confermare vasca / doccia / nessuna")
@@ -243,7 +252,13 @@ object SmartSurveyDraftV1 {
                     section = RoomWorkCatalog.sectionFor(room), room = room.name,
                     category = template.category, name = template.title,
                     description = template.description +
-                        if (template.references.isEmpty()) "" else "\nRiferimenti da verificare: " + template.references.joinToString("; "),
+                        (if (template.code == "PIASTRELLE" && room.type == RoomTypes.BATHROOM)
+                            "\nRivestimento pareti dichiarato: " + sr.tilingWalls().toString() +
+                            " m²; pavimento: " + sr.floor().toString() +
+                            " m²; altezza rivestimento: " + sr.tilingHeight.toString() + " m."
+                        else "") +
+                        (if (template.references.isEmpty()) "" else "\nRiferimenti da verificare: " +
+                            template.references.joinToString("; ")),
                     quantity = quantity(sr, template), unit = template.unit,
                     unitPrice = if (body) 0.0 else sr.unitPrices[code] ?: 0.0,
                     priceMode = if (template.unit in listOf("corpo", "forfait")) "body" else "unit",
