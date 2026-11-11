@@ -51,10 +51,9 @@ python3 scripts/verify-rilievi-integration.py
 node --test scripts/test-rilievi-free-mode.mjs scripts/test-rilievi-estimate-handoff.mjs
 
 say 'Compilo APK Android e test Kotlin in locale (senza GitHub Actions)'
-chmod +x ./gradlew
 DEST="$HOME/GE360-APK"
 mkdir -p "$DEST"
-./gradlew --no-daemon --console=plain \
+bash ./gradlew --no-daemon --console=plain \
    :feature:planimetrie:testDebugUnitTest :app:assembleDebug \
    2>&1 | tee "$DEST/compilazione-ge360.log"
 APK=app/build/outputs/apk/debug/app-debug.apk
