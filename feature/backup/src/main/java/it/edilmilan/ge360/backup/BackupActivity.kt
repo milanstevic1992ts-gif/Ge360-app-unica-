@@ -21,6 +21,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.core.backup.BackupScratchV9
 import it.edilmilan.ge360.planimetrie.AdvancedSurveyActivity
+import it.edilmilan.ge360.planimetrie.OpenPlan3DMirrorStore
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -302,6 +303,28 @@ class BackupActivity : AppCompatActivity() {
     }
 
     private fun chooseRestore() {
+        // The current restore engine first creates a complete safety snapshot.
+        // On a new phone that snapshot requires OpenPlan3D's native mirror to
+        // have initialized (even if the user has no advanced plans yet).
+        // Tell the user how to prepare it instead of failing after file select.
+        val mirrorReady = runCatching { OpenPlan3DMirrorStore(this).readLibrary() }
+        if (mirrorReady.isFailure) {
+            AlertDialog.Builder(this)
+                .setTitle("Preparazione ripristino GE360")
+                .setMessage(
+                    "Prima di importare i dati, GE360 deve salvare una copia di sicurezza " +
+                    "dei dati attuali. Apri Rilievi avanzati OpenPlan3D almeno una volta " +
+                    "per inizializzare/sincronizzare la sua copia nativa, poi torna " +
+                    "qui e scegli Ripristina. Se c'è un precedente ripristino pendente, " +
+                    "completalo prima di avviarne un altro.\\n\\nDettaglio: " +
+                    (mirrorReady.exceptionOrNull()?.message ?: "Archivio non pronto")
+                )
+                .setPositiveButton("Apri Rilievi avanzati") { _, _ ->
+                    startActivity(Intent(this, AdvancedSurveyActivity::class.java))
+                }
+                .setNegativeButton("Annulla", null).show()
+            return
+        }
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
         }, REQ_RESTORE)
