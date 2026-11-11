@@ -300,6 +300,17 @@ class SmartSurveyActivity : AppCompatActivity() {
                 RoomWorkCatalog.forType(room.type).any { it.code == code && SmartSurveyDraftV1.phase(it) == phase }
             }
             label(room.name + " · " + total + " selezioni", true)
+            if (phase == 3) action("⚡ SUGGERISCI CHECKLIST STANDARD") {
+                val defaults = RoomWorkCatalog.forType(room.type)
+                    .filter { it.enabledByDefault && it.code !in setOf("DEM-PAV", "POSA-SU-POSA", "DEM-VASCA", "DEM-DOCCIA") }
+                    .map { it.code }
+                AlertDialog.Builder(this).setTitle("Checklist standard · " + room.name)
+                    .setMessage("Aggiungo " + defaults.size + " lavorazioni usuali da verificare, senza cancellare selezioni o imporre prezzi. Le alternative del bagno restano da scegliere.")
+                    .setPositiveButton("Aggiungi") { _, _ ->
+                        room.workCodes.addAll(defaults)
+                        persist(); render()
+                    }.setNegativeButton("Annulla", null).show()
+            }
             if (phase == 3 && room.type == RoomTypes.BATHROOM) {
                 action("Pavimento: " + room.floorChoice) {
                     choose("Pavimento esistente", listOf(
