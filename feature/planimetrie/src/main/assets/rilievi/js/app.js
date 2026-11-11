@@ -7251,6 +7251,10 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
             localStorage.setItem(key, extras[key]);
           }
         });
+      // Ricarica gli oggetti in memoria prima di riavviare la coda backend.
+      workCatalogState = loadCachedWorkCatalog(localStorage);
+      workCatalog = workCatalogState.works || BUNDLED_WORK_CATALOG;
+      offlineQueue = createOfflineQueue(localStorage);
     },
     setPlans: function (restored) {
       library = restored;
