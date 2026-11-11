@@ -16,6 +16,21 @@ import java.util.Date
 import java.util.Locale
 
 object EstimateLifecycleUi {
+    fun acceptWork(context: Context, estimate: EstimateRecord, onApplied: () -> Unit) {
+        val lifecycle = EstimateLifecycleStore(context)
+        val locked = try { lifecycle.isLocked(estimate.ge360Id) } finally { lifecycle.close() }
+        if (locked) {
+            // Consente di riprendere un'eventuale attivazione interrotta
+            // senza rigenerare lo snapshot contrattuale.
+            runCatching {
+                EstimateAcceptanceEngine.acceptAndActivate(context, estimate.ge360Id)
+            }.onSuccess {
+                onApplied()
+                toast(context, "✓ Cantiere " + it.jobsiteCode + " collegato al contratto.")
+            }.onFailure { toast(context, it.message ?: "Impossibile collegare il cantiere") }
+        } else acceptDialog(context, estimate, onApplied)
+    }
+
     fun show(context: Context, estimate: EstimateRecord, onApplied: () -> Unit) {
         val lifecycle = EstimateLifecycleStore(context)
         val locked = lifecycle.isLocked(estimate.ge360Id)
@@ -58,11 +73,20 @@ object EstimateLifecycleUi {
         val store = EstimateLifecycleStore(context)
         val locked = store.isLocked(estimate.ge360Id)
         store.close()
-        if (!locked) return true
+        // Anche una conferma interrotta dopo il salvataggio del nuovo stato
+        // non deve permettere la modifica silenziosa del prezzo accettato.
+        if (!locked && estimate.status !in setOf(
+            EstimateStatuses.ACCEPTED, EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED
+        )) return true
         AlertDialog.Builder(context)
             .setTitle("Preventivo bloccato")
-            .setMessage("Questo preventivo è stato accettato e congelato. Per cambiare lavorazioni o prezzi crea una Variante o un Extra: l'accordo originale resta invariato.")
-            .setPositiveButton("Gestisci") { _, _ -> show(context, estimate) {} }
+            .setMessage(
+                if (locked) "Questo preventivo è stato accettato e congelato. Per cambiare lavorazioni o prezzi crea una Variante o un Extra."
+                else "Questo lavoro risulta accettato ma la conferma non è stata completata. Usa LAVORO ACCETTATO per riparare il collegamento e congelare l'accordo."
+            )
+            .setPositiveButton(if (locked) "Gestisci" else "Completa") { _, _ ->
+                if (locked) show(context, estimate) {} else acceptWork(context, estimate) {}
+            }
             .setNegativeButton("Chiudi", null)
             .show()
         return false
@@ -93,30 +117,35 @@ object EstimateLifecycleUi {
         val signer = EditText(context).apply { hint = "Nome di chi accetta (facoltativo)"; isSingleLine = true }
         val note = EditText(context).apply { hint = "Nota accettazione (facoltativa)"; minLines = 2 }
         root.addView(TextView(context).apply {
-            text = "Con l'accettazione viene salvato uno snapshot completo. Da quel momento lavorazioni e prezzi dell'accordo originale non vanno riscritti: eventuali modifiche passano da Extra o Variante."
+            text = "Con LAVORO ACCETTATO verranno collegati un contratto congelato e un cantiere effettivo (stato Programmato). Le lavorazioni incluse diventeranno fasi operative, senza segnare il lavoro come già iniziato. Eventuali modifiche all'accordo originale passeranno da Extra o Variante."
         })
         root.addView(signer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 50)))
         root.addView(note, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 80)))
 
         AlertDialog.Builder(context)
-            .setTitle("Accetta e congela ${estimate.number}")
+            .setTitle("LAVORO ACCETTATO · ${estimate.number}")
             .setView(root)
-            .setPositiveButton("Conferma") { _, _ ->
-                val estimates = EstimateStore(context)
-                val lifecycle = EstimateLifecycleStore(context)
-                try {
-                    estimate.status = EstimateStatuses.ACCEPTED
-                    estimates.save(estimate)
-                    lifecycle.freezeAccepted(estimate, signer.text.toString(), note.text.toString())
-                    onApplied()
-                    toast(context, "Preventivo accettato e congelato")
-                } finally {
-                    estimates.close()
-                    lifecycle.close()
-                }
-            }
+            .setPositiveButton("CONFERMA E ATTIVA", null)
             .setNegativeButton("Annulla", null)
-            .show()
+            .create().apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        runCatching {
+                            EstimateAcceptanceEngine.acceptAndActivate(
+                                context, estimate.ge360Id,
+                                signer.text.toString(), note.text.toString()
+                            )
+                        }.onSuccess { result ->
+                            dismiss()
+                            onApplied()
+                            toast(context, "✓ Lavoro accettato. Cantiere ${result.jobsiteCode} programmato.")
+                        }.onFailure { error ->
+                            toast(context, error.message ?: "Impossibile attivare il lavoro")
+                        }
+                    }
+                }
+                show()
+            }
     }
 
     private fun showAcceptedSnapshot(context: Context, estimate: EstimateRecord) {

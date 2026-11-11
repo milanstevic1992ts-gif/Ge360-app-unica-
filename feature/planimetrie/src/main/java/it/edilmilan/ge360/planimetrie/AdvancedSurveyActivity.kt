@@ -39,6 +39,7 @@ import it.edilmilan.ge360.core.common.ui.Ge360Brand
 class AdvancedSurveyActivity : AppCompatActivity() {
 
     private var browser: WebView? = null
+    private val mirror by lazy { OpenPlan3DMirrorStore(this) }
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private data class PendingExport(val name: String, val mime: String, val bytes: ByteArray)
     private var pendingExport: PendingExport? = null
@@ -188,7 +189,7 @@ class AdvancedSurveyActivity : AppCompatActivity() {
                         if (isMainFrame && sourceOrigin.scheme == "https" &&
                             sourceOrigin.host == ASSET_HOST &&
                             view.url.orEmpty().startsWith(START_URL)
-                        ) receiveNativeMessage(message.data)
+                        ) receiveNativeMessage(message.data, replyProxy)
                     }
                 }
             )
@@ -208,19 +209,98 @@ class AdvancedSurveyActivity : AppCompatActivity() {
      * Routing unico dell'origin-scoped bridge. Il corpo del messaggio non e'
      * mai un comando arbitrario: sono accettati solo i due contratti noti.
      */
-    private fun receiveNativeMessage(raw: String?) {
+    private fun receiveNativeMessage(raw: String?, reply: JavaScriptReplyProxy) {
         if (raw == null || raw.length > MAX_MESSAGE_CHARS) return
-        when (runCatching { JSONObject(raw).optString("type") }.getOrNull()) {
-            "save" -> receiveExportMessage(raw)
-            "estimate-draft" -> runCatching {
-                val draft = SurveyEstimateTransferV1.parse(raw)
-                AdvancedSurveyEstimateFlow.open(this, draft)
+        val request = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val type = request.optString("type")
+        if (type == "save") { receiveExportMessage(raw); return }
+        if (type == "estimate-draft") {
+            runCatching {
+                AdvancedSurveyEstimateFlow.open(this, SurveyEstimateTransferV1.parse(raw))
             }.onFailure { error ->
-                Toast.makeText(
-                    this, error.message ?: "Il rilievo non può essere trasferito",
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(this, error.message ?: "Rilievo non trasferibile", Toast.LENGTH_LONG).show()
             }
+            return
+        }
+        if (!type.startsWith("mirror-")) return
+        // Un messaggio JS gestisce solo i contratti noti, niente path di file
+        // arbitrari o accesso alle impostazioni/autorizzazioni Android.
+        val requestId = request.optString("requestId").take(60)
+        val result = JSONObject().put("type", "mirror-reply").put("requestId", requestId)
+        runCatching {
+            when (type) {
+                "mirror-status" -> {
+                    mirror.recoverIfWebViewEmpty(request.optInt("planCount", -1))
+                    val status = mirror.pendingStatus()
+                    JSONObject()
+                        .put("pending", status.pending)
+                        .put("mode", status.mode)
+                        .put("knownPhotoIds", org.json.JSONArray(mirror.photoIds()))
+                }
+                "mirror-dirty" -> { mirror.markDirty(request.getLong("revision")); JSONObject() }
+                "mirror-library-begin" -> { mirror.beginLibrary(request.getLong("revision")); JSONObject() }
+                "mirror-library-chunk" -> {
+                    mirror.libraryChunk(request.getInt("index"), request.getString("base64"))
+                    JSONObject()
+                }
+                "mirror-library-end" -> {
+                    mirror.endLibrary(request.getString("sha256"))
+                    JSONObject()
+                }
+                "mirror-photo-begin" -> {
+                    mirror.startPhoto(
+                        request.getString("id"), request.getLong("size"),
+                        request.getString("sha256")
+                    )
+                    JSONObject()
+                }
+                "mirror-photo-chunk" -> {
+                    mirror.photoChunk(
+                        request.getString("id"), request.getInt("index"),
+                        request.getString("base64")
+                    )
+                    JSONObject()
+                }
+                "mirror-photo-end" -> {
+                    mirror.endPhoto(request.getString("id"))
+                    JSONObject()
+                }
+                "mirror-restore-meta" -> {
+                    val status = mirror.pendingStatus()
+                    require(status.pending) { "Nessun ripristino OpenPlan3D pendente" }
+                    JSONObject().put("mode", status.mode)
+                        .put("length", mirror.libraryForRestore().length)
+                        .put("photoIds", org.json.JSONArray(status.photos))
+                }
+                "mirror-restore-chunk" -> {
+                    val text = mirror.libraryForRestore()
+                    val offset = request.getInt("offset")
+                    require(offset in 0..text.length)
+                    JSONObject().put("data", text.substring(
+                        offset, (offset + RESTORE_CHARS).coerceAtMost(text.length)
+                    ))
+                }
+                "mirror-restore-photo-meta" -> {
+                    JSONObject().put("size", mirror.photoSize(request.getString("id")))
+                }
+                "mirror-restore-photo-chunk" -> {
+                    JSONObject().put("base64", mirror.photoChunkForRestore(
+                        request.getString("id"), request.getLong("offset"),
+                        request.getInt("count")
+                    ))
+                }
+                "mirror-restore-complete" -> {
+                    mirror.completeRestore()
+                    JSONObject()
+                }
+                else -> error("Comando mirror sconosciuto")
+            }
+        }.onSuccess {
+            reply.postMessage(result.put("ok", true).put("result", it).toString())
+        }.onFailure {
+            reply.postMessage(
+                result.put("ok", false).put("error", it.message ?: "Errore OpenPlan3D").toString()
+            )
         }
     }
 
@@ -298,8 +378,9 @@ class AdvancedSurveyActivity : AppCompatActivity() {
             .setTitle("Chiudere il rilievo avanzato?")
             .setMessage(
                 "Salva prima il rilievo nell'archivio web. I rilievi avanzati " +
-                    "non vengono ancora inclusi nel backup ZIP dei rilievi nativi GE360: " +
-                    "esporta anche il JSON per conservarne una copia."
+                    "vengono replicati nel backup GE360 dopo la sincronizzazione nativa. " +
+                    "Se hai fatto modifiche recenti, controlla che la sincronizzazione sia completa; " +
+                    "esporta comunque un JSON aggiuntivo per sicurezza."
             )
             .setPositiveButton("Chiudi") { _, _ -> finish() }
             .setNegativeButton("Continua", null)
@@ -328,6 +409,7 @@ class AdvancedSurveyActivity : AppCompatActivity() {
         private const val FILE_EXPORT_REQUEST = 2802
         private const val MAX_EXPORT_BYTES = 10 * 1024 * 1024
         private const val MAX_MESSAGE_CHARS = 15 * 1024 * 1024
+        private const val RESTORE_CHARS = 48 * 1024
         private val MIME_TYPES = setOf(
             "application/json", "application/pdf", "image/png", "image/jpeg",
             "image/webp", "image/svg+xml", "application/dxf", "image/vnd.dxf",

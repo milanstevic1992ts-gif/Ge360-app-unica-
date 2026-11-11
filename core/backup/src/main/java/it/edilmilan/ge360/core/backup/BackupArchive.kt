@@ -258,17 +258,36 @@ class BackupArchive(private val context: Context) {
     fun persistentLocalRoot(): Uri? = prefs.getString("persistent_local_root", null)?.let(Uri::parse)
     fun driveRoot(): Uri? = prefs.getString("drive_root", null)?.let(Uri::parse)
 
-    fun setPersistentLocalRoot(uri: Uri) = rememberRoot("persistent_local_root", uri)
-    fun setDriveRoot(uri: Uri) = rememberRoot("drive_root", uri)
+    fun setPersistentLocalRoot(uri: Uri) {
+        require(uri.toString() != driveRoot()?.toString()) {
+            "La copia telefono deve essere in una cartella diversa da Drive"
+        }
+        rememberRoot("persistent_local_root", uri)
+    }
+    fun setDriveRoot(uri: Uri) {
+        require(uri.toString() != persistentLocalRoot()?.toString()) {
+            "La cartella Drive deve essere diversa dalla cartella telefono"
+        }
+        rememberRoot("drive_root", uri)
+    }
 
     private fun rememberRoot(key: String, uri: Uri) {
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
+        // Se Android o il provider non concedono accesso permanente, un backup
+        // manuale potrebbe funzionare oggi ma il giornaliero fallire domani.
+        // Non salvare quindi una destinazione solo apparentemente configurata.
+        context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        val granted = context.contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission && it.isWritePermission
         }
-        prefs.edit().putString(key, uri.toString()).apply()
+        require(granted) {
+            "Questa cartella non concede accesso persistente in lettura e scrittura"
+        }
+        check(prefs.edit().putString(key, uri.toString()).commit()) {
+            "Impossibile conservare la cartella dei backup"
+        }
     }
 
     fun persistentLocalReady(): Boolean = treeReady(persistentLocalRoot())
@@ -277,8 +296,11 @@ class BackupArchive(private val context: Context) {
     private fun treeReady(uri: Uri?): Boolean {
         if (uri == null) return false
         return runCatching {
+            val persisted = context.contentResolver.persistedUriPermissions.any {
+                it.uri == uri && it.isReadPermission && it.isWritePermission
+            }
             val root = DocumentFile.fromTreeUri(context, uri)
-            root != null && root.exists() && root.isDirectory && root.canWrite()
+            persisted && root != null && root.exists() && root.isDirectory && root.canWrite()
         }.getOrDefault(false)
     }
 
@@ -289,6 +311,11 @@ class BackupArchive(private val context: Context) {
     }
 
     fun copyToDrive(file: File): Uri {
+        // La replica cloud contiene clienti, importi, fotografie e note:
+        // vietato esportarla in chiaro per errore.
+        require(encryptionEnabled() && file.name.endsWith(".ge360.enc")) {
+            "Prima di copiare su Drive attiva la password di backup e crea un nuovo archivio cifrato"
+        }
         val uri = copyToSafRoot(driveRoot() ?: error("Cartella Drive backup non configurata"), file)
         prefs.edit().putLong("last_drive_backup_at", System.currentTimeMillis()).apply()
         return uri

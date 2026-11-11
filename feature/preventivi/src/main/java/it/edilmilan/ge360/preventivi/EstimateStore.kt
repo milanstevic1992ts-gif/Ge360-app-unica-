@@ -1154,7 +1154,8 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
      */
     fun save(
         record: EstimateRecord,
-        metricConfirmations: Map<String, String> = emptyMap()
+        metricConfirmations: Map<String, String> = emptyMap(),
+        allowLifecycleTransition: Boolean = false
     ): Long {
         val editorRevision = record.updatedAt
         val now = maxOf(System.currentTimeMillis(), editorRevision + 1)
@@ -1163,6 +1164,46 @@ class EstimateStore(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         if (record.createdAt <= 0) record.createdAt = now
         record.updatedAt = now
         recalculateEstimate(record)
+
+        // Una scelta di stato in un modulo diverso NON puo' bypassare
+        // il motore Accetta -> Snapshot -> Cantiere.
+        val previous = if (record.id > 0) get(record.id) else null
+        val liveStatuses = setOf(
+            EstimateStatuses.ACCEPTED, EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED
+        )
+        require(
+            allowLifecycleTransition ||
+                record.status !in liveStatuses ||
+                (previous != null && previous.status in liveStatuses)
+        ) { "Per accettare un preventivo usa LAVORO ACCETTATO → CANTIERE" }
+
+        if (previous != null) {
+            val lifecycle = EstimateLifecycleStore(appContext)
+            val locked = try { lifecycle.isLocked(previous.ge360Id) } finally { lifecycle.close() }
+            if (locked) {
+                fun contract(r: EstimateRecord) = r.copy(
+                    updatedAt = 0,
+                    status = "",
+                    jobsiteId = "",
+                    jobsiteCode = "",
+                    jobsiteTitle = ""
+                )
+                require(contract(previous) == contract(record)) {
+                    "Accordo accettato non modificabile: crea Extra o Variante per cambiare prezzi e lavori"
+                }
+                val progression = listOf(
+                    EstimateStatuses.ACCEPTED,
+                    EstimateStatuses.IN_PROGRESS,
+                    EstimateStatuses.COMPLETED
+                )
+                val before = progression.indexOf(previous.status)
+                val after = progression.indexOf(record.status)
+                require(after >= 0 && (before < 0 || after >= before)) {
+                    "Non è consentito riportare indietro lo stato di un contratto accettato"
+                }
+            }
+        }
+
         val db = writableDatabase
         db.beginTransaction()
         try {

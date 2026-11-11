@@ -20,6 +20,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.core.backup.BackupScratchV9
+import it.edilmilan.ge360.planimetrie.AdvancedSurveyActivity
+import it.edilmilan.ge360.planimetrie.OpenPlan3DMirrorStore
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,13 +71,22 @@ class BackupActivity : AppCompatActivity() {
 
         root.addView(button("Proteggi i nuovi backup con password") { activateEncryption() })
         root.addView(button("Ripara accesso ai backup automatici") { chooseKeyRepair() })
-        root.addView(button("Crea backup adesso") { runBackup(false) })
-        root.addView(button("Backup completo con fotografie") { confirmFullBackup() })
+        root.addView(button("BACKUP GE360 + OPENPLAN3D · telefono + Drive") { confirmFullBackup() })
+        root.addView(button("Backup rapido solo dati (senza foto Galleria)") { runBackup(false) })
         root.addView(button("Scegli cartella backup sul telefono") { choosePersistentLocal() })
         root.addView(button("Copia ultimo backup nella cartella telefono") { copyLatestPersistentLocal() })
         root.addView(button("Scegli cartella Google Drive") { chooseDrive() })
         root.addView(button("Copia ultimo backup su Drive") { copyLatestToDrive() })
         root.addView(button("Ripristina da backup GE360") { chooseRestore() })
+        root.addView(button("Esporta a parte i rilievi OpenPlan3D avanzati") {
+            startActivity(Intent(this, AdvancedSurveyActivity::class.java))
+        })
+        root.addView(TextView(this).apply {
+            text = "OpenPlan3D: prima di eseguire il backup apri Rilievi avanzati almeno una volta. GE360 copia piante, appunti, lavori, foto e dati offline nel deposito nativo; se un trasferimento è incompleto il backup si interrompe. Dopo un RIPRISTINO apri di nuovo OpenPlan3D per applicare i dati al disegnatore. Il backend Debian richiede un backup separato."
+            textSize = 12f
+            setPadding(dp(10), dp(10), dp(10), dp(14))
+        })
+
 
         root.addView(TextView(this).apply {
             text = "Copie di lavoro locali"; textSize = 18f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(2), dp(18), dp(2), dp(8))
@@ -206,24 +217,47 @@ class BackupActivity : AppCompatActivity() {
     }
 
     private fun runBackup(full: Boolean) {
-        status.text = if (full) "Creazione backup completo…" else "Creazione backup…"
+        status.text = if (full) "Preparazione backup completo e doppia copia…" else "Backup rapido senza foto Galleria…"
         thread(name = "ge360-manual-backup") {
             val result = runCatching {
-                val created = coordinator.createBackup(full, copyToDrive = coordinator.archive.driveReady())
-                val localCopied = if (coordinator.archive.persistentLocalReady()) {
-                    runCatching { coordinator.archive.copyToPersistentLocal(created.info.file) }.isSuccess
-                } else false
-                created to localCopied
+                // Nessun falso OK se una delle copie manca o non verifica SHA-256.
+                val created = coordinator.createBackup(full, copyToDrive = false)
+                val archive = coordinator.archive
+                val local = if (archive.persistentLocalReady()) {
+                    runCatching { archive.copyToPersistentLocal(created.info.file) }
+                } else null
+                val drive = if (archive.driveReady()) {
+                    runCatching { archive.copyToDrive(created.info.file) }
+                } else null
+                Triple(created, local, drive)
             }
             runOnUiThread {
-                result.onSuccess { (created, localCopied) ->
-                    toast("Backup verificato: ${created.info.file.name}")
-                    status.text = "Backup OK · ${human(created.info.sizeBytes)} · SHA-256 ${created.info.sha256.take(12)}…" +
-                        (if (localCopied) " · copia telefono OK" else "") +
-                        (if (created.copiedToDrive) " · Drive OK" else "")
-                    if (full && created.galleryFilesSkipped > 0) toast("${created.galleryFilesSkipped} foto non leggibili sono state saltate")
+                result.onSuccess { (created, local, drive) ->
+                    val localOk = local?.isSuccess == true
+                    val driveOk = drive?.isSuccess == true
+                    val doubleOk = localOk && driveOk && full
+                    status.text = buildString {
+                        append(if (doubleOk) "✓ GE360 + OPENPLAN3D · DOPPIA COPIA VERIFICATA" else "⚠ Backup creato · DOPPIA COPIA NON COMPLETA")
+                        append("\nArchivio interno: OK · ").append(human(created.info.sizeBytes))
+                        append("\nSHA-256: ").append(created.info.sha256.take(16)).append("…")
+                        append("\nCartella persistente telefono: ").append(
+                            if (local == null) "NON CONFIGURATA" else if (localOk) "OK" else "ERRORE: " + local.exceptionOrNull()?.message
+                        )
+                        append("\nCartella Drive: ").append(
+                            if (drive == null) "NON CONFIGURATA" else if (driveOk) "OK" else "ERRORE: " + drive.exceptionOrNull()?.message
+                        )
+                        if (!full) append("\nATTENZIONE: la modalità rapida non comprende le foto Galleria.")
+                    }
+                    if (doubleOk) toast("Backup completo su due destinazioni, checksum verificati")
+                    else toast("Controlla le destinazioni: la doppia copia NON è completa")
+                    if (created.galleryFilesSkipped > 0) toast(
+                        "${created.galleryFilesSkipped} foto Galleria non leggibili sono state saltate"
+                    )
                     refreshList()
-                }.onFailure { status.text = "Errore backup: ${it.message}"; toast(status.text.toString()) }
+                }.onFailure {
+                    status.text = "Backup fallito: " + (it.message ?: "Errore")
+                    toast(status.text.toString())
+                }
             }
         }
     }
@@ -231,7 +265,7 @@ class BackupActivity : AppCompatActivity() {
     private fun confirmFullBackup() {
         AlertDialog.Builder(this)
             .setTitle("Backup completo")
-            .setMessage("Include anche tutte le fotografie leggibili della Galleria. Il file può diventare molto grande. Procedere?")
+            .setMessage("Crea un archivio GE360 con database, foto Galleria, Sopralluoghi Smart e copia nativa verificata di OpenPlan3D (piante e foto). Servono cartelle diverse su telefono e Drive; per Drive è richiesta la password di cifratura. Se OpenPlan3D non ha ancora sincronizzato, il backup verrà interrotto. Procedere?")
             .setPositiveButton("Procedi") { _, _ -> runBackup(true) }
             .setNegativeButton("Annulla", null).show()
     }
@@ -269,6 +303,28 @@ class BackupActivity : AppCompatActivity() {
     }
 
     private fun chooseRestore() {
+        // The current restore engine first creates a complete safety snapshot.
+        // On a new phone that snapshot requires OpenPlan3D's native mirror to
+        // have initialized (even if the user has no advanced plans yet).
+        // Tell the user how to prepare it instead of failing after file select.
+        val mirrorReady = runCatching { OpenPlan3DMirrorStore(this).readLibrary() }
+        if (mirrorReady.isFailure) {
+            AlertDialog.Builder(this)
+                .setTitle("Preparazione ripristino GE360")
+                .setMessage(
+                    "Prima di importare i dati, GE360 deve salvare una copia di sicurezza " +
+                    "dei dati attuali. Apri Rilievi avanzati OpenPlan3D almeno una volta " +
+                    "per inizializzare/sincronizzare la sua copia nativa, poi torna " +
+                    "qui e scegli Ripristina. Se c'è un precedente ripristino pendente, " +
+                    "completalo prima di avviarne un altro.\n\nDettaglio: " +
+                    (mirrorReady.exceptionOrNull()?.message ?: "Archivio non pronto")
+                )
+                .setPositiveButton("Apri Rilievi avanzati") { _, _ ->
+                    startActivity(Intent(this, AdvancedSurveyActivity::class.java))
+                }
+                .setNegativeButton("Annulla", null).show()
+            return
+        }
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
         }, REQ_RESTORE)
@@ -350,13 +406,14 @@ class BackupActivity : AppCompatActivity() {
             runOnUiThread {
                 result.onSuccess { r ->
                     val total = r.counts.values.sum()
-                    status.text = "Ripristino completato · $total record · ${r.scannerFiles} PDF · ${r.galleryFiles} foto"
+                    status.text = "Dati GE360 recuperati · OpenPlan3D da finalizzare se presente · $total record · ${r.scannerFiles} PDF · ${r.galleryFiles} foto"
                     val detail = buildString {
                         r.counts.forEach { (k, v) -> appendLine("$k: $v") }
                         if (r.warnings.isNotEmpty()) { appendLine(); appendLine("Avvisi:"); r.warnings.forEach { appendLine("• $it") } }
                     }
-                    AlertDialog.Builder(this).setTitle("Ripristino completato")
-                        .setMessage(detail.trim()).setPositiveButton("OK", null).show()
+                    AlertDialog.Builder(this).setTitle("Ripristino dati nativi eseguito")
+                        .setMessage(detail.trim() + "\n\nSe il backup contiene OpenPlan3D, apri Rilievi avanzati e verifica geometrie e foto: finché non completi quel passaggio il ripristino non è totale.")
+                        .setPositiveButton("OK", null).show()
                 }.onFailure {
                     status.text = "Ripristino fallito: " + (it.message ?: "Errore")
                     toast(status.text.toString())
@@ -370,8 +427,16 @@ class BackupActivity : AppCompatActivity() {
         if (resultCode != Activity.RESULT_OK) return
         val uri = data?.data ?: return
         when (requestCode) {
-            REQ_LOCAL -> { coordinator.archive.setPersistentLocalRoot(uri); JobsiteReplicaCoordinator.requestSync(this); toast("Cartella backup telefono salvata"); refresh() }
-            REQ_DRIVE -> { coordinator.archive.setDriveRoot(uri); JobsiteReplicaCoordinator.requestSync(this); toast("Cartella Drive salvata"); refresh() }
+            REQ_LOCAL -> {
+                runCatching { coordinator.archive.setPersistentLocalRoot(uri) }
+                    .onSuccess { JobsiteReplicaCoordinator.requestSync(this); toast("Cartella backup telefono salvata"); refresh() }
+                    .onFailure { toast(it.message ?: "Cartella telefono non valida") }
+            }
+            REQ_DRIVE -> {
+                runCatching { coordinator.archive.setDriveRoot(uri) }
+                    .onSuccess { JobsiteReplicaCoordinator.requestSync(this); toast("Cartella Drive salvata"); refresh() }
+                    .onFailure { toast(it.message ?: "Cartella Drive non valida") }
+            }
             REQ_RESTORE -> askRestore(uri)
             REQ_KEY_REPAIR -> askKeyRepair(uri)
         }

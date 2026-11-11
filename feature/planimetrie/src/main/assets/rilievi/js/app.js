@@ -17,6 +17,7 @@ import { constructionVisual, activeConstructionStates } from './construction-vis
 import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnostics.js';
 import { buildEstimateHandoff } from './estimate-handoff.js';
 import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline, modeLabel } from './survey-mode.js';
+import { createOpenPlan3DMirror } from './native-backup-bridge.js';
 
 (function () {
   'use strict';
@@ -30,6 +31,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
   var SETTINGS_KEY = 'ge360-rilievo-settings-v1';
 
   var library = [];
+  var nativeMirror = null;
   var settings = { serverUrl: '', apiKey: '', bridgeConfigured: false, bridgeConnected: false, bridgeAddress: '', bridgeEndpoint: '', bridgePairedAt: null };
   var activePlanId = null;
   var mode = 'draw';
@@ -161,6 +163,9 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
 
   function saveLibrary() {
     localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+    // Replica verificata alla parte Android, separata dal disegnatore WebView.
+    // I segreti del backend restano esclusivamente nelle impostazioni WebView.
+    if (nativeMirror) nativeMirror.queueLibrary();
   }
 
   function loadAll() {
@@ -174,7 +179,8 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
     updateServerBadge();
     restoreBridgeTunnel();
     initLaser();
-    setTimeout(function () { flushOfflineQueue(); flushPendingPhotos(); }, 1200);
+    // La sync backend partirà solo dopo avere verificato il ripristino locale
+    // dei rilievi dal deposito Android (vedi initializeNativeMirror sotto).
     setTimeout(refreshConnectionIndicator, 1600);
   }
 
@@ -1764,6 +1770,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
       if (!Array.isArray(plan.photos)) plan.photos = [];
       plan.photos.push(meta);
       saveLibrary();
+      if (nativeMirror) nativeMirror.queuePhoto(id, file);
       renderNotePhotos();
       toast('Foto salvata sul telefono ✓');
       flushPendingPhotos();
@@ -1801,6 +1808,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
   }
 
   async function flushPendingPhotos() {
+    if (nativeMirror && !nativeMirror.isReady()) return;
     if (!settings.serverUrl || !settings.apiKey || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     for (var i = 0; i < library.length; i++) {
       var plan = library[i];
@@ -4612,6 +4620,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
 
   function queueCalculation(plan, payload, error) {
     offlineQueue.enqueue(payload, payloadFingerprint(payload));
+    if (nativeMirror) nativeMirror.queueLibrary();
     plan.backend = Object.assign({}, plan.backend || {}, {
       planId: payload.planId,
       status: 'PENDING_SYNC',
@@ -4625,6 +4634,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
   }
 
   async function flushOfflineQueue() {
+    if (nativeMirror && !nativeMirror.isReady()) return;
     if (syncBusy || !settings.serverUrl || !settings.apiKey) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     var items = offlineQueue.list();
@@ -4637,7 +4647,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
         var plan = library.find(function (p) { return p.id === item.planId; });
-        if (!plan) { offlineQueue.remove(item.planId); continue; }
+        if (!plan) { offlineQueue.remove(item.planId); if (nativeMirror) nativeMirror.queueLibrary(); continue; }
         try {
           var out = await backendClient().processPlan(item.payload);
           var compact = compactResult(out.status, out.processed, { fingerprint: item.fingerprint });
@@ -4652,10 +4662,12 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
             localHistory: carryLocalResultHistory(plan, compact)
           };
           offlineQueue.remove(item.planId);
+          if (nativeMirror) nativeMirror.queueLibrary();
           saveLibrary();
           await syncPlanPhotos(plan, out.submission.planId);
         } catch (e) {
           offlineQueue.markError(item.planId, e.message || e);
+          if (nativeMirror) nativeMirror.queueLibrary();
           if (isRetryableBackendError(e)) break;
           plan.backend = Object.assign({}, plan.backend || {}, { syncStatus: 'BLOCKED', lastError: e.message || String(e) });
           saveLibrary();
@@ -4715,6 +4727,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
         localHistory: carryLocalResultHistory(plan, compact)
       };
       offlineQueue.remove(plan.id);
+      if (nativeMirror) nativeMirror.queueLibrary();
       saveLibrary();
       await syncPlanPhotos(plan, out.submission.planId);
       if (fromModal) closeCalc();
@@ -5423,6 +5436,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
         workCatalogState = data;
         workCatalog = data.works;
         saveCachedWorkCatalog(data, localStorage);
+        if (nativeMirror) nativeMirror.queueLibrary();
         renderWorkSuggestions();
       }
     } catch (_) {}
@@ -5666,6 +5680,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
       createdAt: new Date().toISOString()
     });
     recordWorkUse(item.id, localStorage);
+    if (nativeMirror) nativeMirror.queueLibrary();
     var plan = currentPlan();
     if (plan && plan.backend) plan.backend.reportDirty = true;
     persistActive();
@@ -7216,4 +7231,50 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
 
   loadAll();
   showDashboard();
+  nativeMirror = createOpenPlan3DMirror({
+    nativeObject: window.GE360Native,
+    getPlans: function () { return library; },
+    getExtras: function () {
+      var keys = ['ge360-offline-sync-v1', 'ge360-work-usage-v1', 'ge360-work-catalog-cache-v1'];
+      var extras = {};
+      keys.forEach(function (key) {
+        var value = localStorage.getItem(key);
+        if (value !== null) extras[key] = value;
+      });
+      return extras;
+    },
+    setExtras: function (extras, mode) {
+      ['ge360-offline-sync-v1', 'ge360-work-usage-v1', 'ge360-work-catalog-cache-v1']
+        .forEach(function (key) {
+          if (typeof extras[key] !== 'string') return;
+          if (mode === 'replace' || localStorage.getItem(key) === null) {
+            localStorage.setItem(key, extras[key]);
+          }
+        });
+      // Ricarica gli oggetti in memoria prima di riavviare la coda backend.
+      workCatalogState = loadCachedWorkCatalog(localStorage);
+      workCatalog = workCatalogState.works || BUNDLED_WORK_CATALOG;
+      offlineQueue = createOfflineQueue(localStorage);
+    },
+    setPlans: function (restored) {
+      library = restored;
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+      showDashboard();
+      renderDashboard();
+    },
+    readPhoto: getPhotoBlob,
+    writePhoto: savePhotoBlob,
+    onStatus: function (message) {
+      if (message.startsWith('⚠')) toast(message);
+      else console.info('[GE360 backup]', message);
+    }
+  });
+  if (nativeMirror) {
+    nativeMirror.initialize().then(function (ready) {
+      if (ready) { flushOfflineQueue(); flushPendingPhotos(); }
+    });
+  } else {
+    // Browser non-Android: comportamento precedente, senza bridge nativo.
+    setTimeout(function () { flushOfflineQueue(); flushPendingPhotos(); }, 1200);
+  }
 })();
