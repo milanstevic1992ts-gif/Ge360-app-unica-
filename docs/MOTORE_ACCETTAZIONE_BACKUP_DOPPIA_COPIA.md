@@ -67,38 +67,74 @@ le due copie nella cartella `GE360/Cantieri` scelta dall'utente
 recupero **completo dei dati supportati**; le cartelle leggibili per
 cantiere non sono da sole un ripristino dei database.
 
-## 3. COPERTURA ANCORA INCOMPLETA — NON DICHIARARE RIPRISTINO TOTALE
-**OpenPlan3D avanzato** salva geometria in `localStorage` WebView e foto in
-`IndexedDB`, indipendentemente da `FloorPlanStore` Android.
-Questo ramo NON include ancora questi due archivi WebView nel backup ZIP.
-Per i rilievi avanzati è attualmente necessario esportare manualmente i
-file JSON/foto dal disegnatore. Non disinstallare l'app senza averli salvati.
-Serve un ponte nativo WebView ↔ BackupCoordinator con importazione verificata
-prima di promettere un ripristino integrale.
+## 3. OpenPlan3D incluso tramite copia nativa (NUOVO — collaudo necessario)
+OpenPlan3D è embedded in WebView e salva geometrie e dati in `localStorage`,
+le immagini in `IndexedDB`. Il nuovo bridge `GE360Native` è attivo solo
+nell'origine HTTPS locale `appassets.androidplatform.net`. A ogni aggiornamento
+della libreria (o della coda offline e del catalogo lavoro), il frontend
+trasferisce il contenuto a blocchi verso `OpenPlan3DMirrorStore`, con
+checksum SHA-256 e scritture atomiche. Le foto vengono copiate in blocchi
+da 128 KiB con checksum originale, prima di essere considerate recuperabili.
 
-Le credenziali del backend Debian, l'archivio **del server Debian GE360-Backend**
-e le preferenze di autorizzazione dei provider non sono ripristinate dal
-backup dello smartphone. Il server richiede un backup autonomo.
-I record e le foto di **Sopralluogo Smart** sono invece inclusi in questo ramo.
+Il backup centrale salva:
+- `modules/openplan3d.json`: progetti, muri, aperture, ambienti, note,
+  lavori, geometrie, configurazioni di disegno e metadati foto
+- `files/openplan3d/<id>.bin`: originali delle fotografie collegate
+- Coda offline del rilievo, preferenze di catalogo e lavori usati, ma
+  **NON** password, token, pairing o API key del backend Debian.
+
+**Regola fondamentale:** un backup NON può dichiararsi completo se
+OpenPlan3D non è mai stato aperto con la nuova versione dell'app, se un
+salvataggio è interrotto o se manca una fotografia. Aprire quindi Rilievi
+avanzati almeno una volta prima di usare BACKUP COMPLETO.
+
+### Recupero con conferma e senza perdita di rilievi
+- L'archivio ZIP verificato viene importato nel deposito nativo con
+  tutti i file fotografici e si marca il ripristino come **pendente**
+- Alla prossima apertura di Rilievi avanzati, il bridge copia prima le
+  foto nella IndexedDB WebView e **solo dopo** pubblica la libreria
+- **Unisci** preserva i rilievi già presenti sul telefono e inserisce
+  quelli con ID non ancora presenti. Le voci locali omonime prevalgono
+- **Sostituisci** sostituisce la libreria WebView solo per scelta
+  esplicita durante il ripristino generale. I dati precedenti sono protetti
+  dal backup di sicurezza creato prima del restore
+- In caso di interruzione la marcatura rimane pendente: si può riaprire
+  OpenPlan3D e ripetere il trasferimento senza perdere i file
+- Dopo il recupero bisogna aprire OpenPlan3D e controllare piante e foto
+  per **finalizzare** il ripristino. Fino ad allora il backup successivo
+  rimane bloccato e il disegnatore potrebbe mostrare ancora dati vecchi
+
+### Limiti che restano
+- Non è stato eseguito un collaudo reale dell'intero ciclo su smartphone:
+  gli unit test JS/Android sono predisposti ma non ancora eseguiti
+- Archivi complessi (grandi quantità di rilievi o foto >25 MB) possono
+  richiedere una gestione dedicata; file oltre soglia bloccano il
+  backup invece di essere omessi
+- Il WebView richiede `WEB_MESSAGE_LISTENER` supportato dall'Android System
+  WebView in uso. Se assente, il backup segnalerà impossibilità di sincronizzare
+- L'archivio **del server Debian GE360-Backend** non è compreso nel backup
+  dello smartphone: richiede backup e test di ripristino dedicati
+- Alcune autorizzazioni di sistema, credenziali e permessi SAF non si possono
+  trasferire su un altro telefono: vanno riconfigurati manualmente
 
 ## 4. Come usare dopo il collaudo
 1. Apri **Backup e sincronizzazione**.
 2. Configura una cartella persistente sul telefono e una cartella
    **diversa** disponibile sul provider Google Drive.
 3. Attiva la password backup e conservala in luogo sicuro.
-4. Premi **BACKUP COMPLETO · telefono + Drive**.
-5. Controlla che siano mostrati *telefono OK* e *Drive OK*.
-6. Esegui un ripristino di prova da uno ZIP proveniente dalla seconda
+4. Apri **Rilievi avanzati OpenPlan3D** una prima volta e verifica che i progetti/foto si sincronizzino.\n5. Premi **BACKUP GE360 + OPENPLAN3D · telefono + Drive**.
+6. Controlla che siano mostrati *telefono OK* e *Drive OK*.
+7. Esegui un ripristino di prova da uno ZIP proveniente dalla seconda
    destinazione, idealmente su un altro dispositivo.
-7. Attiva backup giornaliero; controlla periodicamente lo stato, perché
+8. Dopo il restore, apri **OpenPlan3D** e completa la riconciliazione dei progetti/foto.\n9. Attiva backup giornaliero; controlla periodicamente lo stato, perché
    eventuali interruzioni di rete o le ottimizzazioni Android possono
    ritardare o far fallire una copia.
-8. Prima di ripristinare con "Sostituisci" l'app tenta un backup di
+10. Prima di ripristinare con "Sostituisci" l'app tenta un backup di
    sicurezza; **non disinstallare/azzerare l'app durante il ripristino**.
 
 ## 5. Test e rilascio
-- Nuovi test per `EstimateAcceptanceEngine` (UUID stabile e verifiche stato)
-- Richiedono collaudo su telefono: stato jobsite, fasi parziali, snapshot,
+- Test nuovi per `EstimateAcceptanceEngine` (UUID stabile e verifiche stato)\n- Test JavaScript `scripts/test-openplan3d-native-mirror.mjs`: merge, replace, foto, path traversal e chunking
+- Richiedono collaudo su telefono: upload e replay WebView/IndexedDB, stato jobsite, fasi parziali, snapshot,
   ritentativi dopo crash, importazione Smart con foto, controlli SHA e
   restore Unisci/Sostituisci, backup automatici su entrambe le cartelle
 - **Nessun APK creato né GitHub Actions avviata** per questo ramo.
