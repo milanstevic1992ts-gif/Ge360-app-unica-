@@ -18,6 +18,12 @@ android {
     }
 
     buildTypes {
+        // APK di prova installabile insieme all'app GE360 esistente:
+        // appId e archivio dati separati, nessun aggiornamento distruttivo.
+        debug {
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-rilievi-test"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
