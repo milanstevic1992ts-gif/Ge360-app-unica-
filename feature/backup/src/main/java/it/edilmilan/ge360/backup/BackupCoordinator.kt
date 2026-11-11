@@ -588,8 +588,13 @@ class BackupCoordinator(private val context: Context) {
                         }
                     }
                     check(stage.isFile && stage.length() > 0) { "Foto Smart ripristinata vuota" }
-                    if (dest.exists()) check(dest.delete()) { "Foto Smart non sostituibile" }
-                    check(stage.renameTo(dest)) { "Foto Smart non salvabile" }
+                    // Sostituzione atomica sullo stesso filesystem: non
+                    // eliminare mai la foto precedente prima del nuovo file.
+                    java.nio.file.Files.move(
+                        stage.toPath(), dest.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                    )
                 } finally { stage.delete() }
             }
         }
