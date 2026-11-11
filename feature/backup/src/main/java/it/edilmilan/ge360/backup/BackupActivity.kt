@@ -69,8 +69,8 @@ class BackupActivity : AppCompatActivity() {
 
         root.addView(button("Proteggi i nuovi backup con password") { activateEncryption() })
         root.addView(button("Ripara accesso ai backup automatici") { chooseKeyRepair() })
-        root.addView(button("Crea backup adesso") { runBackup(false) })
-        root.addView(button("Backup completo con fotografie") { confirmFullBackup() })
+        root.addView(button("BACKUP COMPLETO · telefono + Drive") { confirmFullBackup() })
+        root.addView(button("Backup rapido solo dati (senza foto Galleria)") { runBackup(false) })
         root.addView(button("Scegli cartella backup sul telefono") { choosePersistentLocal() })
         root.addView(button("Copia ultimo backup nella cartella telefono") { copyLatestPersistentLocal() })
         root.addView(button("Scegli cartella Google Drive") { chooseDrive() })
@@ -206,24 +206,47 @@ class BackupActivity : AppCompatActivity() {
     }
 
     private fun runBackup(full: Boolean) {
-        status.text = if (full) "Creazione backup completo…" else "Creazione backup…"
+        status.text = if (full) "Preparazione backup completo e doppia copia…" else "Backup rapido senza foto Galleria…"
         thread(name = "ge360-manual-backup") {
             val result = runCatching {
-                val created = coordinator.createBackup(full, copyToDrive = coordinator.archive.driveReady())
-                val localCopied = if (coordinator.archive.persistentLocalReady()) {
-                    runCatching { coordinator.archive.copyToPersistentLocal(created.info.file) }.isSuccess
-                } else false
-                created to localCopied
+                // Nessun falso OK se una delle copie manca o non verifica SHA-256.
+                val created = coordinator.createBackup(full, copyToDrive = false)
+                val archive = coordinator.archive
+                val local = if (archive.persistentLocalReady()) {
+                    runCatching { archive.copyToPersistentLocal(created.info.file) }
+                } else null
+                val drive = if (archive.driveReady()) {
+                    runCatching { archive.copyToDrive(created.info.file) }
+                } else null
+                Triple(created, local, drive)
             }
             runOnUiThread {
-                result.onSuccess { (created, localCopied) ->
-                    toast("Backup verificato: ${created.info.file.name}")
-                    status.text = "Backup OK · ${human(created.info.sizeBytes)} · SHA-256 ${created.info.sha256.take(12)}…" +
-                        (if (localCopied) " · copia telefono OK" else "") +
-                        (if (created.copiedToDrive) " · Drive OK" else "")
-                    if (full && created.galleryFilesSkipped > 0) toast("${created.galleryFilesSkipped} foto non leggibili sono state saltate")
+                result.onSuccess { (created, local, drive) ->
+                    val localOk = local?.isSuccess == true
+                    val driveOk = drive?.isSuccess == true
+                    val doubleOk = localOk && driveOk && full
+                    status.text = buildString {
+                        append(if (doubleOk) "✓ BACKUP COMPLETO · DOPPIA COPIA VERIFICATA" else "⚠ Backup creato · DOPPIA COPIA NON COMPLETA")
+                        append("\nArchivio interno: OK · ").append(human(created.info.sizeBytes))
+                        append("\nSHA-256: ").append(created.info.sha256.take(16)).append("…")
+                        append("\nCartella persistente telefono: ").append(
+                            if (local == null) "NON CONFIGURATA" else if (localOk) "OK" else "ERRORE: " + local.exceptionOrNull()?.message
+                        )
+                        append("\nCartella Drive: ").append(
+                            if (drive == null) "NON CONFIGURATA" else if (driveOk) "OK" else "ERRORE: " + drive.exceptionOrNull()?.message
+                        )
+                        if (!full) append("\nATTENZIONE: la modalità rapida non comprende le foto Galleria.")
+                    }
+                    if (doubleOk) toast("Backup completo su due destinazioni, checksum verificati")
+                    else toast("Controlla le destinazioni: la doppia copia NON è completa")
+                    if (created.galleryFilesSkipped > 0) toast(
+                        "${created.galleryFilesSkipped} foto Galleria non leggibili sono state saltate"
+                    )
                     refreshList()
-                }.onFailure { status.text = "Errore backup: ${it.message}"; toast(status.text.toString()) }
+                }.onFailure {
+                    status.text = "Backup fallito: " + (it.message ?: "Errore")
+                    toast(status.text.toString())
+                }
             }
         }
     }
@@ -231,7 +254,7 @@ class BackupActivity : AppCompatActivity() {
     private fun confirmFullBackup() {
         AlertDialog.Builder(this)
             .setTitle("Backup completo")
-            .setMessage("Include anche tutte le fotografie leggibili della Galleria. Il file può diventare molto grande. Procedere?")
+            .setMessage("Crea una copia completa, incluse foto Galleria e Sopralluoghi Smart, e prova a salvarla in due cartelle diverse (telefono e Google Drive). Il risultato mostrerà separatamente le due copie. Il file può essere grande. Procedere?")
             .setPositiveButton("Procedi") { _, _ -> runBackup(true) }
             .setNegativeButton("Annulla", null).show()
     }
@@ -370,8 +393,16 @@ class BackupActivity : AppCompatActivity() {
         if (resultCode != Activity.RESULT_OK) return
         val uri = data?.data ?: return
         when (requestCode) {
-            REQ_LOCAL -> { coordinator.archive.setPersistentLocalRoot(uri); JobsiteReplicaCoordinator.requestSync(this); toast("Cartella backup telefono salvata"); refresh() }
-            REQ_DRIVE -> { coordinator.archive.setDriveRoot(uri); JobsiteReplicaCoordinator.requestSync(this); toast("Cartella Drive salvata"); refresh() }
+            REQ_LOCAL -> {
+                runCatching { coordinator.archive.setPersistentLocalRoot(uri) }
+                    .onSuccess { JobsiteReplicaCoordinator.requestSync(this); toast("Cartella backup telefono salvata"); refresh() }
+                    .onFailure { toast(it.message ?: "Cartella telefono non valida") }
+            }
+            REQ_DRIVE -> {
+                runCatching { coordinator.archive.setDriveRoot(uri) }
+                    .onSuccess { JobsiteReplicaCoordinator.requestSync(this); toast("Cartella Drive salvata"); refresh() }
+                    .onFailure { toast(it.message ?: "Cartella Drive non valida") }
+            }
             REQ_RESTORE -> askRestore(uri)
             REQ_KEY_REPAIR -> askKeyRepair(uri)
         }
