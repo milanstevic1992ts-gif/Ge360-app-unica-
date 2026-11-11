@@ -379,8 +379,7 @@ class VanModeActivity : AppCompatActivity() {
                 setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, 0, 0, dp(8))
             })
-            val needsPurchase = item.kind == ResourceKind.MATERIAL &&
-                item.status in setOf("Da comprare", "Mancante")
+            val needsPurchase = ResourceReminderRules.needsPurchase(item)
             addView(LinearLayout(this@VanModeActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(MaterialButton(this@VanModeActivity).apply {
@@ -402,10 +401,10 @@ class VanModeActivity : AppCompatActivity() {
     }
 
     private fun markPurchased(item: JobResource) {
-        if (item.kind != ResourceKind.MATERIAL || item.status !in setOf("Da comprare", "Mancante")) return
+        if (!ResourceReminderRules.needsPurchase(item)) return
         runCatching {
             // Comprato non significa caricato sul furgone.
-            item.status = "Comprato"
+            item.status = ResourceReminderRules.afterPurchase(item)
             tools.saveJobResource(item)
         }.onSuccess {
             toast("✓ " + item.name + " comprato: resta da caricare")
