@@ -93,30 +93,35 @@ object EstimateLifecycleUi {
         val signer = EditText(context).apply { hint = "Nome di chi accetta (facoltativo)"; isSingleLine = true }
         val note = EditText(context).apply { hint = "Nota accettazione (facoltativa)"; minLines = 2 }
         root.addView(TextView(context).apply {
-            text = "Con l'accettazione viene salvato uno snapshot completo. Da quel momento lavorazioni e prezzi dell'accordo originale non vanno riscritti: eventuali modifiche passano da Extra o Variante."
+            text = "Con LAVORO ACCETTATO verranno collegati un contratto congelato e un cantiere effettivo (stato Programmato). Le lavorazioni incluse diventeranno fasi operative, senza segnare il lavoro come già iniziato. Eventuali modifiche all'accordo originale passeranno da Extra o Variante."
         })
         root.addView(signer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 50)))
         root.addView(note, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 80)))
 
         AlertDialog.Builder(context)
-            .setTitle("Accetta e congela ${estimate.number}")
+            .setTitle("LAVORO ACCETTATO · ${estimate.number}")
             .setView(root)
-            .setPositiveButton("Conferma") { _, _ ->
-                val estimates = EstimateStore(context)
-                val lifecycle = EstimateLifecycleStore(context)
-                try {
-                    estimate.status = EstimateStatuses.ACCEPTED
-                    estimates.save(estimate)
-                    lifecycle.freezeAccepted(estimate, signer.text.toString(), note.text.toString())
-                    onApplied()
-                    toast(context, "Preventivo accettato e congelato")
-                } finally {
-                    estimates.close()
-                    lifecycle.close()
-                }
-            }
+            .setPositiveButton("CONFERMA E ATTIVA", null)
             .setNegativeButton("Annulla", null)
-            .show()
+            .create().apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        runCatching {
+                            EstimateAcceptanceEngine.acceptAndActivate(
+                                context, estimate.ge360Id,
+                                signer.text.toString(), note.text.toString()
+                            )
+                        }.onSuccess { result ->
+                            dismiss()
+                            onApplied()
+                            toast(context, "✓ Lavoro accettato. Cantiere ${result.jobsiteCode} programmato.")
+                        }.onFailure { error ->
+                            toast(context, error.message ?: "Impossibile attivare il lavoro")
+                        }
+                    }
+                }
+                show()
+            }
     }
 
     private fun showAcceptedSnapshot(context: Context, estimate: EstimateRecord) {
