@@ -46,16 +46,21 @@ class OpenPlan3DMirrorStore(context: Context) {
         check(photosDir.isDirectory || photosDir.mkdirs()) { "Impossibile creare cartella foto OpenPlan3D" }
     }
 
-    @Synchronized fun markDirty() {
-        dirtyEpoch++
+    @Synchronized fun markDirty(revision: Long) {
+        require(revision >= 0L) { "Revisione OpenPlan3D negativa" }
+        // Monotonia degli eventi: un messaggio ritardato non può riportare
+        // indietro il contatore e far certificare uno snapshot obsoleto.
+        dirtyEpoch = maxOf(dirtyEpoch, revision)
         check(dirtyFile.exists() || dirtyFile.createNewFile()) {
             "Impossibile segnalare un aggiornamento OpenPlan3D pendente"
         }
     }
 
-    /** Mark a partial library transaction before writing ANY payload. */
-    @Synchronized fun beginLibrary() {
-        transferEpoch = dirtyEpoch
+    /** Il revision è catturato dal JS PRIMA di serializzare/hashare la pianta. */
+    @Synchronized fun beginLibrary(revision: Long) {
+        require(revision >= 0L) { "Revisione OpenPlan3D negativa" }
+        transferEpoch = revision
+        dirtyEpoch = maxOf(dirtyEpoch, revision)
         check(dirtyFile.exists() || dirtyFile.createNewFile()) { "Impossibile segnalare salvataggio pendente" }
         if (libraryStage.exists()) libraryStage.delete()
         check(libraryStage.createNewFile()) { "Impossibile preparare lo snapshot" }
