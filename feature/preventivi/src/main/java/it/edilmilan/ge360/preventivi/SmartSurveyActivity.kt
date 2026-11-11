@@ -293,6 +293,8 @@ class SmartSurveyActivity : AppCompatActivity() {
         val ceiling = number("Soffitto misurato (m²)", room.ceilingManual, layout)
         val walls = number("Pareti misurate (m²)", room.wallsManual, layout)
         val perimeter = number("Perimetro misurato (metri lineari)", room.perimeterManual, layout)
+        val tilingHeight = number("Altezza rivestimento pareti bagno (m)", room.tilingHeight, layout)
+        val tilingSurface = number("Rivestimento pareti bagno misurato (m²)", room.tilingWallsManual, layout)
         AlertDialog.Builder(this)
             .setTitle(room.name + " · misure")
             .setView(ScrollView(this).apply { addView(layout) })
@@ -301,12 +303,13 @@ class SmartSurveyActivity : AppCompatActivity() {
             .create().apply {
                 setOnShowListener {
                     getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        val vals = listOf(length, width, height, floor, ceiling, walls, perimeter).map(::amount)
+                        val vals = listOf(length, width, height, floor, ceiling, walls, perimeter, tilingHeight, tilingSurface).map(::amount)
                         if (vals.any { it == null }) return@setOnClickListener toast("Controlla le misure: usa numeri positivi")
                         val v = vals.map { it ?: 0.0 }
                         room.length = v[0]; room.width = v[1]; room.height = v[2]
                         room.floorManual = v[3]; room.ceilingManual = v[4]
                         room.wallsManual = v[5]; room.perimeterManual = v[6]
+                        room.tilingHeight = v[7]; room.tilingWallsManual = v[8]
                         persist(); dismiss(); render()
                     }
                 }
@@ -553,7 +556,7 @@ class SmartSurveyActivity : AppCompatActivity() {
             if (r == null) m.measuresSummary()
             else "Manuale / geometrico · pavimento " + fmt(r.floor()) + " m² · soffitto " +
                 fmt(r.ceiling()) + " m² · pareti " + fmt(r.walls()) +
-                " m² · perimetro " + fmt(r.perimeter()) + " ml"
+                " m² · perimetro " + fmt(r.perimeter()) + " ml · rivestimento pareti " + fmt(r.tilingWalls()) + " m²"
         })
     }
 
