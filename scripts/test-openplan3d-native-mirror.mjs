@@ -7,7 +7,7 @@ const source = readFileSync(
   'utf8'
 );
 const { MIRROR_SCHEMA, validatePlans, referencedPhotoRecords,
-  mergeOpenPlan3DPlans, byteChunks } =
+  mergeOpenPlan3DPlans, byteChunks, createOpenPlan3DMirror } =
   await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 function plan(id, photos = []) {
@@ -68,4 +68,66 @@ test('taglio chunk binari senza byte perduti o duplicati', () => {
 test('rifiuta dimensioni di chunk non sicure', () => {
   assert.throws(() => byteChunks(new Uint8Array(2), 128*1024+1));
   assert.throws(() => byteChunks(new Uint8Array(2), 0));
+});
+
+test('una modifica durante il trasferimento non certifica una copia vecchia', async () => {
+  const plans = [];
+  const sent = [];
+  let dirtyRevision = 0;
+  let activeRevision = 0;
+  let releaseFirst = null;
+  let firstEndWasUnsafe = false;
+  const native = {
+    onmessage: null,
+    postMessage(raw) {
+      const message = JSON.parse(raw);
+      sent.push(message);
+      if (message.type === 'mirror-dirty') {
+        dirtyRevision = Math.max(dirtyRevision, message.revision);
+        return;
+      }
+      const reply = () => this.onmessage?.({ data: JSON.stringify({
+        type: 'mirror-reply', requestId: message.requestId, ok: true,
+        result: message.type === 'mirror-status'
+          ? { pending: false, knownPhotoIds: [] } : {}
+      }) });
+      if (message.type === 'mirror-library-begin') {
+        activeRevision = message.revision;
+        dirtyRevision = Math.max(dirtyRevision, activeRevision);
+        if (activeRevision === 1 && !releaseFirst) {
+          releaseFirst = reply;
+          return;
+        }
+      }
+      if (message.type === 'mirror-library-end') {
+        if (activeRevision === 1 && dirtyRevision < 2) firstEndWasUnsafe = true;
+        if (activeRevision === dirtyRevision) dirtyRevision = 0;
+      }
+      Promise.resolve().then(reply);
+    }
+  };
+  const mirror = createOpenPlan3DMirror({
+    nativeObject: native, getPlans: () => plans, setPlans: () => {},
+    readPhoto: async () => null, writePhoto: async () => {},
+    onStatus: () => {}
+  });
+  assert.equal(await mirror.initialize(), true);
+  plans.push(plan('one'));
+  mirror.queueLibrary();
+  for (let attempt = 0; attempt < 50 && !releaseFirst; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  assert.ok(releaseFirst, 'La revisione 1 deve essere in trasferimento');
+  plans.push(plan('two'));
+  mirror.queueLibrary();
+  assert.equal(dirtyRevision, 2, 'Il nativo deve sapere che esiste una modifica più recente');
+  releaseFirst();
+  for (let attempt = 0; attempt < 50 &&
+      sent.filter(x => x.type === 'mirror-library-end').length < 3; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  const revisions = sent.filter(x => x.type === 'mirror-library-begin').map(x => x.revision);
+  assert.deepEqual(revisions, [0, 1, 2], 'La vecchia versione va seguita dall’ultima');
+  assert.equal(firstEndWasUnsafe, false);
+  assert.equal(dirtyRevision, 0, 'La copia può diventare pulita solo dopo la revisione 2');
 });
