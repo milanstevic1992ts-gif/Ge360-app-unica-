@@ -168,7 +168,11 @@ class EstimatesActivity : AppCompatActivity() {
             }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
         })
         root.addView(MaterialButton(this).apply {
-            text = "+ Nuovo preventivo"
+            text = "✏ SOPRALLUOGO SMART · 8 PASSI"
+            setOnClickListener { openSmartSurveys() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)).apply { topMargin = dp(8) })
+        root.addView(MaterialButton(this).apply {
+            text = "+ Nuovo preventivo classico"
             setOnClickListener { editHeader(EstimateRecord()) }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(6) })
         return root
@@ -192,7 +196,7 @@ class EstimatesActivity : AppCompatActivity() {
                     1 -> editItems(r)
                     2 -> economics(r)
                     3 -> share(customerSummary(r), "Preventivo ${r.number}")
-                    4 -> textDialog("Prompt preventivo", aiPrompt(r))
+                    4 -> showAiSopralluogoPrompt(r)
                     5 -> { store.duplicate(r); refresh(); toast("Preventivo duplicato") }
                     6 -> showMetricVariants(r.ge360Id)
                 }
@@ -1389,11 +1393,56 @@ class EstimatesActivity : AppCompatActivity() {
         }.trimEnd()
     }
 
-    private fun aiPrompt(r: EstimateRecord) =
-        "Agisci come assistente preventivi per EDIL MILAN STEVIC. Impagina il preventivo in modo professionale e leggibile usando esclusivamente i dati seguenti. " +
-            "Mantieni integralmente il significato delle descrizioni tecniche e delle esclusioni. Non inventare lavorazioni, materiali, prezzi, norme o condizioni; non cambiare quantità o totali. " +
-            "Se trovi una possibile incoerenza tra una voce e il suo riferimento tecnico, segnalala invece di correggerla in autonomia.\n\n${customerSummary(r)}\n\n" +
-            "Tipo documento: ${r.documentType}"
+    private fun openSmartSurveys() {
+        val surveys = SmartSurveyLocalStore(this).list()
+        if (surveys.isEmpty()) {
+            startActivity(Intent(this, SmartSurveyActivity::class.java))
+            return
+        }
+        val choices = arrayOf("＋ NUOVO SOPRALLUOGO") + surveys.map { draft ->
+            val client = draft.clientName.ifBlank { "Cliente da indicare" }
+            val title = draft.title.ifBlank { "Sopralluogo senza titolo" }
+            val state = if (draft.generatedEstimateId.isBlank()) "IN LAVORAZIONE" else "BOZZA CREATA"
+            "$title · $client\n${draft.rooms.size} ambienti · passo ${draft.step + 1}/8 · $state"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sopralluoghi Smart")
+            .setMessage("Riprendi un sopralluogo salvato, oppure creane uno nuovo. Nessun dato viene inviato automaticamente.")
+            .setItems(choices) { _, index ->
+                val intent = Intent(this, SmartSurveyActivity::class.java)
+                if (index > 0) intent.putExtra(SmartSurveyActivity.EXTRA_SURVEY_ID, surveys[index - 1].id)
+                startActivity(intent)
+            }
+            .setNegativeButton("Chiudi", null).show()
+    }
+
+    private fun showAiSopralluogoPrompt(r: EstimateRecord) {
+        val roomStore = EstimateRoomStore(this)
+        val rooms = try { roomStore.list(r.ge360Id) } finally { roomStore.close() }
+        val personal = PreventiviCustomizationStore(this)
+        val report = EstimateSopralluogoPromptV1.build(
+            record = r, rooms = rooms,
+            measures = personal::manualMeasuresSummary,
+            presentationMode = personal.presentationMode(r.ge360Id)
+        )
+        val checks = EstimateSopralluogoPromptV1.checks(r, rooms, personal::manualMeasuresSummary)
+        AlertDialog.Builder(this)
+            .setTitle("GE360 · Prompt IA sopralluogo")
+            .setMessage(
+                "Prompt per GPT Preventivi Premium V3.1, creato in locale.\n" +
+                "Nessuna chiamata IA automatica. Controlla i dati prima di condividerli.\n\n" +
+                if (checks.isEmpty()) "Nessuna anomalia preliminare." else
+                    "Verifiche suggerite (${checks.size}):\n" + checks.take(6).joinToString("\n") { "• $it" }
+            )
+            .setPositiveButton("Condividi") { _, _ -> share(report, "Prompt sopralluogo ${r.number}") }
+            .setNeutralButton("Copia prompt") { _, _ ->
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("GE360 prompt sopralluogo", report))
+                toast("Prompt copiato: verifica i dati cliente prima di incollarli")
+            }
+            .setNegativeButton("Anteprima") { _, _ -> textDialog("Prompt sopralluogo", report) }
+            .show()
+    }
 
     private fun dataMenu() = AlertDialog.Builder(this)
         .setTitle("Dati Preventivi")
