@@ -14,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import it.edilmilan.ge360.cantieri.JobsiteRecord
 import it.edilmilan.ge360.cantieri.JobsiteStore
 import java.util.Locale
+import java.time.LocalDate
 
 /**
  * Unico ingresso per "ricorda": riutilizza ToolsStore e la Checklist furgone.
@@ -211,7 +212,12 @@ object ResourceReminderDialog {
         val db = ToolsStore(context)
         val rows = try { db.jobResources(jobId) } finally { db.close() }
         val plans = VanPreparationStore(context)
-        plans.list().filter { it.jobsiteId == jobId && !it.completed }.forEach { plan ->
+        val today = LocalDate.now()
+        plans.list().filter { plan ->
+            plan.jobsiteId == jobId &&
+                runCatching { LocalDate.parse(plan.date) }.getOrNull()
+                    ?.let { !it.isBefore(today) } == true
+        }.forEach { plan ->
             plans.save(plan.copy(
                 toolCount = rows.count { it.kind == ResourceKind.TOOL },
                 materialCount = rows.count { it.kind == ResourceKind.MATERIAL },
