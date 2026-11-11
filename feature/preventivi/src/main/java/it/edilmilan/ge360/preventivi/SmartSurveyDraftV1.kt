@@ -143,6 +143,7 @@ data class SmartSurveySessionV1(
 
 object SmartSurveyDraftV1 {
     const val SCHEMA = "ge360.smart.sopralluogo.v1"
+    const val QUANTITY_SOURCE_MARKER = "[GE360_SMART_SURVEY_QUANTITY]"
     const val UNKNOWN = "da-decidere"
     const val DEMOLISH = "demolizione"
     const val OVERLAY = "sovrapposizione"
@@ -263,7 +264,7 @@ object SmartSurveyDraftV1 {
                     unitPrice = if (body) 0.0 else sr.unitPrices[code] ?: 0.0,
                     priceMode = if (template.unit in listOf("corpo", "forfait")) "body" else "unit",
                     included = !body, optional = code in sr.options && !body,
-                    internalNote = RoomWorkCatalog.attachMetadata("", room, template.basis)
+                    internalNote = RoomWorkCatalog.attachMetadata(QUANTITY_SOURCE_MARKER, room, template.basis)
                 )
                 record.items += item
             }
