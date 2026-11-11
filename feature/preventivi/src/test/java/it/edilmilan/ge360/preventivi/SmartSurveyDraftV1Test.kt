@@ -117,6 +117,40 @@ class SmartSurveyDraftV1Test {
         assertEquals("foto-local-private.img", restored.photoFiles.single())
     }
 
+    @Test fun manualWorkIsPreservedInQuoteAndJson() {
+        val room = bagno().apply {
+            manualWorks += SmartSurveyManualWorkV1(
+                name = "Ripristino muro particolare",
+                description = "Dopo rimozione rivestimento",
+                quantity = 4.0, unit = "m²", unitPrice = 25.0
+            )
+        }
+        val source = SmartSurveySessionV1(rooms = mutableListOf(room))
+        val saved = SmartSurveySessionV1.fromJson(source.toJson().toString())
+        assertEquals("Ripristino muro particolare", saved.rooms.single().manualWorks.single().name)
+        val quote = SmartSurveyDraftV1.toEstimate(saved)
+        val line = quote.items.single()
+        assertTrue(line.priceListCode.startsWith(RoomManualWorkDialog.prefixFor(room.id)))
+        assertEquals(100.0, quote.finalTotal, 0.001)
+        assertTrue(line.internalNote.contains(SmartSurveyDraftV1.QUANTITY_SOURCE_MARKER))
+    }
+
+    @Test fun optionalManualExtraStaysOutOfRoomBodyPrice() {
+        val room = bagno().apply {
+            pricingMode = RoomPricing.BODY
+            bodyPrice = 4000.0
+            manualWorks += SmartSurveyManualWorkV1(
+                name = "Nicchia optional", quantity = 1.0,
+                unit = "corpo", unitPrice = 350.0, optional = true
+            )
+        }
+        val quote = SmartSurveyDraftV1.toEstimate(SmartSurveySessionV1(rooms = mutableListOf(room)))
+        assertEquals(4000.0, quote.finalTotal, 0.001)
+        val option = quote.items.single { it.optional }
+        assertEquals(350.0, option.unitPrice, 0.001)
+        assertTrue(option.included)
+    }
+
     @Test fun convertedSurveyCannotBeSilentlyReused() {
         val session = SmartSurveySessionV1(
             generatedEstimateId = "quote-123", rooms = mutableListOf(bagno())
