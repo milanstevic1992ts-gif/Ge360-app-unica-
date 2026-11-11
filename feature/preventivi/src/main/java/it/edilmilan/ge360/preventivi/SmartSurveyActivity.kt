@@ -360,6 +360,13 @@ class SmartSurveyActivity : AppCompatActivity() {
             action("☑ Checklist " + room.name) { checklist(room, phase) }
             if (phase == 5) {
                 action("€ Quantità, prezzi e optional") { editPrices(room) }
+                action("＋ LAVORAZIONE LIBERA") { editManualWork(room, SmartSurveyManualWorkV1(), true) }
+                room.manualWorks.forEach { custom ->
+                    action("✎ " + custom.name.ifBlank { "Lavorazione da completare" } +
+                        " · " + fmt(custom.quantity) + " " + custom.unit) {
+                        editManualWork(room, custom, false)
+                    }
+                }
                 action("Modalità: " + room.pricingMode + if (room.pricingMode == RoomPricing.BODY) " · € " + fmt(room.bodyPrice) else "") {
                     pricingMode(room)
                 }
@@ -443,6 +450,62 @@ class SmartSurveyActivity : AppCompatActivity() {
             }
     }
 
+    private fun editManualWork(room: SmartSurveyRoomV1, work: SmartSurveyManualWorkV1, isNew: Boolean) {
+        val layout = form()
+        val name = input("Nome lavorazione (obbligatorio)", work.name, holder = layout)
+        val description = input("Descrizione tecnica / dettagli", work.description, true, layout)
+        val category = input("Categoria (facoltativa)", work.category, holder = layout)
+        val quantity = number("Quantità effettiva", work.quantity, layout)
+        val unitList = EstimateStore.UNITS
+        val unit = spinner("Unità di misura", unitList,
+            unitList.indexOf(work.unit).coerceAtLeast(0), layout)
+        val price = number("Prezzo unitario o a corpo €", work.unitPrice, layout)
+        val optional = CheckBox(this).apply {
+            text = "Optional (separato dal totale)"
+            isChecked = work.optional
+        }
+        layout.addView(optional)
+        AlertDialog.Builder(this)
+            .setTitle(if (isNew) "Nuova lavorazione · " + room.name else "Modifica · " + room.name)
+            .setView(ScrollView(this).apply { addView(layout) })
+            .setPositiveButton("Salva", null)
+            .setNeutralButton(if (isNew) "Annulla" else "Elimina", null)
+            .setNegativeButton("Chiudi", null)
+            .create().apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val title = name.text.toString().trim()
+                        val q = amount(quantity)
+                        val p = amount(price)
+                        if (title.isBlank() || q == null || p == null) {
+                            toast("Inserisci un nome, una quantità e un prezzo validi")
+                            return@setOnClickListener
+                        }
+                        work.name = title
+                        work.description = description.text.toString().trim()
+                        work.category = category.text.toString().trim().ifBlank { "Personalizzate" }
+                        work.quantity = q
+                        work.unit = unit.selectedItem.toString()
+                        work.unitPrice = p
+                        work.optional = optional.isChecked
+                        if (isNew) room.manualWorks += work
+                        persist(); dismiss(); render()
+                    }
+                    if (!isNew) getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        dismiss()
+                        AlertDialog.Builder(this@SmartSurveyActivity)
+                            .setTitle("Eliminare la lavorazione libera?")
+                            .setMessage("Solo da questo sopralluogo; i preventivi già salvati non cambiano.")
+                            .setPositiveButton("Elimina") { _, _ ->
+                                room.manualWorks.removeAll { it.id == work.id }
+                                persist(); render()
+                            }.setNegativeButton("Annulla", null).show()
+                    }
+                }
+                show()
+            }
+    }
+
     private fun pricingMode(room: SmartSurveyRoomV1) {
         choose("Modalità prezzo " + room.name, listOf(
             RoomPricing.MEASURE to "A misura", RoomPricing.BODY to "A corpo"
@@ -517,7 +580,7 @@ class SmartSurveyActivity : AppCompatActivity() {
         label(survey.clientName.ifBlank { "Cliente non indicato" }, true)
         label(survey.title.ifBlank { "Intervento senza titolo" })
         label("Ambienti: " + survey.rooms.size + " · Foto locali: " + survey.photoFiles.size)
-        val count = survey.rooms.sumOf { it.workCodes.size }
+        val count = survey.rooms.sumOf { it.workCodes.size + it.manualWorks.size }
         label("Lavorazioni selezionate: " + count, true)
         survey.rooms.forEach { room ->
             label("• " + room.name + " · pav. " + fmt(room.floor()) + " m² · pareti " + fmt(room.walls()) + " m²")
