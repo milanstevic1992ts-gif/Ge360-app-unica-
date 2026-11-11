@@ -92,18 +92,26 @@ object EstimateAcceptanceEngine {
             // Idempotenza anche se la prima attivazione è stata interrotta
             // a metà trasferimento delle singole lavorazioni.
             val recorded = jobs.progressItems(job.ge360Id).map { it.ge360Id }.toSet()
-            record.items.asSequence()
+            val payableWorks = record.items
                 .filter { it.included && !it.optional && it.category != "Prezzo ambiente" }
-                .forEachIndexed { index, item ->
+            fun phaseId(itemId: String) = UUID.nameUUIDFromBytes(
+                ("ge360:accepted:phase:" + record.ge360Id + ":" + itemId)
+                    .toByteArray(StandardCharsets.UTF_8)
+            ).toString()
+            val seededIds = payableWorks.mapIndexed { index, item ->
+                phaseId(item.ge360Id.ifBlank { index.toString() })
+            }.toSet()
+            // Un cantiere preesistente con fasi manuali NON deve ricevere
+            // automaticamente duplicati. Completiamo solo una nostra
+            // precedente attivazione interrotta, o un cantiere senza fasi.
+            val maySeed = recorded.isEmpty() || recorded.any { it in seededIds }
+            if (maySeed) payableWorks.forEachIndexed { index, item ->
                     val sourceId = item.ge360Id.ifBlank { index.toString() }
-                    val phaseId = UUID.nameUUIDFromBytes(
-                        ("ge360:accepted:phase:" + record.ge360Id + ":" + sourceId)
-                            .toByteArray(StandardCharsets.UTF_8)
-                    ).toString()
-                    if (phaseId !in recorded) {
+                    val deterministicPhaseId = phaseId(sourceId)
+                    if (deterministicPhaseId !in recorded) {
                         jobs.saveProgressItem(
                             JobsiteProgressItem(
-                                ge360Id = phaseId,
+                                ge360Id = deterministicPhaseId,
                                 jobsiteId = job.ge360Id,
                                 phase = item.room.ifBlank { item.section.ifBlank { "Lavorazioni" } },
                                 title = item.name,
@@ -119,13 +127,13 @@ object EstimateAcceptanceEngine {
                 }
 
             // Può essere ripetuto dopo un crash; non riscrive lo snapshot.
+            val statusNeedsAccept = record.status !in setOf(
+                EstimateStatuses.ACCEPTED, EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED
+            )
             val linkNeedsSave = record.jobsiteId != job.ge360Id ||
-                record.jobsiteCode != job.code || record.status != EstimateStatuses.ACCEPTED
-            if (linkNeedsSave && record.status !in setOf(
-                    EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED
-                )) {
-                record.status = EstimateStatuses.ACCEPTED
-            }
+                record.jobsiteCode != job.code || record.jobsiteTitle != job.displayTitle() ||
+                statusNeedsAccept
+            if (statusNeedsAccept) record.status = EstimateStatuses.ACCEPTED
             record.jobsiteId = job.ge360Id
             record.jobsiteCode = job.code
             record.jobsiteTitle = job.displayTitle()
