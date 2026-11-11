@@ -149,3 +149,44 @@ test('una modifica durante il trasferimento non certifica una copia vecchia', as
   assert.equal(firstEndWasUnsafe, false);
   assert.equal(dirtyRevision, 0, 'La copia può diventare pulita solo dopo la revisione 2');
 });
+
+test('restore resta pendente se una foto locale non torna nel mirror', async () => {
+  const localPhoto = { id: 'local-photo', mimeType: 'image/jpeg' };
+  const local = [plan('local-plan', [localPhoto.id])];
+  const incoming = JSON.stringify({ schema: MIRROR_SCHEMA, plans: [plan('remote-plan')], extras: {} });
+  const requests = [];
+  const warnings = [];
+  let plans = local;
+  const native = {
+    onmessage: null,
+    postMessage(raw) {
+      const msg = JSON.parse(raw);
+      requests.push(msg.type);
+      if (msg.type === 'mirror-dirty') return;
+      const result = msg.type === 'mirror-status' ?
+        { pending: true, mode: 'merge', knownPhotoIds: [] } :
+        msg.type === 'mirror-restore-meta' ? { length: incoming.length, mode: 'merge' } :
+        msg.type === 'mirror-restore-chunk' ? { data: incoming.slice(msg.offset, msg.offset + 48 * 1024) } : {};
+      const rejected = msg.type === 'mirror-photo-begin';
+      Promise.resolve().then(() => this.onmessage({ data: JSON.stringify({
+        type: 'mirror-reply', requestId: msg.requestId,
+        ok: !rejected, result,
+        error: rejected ? 'Foto non scrivibile' : undefined
+      }) }));
+    }
+  };
+  const mirror = createOpenPlan3DMirror({
+    nativeObject: native, getPlans: () => plans, setPlans: next => { plans = next; },
+    readPhoto: async id => id === localPhoto.id
+      ? { blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }) } : null,
+    writePhoto: async () => {},
+    onStatus: message => warnings.push(message)
+  });
+  const ready = await mirror.initialize();
+  assert.equal(ready, false, 'Un errore foto deve impedire la conferma del ripristino');
+  assert.equal(mirror.isReady(), false);
+  assert.equal(requests.includes('mirror-restore-complete'), false, 'Il flag restore non va cancellato');
+  assert.equal(requests.includes('mirror-photo-begin'), true, 'La foto locale va sincronizzata');
+  assert.ok(warnings.some(x => x.includes('non ancora copiata')));
+});
+
