@@ -272,13 +272,22 @@ class BackupArchive(private val context: Context) {
     }
 
     private fun rememberRoot(key: String, uri: Uri) {
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
+        // Se Android o il provider non concedono accesso permanente, un backup
+        // manuale potrebbe funzionare oggi ma il giornaliero fallire domani.
+        // Non salvare quindi una destinazione solo apparentemente configurata.
+        context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        val granted = context.contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission && it.isWritePermission
         }
-        prefs.edit().putString(key, uri.toString()).apply()
+        require(granted) {
+            "Questa cartella non concede accesso persistente in lettura e scrittura"
+        }
+        check(prefs.edit().putString(key, uri.toString()).commit()) {
+            "Impossibile conservare la cartella dei backup"
+        }
     }
 
     fun persistentLocalReady(): Boolean = treeReady(persistentLocalRoot())
@@ -287,8 +296,11 @@ class BackupArchive(private val context: Context) {
     private fun treeReady(uri: Uri?): Boolean {
         if (uri == null) return false
         return runCatching {
+            val persisted = context.contentResolver.persistedUriPermissions.any {
+                it.uri == uri && it.isReadPermission && it.isWritePermission
+            }
             val root = DocumentFile.fromTreeUri(context, uri)
-            root != null && root.exists() && root.isDirectory && root.canWrite()
+            persisted && root != null && root.exists() && root.isDirectory && root.canWrite()
         }.getOrDefault(false)
     }
 
