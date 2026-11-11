@@ -299,6 +299,11 @@ class BackupArchive(private val context: Context) {
     }
 
     fun copyToDrive(file: File): Uri {
+        // La replica cloud contiene clienti, importi, fotografie e note:
+        // vietato esportarla in chiaro per errore.
+        require(encryptionEnabled() && file.name.endsWith(".ge360.enc")) {
+            "Prima di copiare su Drive attiva la password di backup e crea un nuovo archivio cifrato"
+        }
         val uri = copyToSafRoot(driveRoot() ?: error("Cartella Drive backup non configurata"), file)
         prefs.edit().putLong("last_drive_backup_at", System.currentTimeMillis()).apply()
         return uri
