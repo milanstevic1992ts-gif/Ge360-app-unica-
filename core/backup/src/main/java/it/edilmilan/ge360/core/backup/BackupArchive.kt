@@ -258,8 +258,18 @@ class BackupArchive(private val context: Context) {
     fun persistentLocalRoot(): Uri? = prefs.getString("persistent_local_root", null)?.let(Uri::parse)
     fun driveRoot(): Uri? = prefs.getString("drive_root", null)?.let(Uri::parse)
 
-    fun setPersistentLocalRoot(uri: Uri) = rememberRoot("persistent_local_root", uri)
-    fun setDriveRoot(uri: Uri) = rememberRoot("drive_root", uri)
+    fun setPersistentLocalRoot(uri: Uri) {
+        require(uri.toString() != driveRoot()?.toString()) {
+            "La copia telefono deve essere in una cartella diversa da Drive"
+        }
+        rememberRoot("persistent_local_root", uri)
+    }
+    fun setDriveRoot(uri: Uri) {
+        require(uri.toString() != persistentLocalRoot()?.toString()) {
+            "La cartella Drive deve essere diversa dalla cartella telefono"
+        }
+        rememberRoot("drive_root", uri)
+    }
 
     private fun rememberRoot(key: String, uri: Uri) {
         runCatching {
