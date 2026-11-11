@@ -30,6 +30,27 @@ class ResourceReminderRulesTest {
         }
     }
 
+    @Test fun purchasedMaterialRemainsInChecklistUntilLoaded() {
+        val item = JobResource(kind = ResourceKind.MATERIAL, name = "Rasante", status = "Da comprare")
+        assertTrue(ResourceReminderRules.needsPurchase(item))
+        item.status = ResourceReminderRules.afterPurchase(item)
+        assertEquals("Comprato", item.status)
+        assertFalse(ResourceReminderRules.needsPurchase(item))
+        // Non viene eliminato: "PRESO" e' un'azione distinta nel VanMode.
+        assertEquals("Rasante", item.name)
+    }
+
+    @Test fun toolsCannotBeAccidentallyMarkedPurchased() {
+        val tool = JobResource(kind = ResourceKind.TOOL, name = "Smerigliatrice", status = "Da portare")
+        assertFalse(ResourceReminderRules.needsPurchase(tool))
+        try {
+            ResourceReminderRules.afterPurchase(tool)
+            org.junit.Assert.fail("Expected invalid action to be rejected")
+        } catch (_: IllegalArgumentException) {
+            assertEquals("Da portare", tool.status)
+        }
+    }
+
     @Test fun duplicateCheckIgnoresCaseAndExtraneousSpaces() {
         val rows = listOf(JobResource(kind = ResourceKind.MATERIAL, name = "  Rasante "))
         val found = ResourceReminderRules.findDuplicate(rows, ResourceKind.MATERIAL, "RASANTE")
