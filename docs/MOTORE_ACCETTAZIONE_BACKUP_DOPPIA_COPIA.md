@@ -115,7 +115,7 @@ corrisponde a quella più recente. Anche le modifiche durante l'inizializzazione
 del WebView marcano la copia nativa come non sincronizzata.
 
 **Verifiche eseguite sul sorgente corrente (ambiente di test isolato):**
-- 10/10 test JavaScript di logica effettivamente eseguiti, inclusa una
+- 11/11 test JavaScript di logica effettivamente eseguiti, inclusa una
   simulazione asincrona di modifica durante il trasferimento (revisioni 0,
   1 e 2 senza dichiarare pulita la copia 1);
 - 10/10 controlli statici dei collegamenti fra JavaScript, Android, ZIP,
