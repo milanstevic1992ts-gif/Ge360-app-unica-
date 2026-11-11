@@ -235,10 +235,35 @@ class SmartSurveyActivity : AppCompatActivity() {
             .setTitle(if (isNew) "Nuovo ambiente" else "Modifica ambiente")
             .setView(ScrollView(this).apply { addView(layout) })
             .setPositiveButton("Salva") { _, _ ->
-                room.name = name.text.toString().trim().ifBlank { "Ambiente" }
-                room.type = type.selectedItem.toString()
-                if (isNew) survey.rooms += room
-                persist(); render()
+                val newType = type.selectedItem.toString()
+                val newName = name.text.toString().trim().ifBlank { "Ambiente" }
+                val allowed = RoomWorkCatalog.forType(newType).map { it.code }.toSet()
+                val toRemove = if (newType != room.type) room.workCodes.filter { it !in allowed } else emptyList()
+                val applyChange: () -> Unit = {
+                    room.name = newName
+                    if (newType != room.type) {
+                        room.workCodes.retainAll(allowed)
+                        room.unitPrices.keys.retainAll(allowed)
+                        room.quantities.keys.retainAll(allowed)
+                        room.options.retainAll(allowed)
+                        if (newType != RoomTypes.BATHROOM) {
+                            room.floorChoice = SmartSurveyDraftV1.UNKNOWN
+                            room.wetChoice = SmartSurveyDraftV1.UNKNOWN
+                        }
+                    }
+                    room.type = newType
+                    if (isNew) survey.rooms += room
+                    persist(); render()
+                }
+                if (toRemove.isNotEmpty()) {
+                    AlertDialog.Builder(this).setTitle("Cambio tipo ambiente")
+                        .setMessage(
+                            "Il nuovo tipo non contiene " + toRemove.size +
+                            " lavorazioni già scelte. Vuoi eliminarle solo da questo sopralluogo?"
+                        )
+                        .setPositiveButton("Conferma cambio") { _, _ -> applyChange() }
+                        .setNegativeButton("Annulla", null).show()
+                } else applyChange()
             }
             .setNeutralButton(if (isNew) "Annulla" else "Elimina") { _, _ ->
                 if (!isNew) AlertDialog.Builder(this).setTitle("Eliminare questo ambiente?")
