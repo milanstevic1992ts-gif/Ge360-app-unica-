@@ -46,6 +46,18 @@ class SmartSurveyActivity : AppCompatActivity() {
     private lateinit var next: MaterialButton
     private var collect: () -> Unit = {}
 
+    private val jsonExport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(survey.toJson().toString(2).toByteArray(Charsets.UTF_8))
+            } ?: error("Impossibile aprire il documento")
+            toast("Sopralluogo JSON esportato. Le immagini non sono incluse.")
+        }.onFailure { toast("Esportazione fallita: " + it.message) }
+    }
+
     private val photosPicker = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isEmpty() || survey.generatedEstimateId.isNotBlank()) return@registerForActivityResult
         var saved = 0
@@ -418,6 +430,12 @@ class SmartSurveyActivity : AppCompatActivity() {
         val validity = number("Validità dell'offerta (giorni)", survey.validityDays.toDouble(), body)
         label("Foto del sopralluogo · " + survey.photoFiles.size, true)
         action("📷 AGGIUNGI FOTO (anche più di una)") { capture(); photosPicker.launch("image/*") }
+        action("💾 ESPORTA DATI SOPRALLUOGO JSON") {
+            capture()
+            jsonExport.launch("ge360-sopralluogo-" + survey.id.take(8) + ".json")
+        }
+        info("Il JSON contiene testi, misure e checklist. Le fotografie sono archiviate solo sul dispositivo e NON vengono incorporate nel JSON.")
+
         survey.photoFiles.toList().forEach { filename ->
             action("📷 Foto " + filename.take(8) + " · apri") { viewPhoto(filename) }
         }
