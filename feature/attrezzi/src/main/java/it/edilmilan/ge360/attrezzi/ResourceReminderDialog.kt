@@ -41,6 +41,15 @@ object ResourceReminderRules {
         return number?.takeIf { it.isFinite() && it > 0.0 && it <= 100000.0 }
     }
 
+    /** Comprare non equivale a prendere/caricare: rimane una voce attiva. */
+    fun needsPurchase(item: JobResource): Boolean =
+        item.kind == ResourceKind.MATERIAL && item.status in setOf("Da comprare", "Mancante")
+
+    fun afterPurchase(item: JobResource): String {
+        require(needsPurchase(item)) { "Solo un materiale mancante può essere marcato comprato" }
+        return "Comprato"
+    }
+
     fun same(kind: ResourceKind, name: String, existing: JobResource): Boolean =
         existing.kind == kind && existing.name.trim().lowercase(Locale.ITALY) ==
             name.trim().lowercase(Locale.ITALY)
