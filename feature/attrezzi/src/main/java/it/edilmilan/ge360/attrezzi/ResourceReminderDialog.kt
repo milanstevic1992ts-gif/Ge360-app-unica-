@@ -183,6 +183,9 @@ object ResourceReminderDialog {
                             db.saveJobResource(row)
                         } finally { db.close() }
                     }.onSuccess {
+                        // La Dashboard deve riflettere le nuove voci già programmate,
+                        // senza cancellare date o note delle preparazioni salvate.
+                        runCatching { refreshExistingPlanCounts(context, job.ge360Id) }
                         dialog.dismiss()
                         Toast.makeText(context, "$title aggiunto alla checklist di ${job.code}", Toast.LENGTH_LONG).show()
                         onSaved(job)
@@ -202,5 +205,19 @@ object ResourceReminderDialog {
             }
         }
         dialog.show()
+    }
+ 
+    private fun refreshExistingPlanCounts(context: Context, jobId: String) {
+        val db = ToolsStore(context)
+        val rows = try { db.jobResources(jobId) } finally { db.close() }
+        val plans = VanPreparationStore(context)
+        plans.list().filter { it.jobsiteId == jobId && !it.completed }.forEach { plan ->
+            plans.save(plan.copy(
+                toolCount = rows.count { it.kind == ResourceKind.TOOL },
+                materialCount = rows.count { it.kind == ResourceKind.MATERIAL },
+                missingCount = rows.count { it.status in setOf("Da comprare", "Mancante") },
+                completed = rows.isEmpty()
+            ))
+        }
     }
 }
