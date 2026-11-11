@@ -4,6 +4,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.graphics.drawable.GradientDrawable
+import android.widget.ImageView
+import android.widget.ProgressBar
+import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
@@ -35,6 +40,7 @@ class SmartSurveyActivity : AppCompatActivity() {
     private lateinit var sessions: SmartSurveyLocalStore
     private lateinit var survey: SmartSurveySessionV1
     private lateinit var heading: TextView
+    private lateinit var progress: ProgressBar
     private lateinit var body: LinearLayout
     private lateinit var prev: MaterialButton
     private lateinit var next: MaterialButton
@@ -87,6 +93,7 @@ class SmartSurveyActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(9), dp(12), dp(8))
+            setBackgroundColor(Ge360Brand.Background)
         }
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(button("‹ Esci") {
@@ -106,7 +113,14 @@ class SmartSurveyActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(4), dp(12), dp(4), dp(6))
         }
+        heading.setTextColor(Ge360Brand.ForestDark)
         root.addView(heading)
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 8
+            progressTintList = android.content.res.ColorStateList.valueOf(Ge360Brand.Accent)
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Ge360Brand.Border)
+        }
+        root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(7)).apply { bottomMargin = dp(12) })
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(24))
@@ -120,6 +134,7 @@ class SmartSurveyActivity : AppCompatActivity() {
         next = button("Avanti") { move(1) }
         footer.addView(prev, LinearLayout.LayoutParams(0, dp(52), 1f))
         footer.addView(next, LinearLayout.LayoutParams(0, dp(52), 1f))
+        footer.setPadding(0, dp(4), 0, dp(2))
         root.addView(footer)
         setContentView(root)
         render()
@@ -146,6 +161,7 @@ class SmartSurveyActivity : AppCompatActivity() {
         body.removeAllViews()
         collect = {}
         heading.text = "PASSO ${survey.step + 1} DI 8 · " + SmartSurveyDraftV1.STEPS[survey.step]
+        progress.progress = survey.step + 1
         prev.isEnabled = survey.step > 0
         next.isEnabled = survey.step < 7 && survey.generatedEstimateId.isBlank()
         next.text = if (survey.step < 7) "Avanti →" else "Finito"
@@ -402,15 +418,8 @@ class SmartSurveyActivity : AppCompatActivity() {
         val validity = number("Validità dell'offerta (giorni)", survey.validityDays.toDouble(), body)
         label("Foto del sopralluogo · " + survey.photoFiles.size, true)
         action("📷 AGGIUNGI FOTO (anche più di una)") { capture(); photosPicker.launch("image/*") }
-        survey.photoFiles.forEach { filename ->
-            action("🗑 Foto " + filename.take(8) + " · rimuovi") {
-                AlertDialog.Builder(this).setTitle("Eliminare foto?")
-                    .setPositiveButton("Elimina") { _, _ ->
-                        File(filesDir, "smart_sopralluoghi/" + survey.id + "/" + filename).delete()
-                        survey.photoFiles.remove(filename)
-                        persist(); render()
-                    }.setNegativeButton("Annulla", null).show()
-            }
+        survey.photoFiles.toList().forEach { filename ->
+            action("📷 Foto " + filename.take(8) + " · apri") { viewPhoto(filename) }
         }
         collect = {
             survey.materialsIncluded = included.text.toString().trim()
@@ -419,6 +428,31 @@ class SmartSurveyActivity : AppCompatActivity() {
             survey.finalNotes = notes.text.toString().trim()
             survey.validityDays = ((amount(validity) ?: 30.0).toInt()).coerceIn(1, 365)
         }
+    }
+
+    private fun viewPhoto(filename: String) {
+        if (filename !in survey.photoFiles || filename.contains('/') || filename.contains("..")) return
+        val file = File(filesDir, "smart_sopralluoghi/" + survey.id + "/" + filename)
+        if (!file.isFile) return toast("Foto non disponibile")
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply {
+            inSampleSize = 4
+        }) ?: return toast("Formato foto non visualizzabile")
+        val preview = ImageView(this).apply {
+            setImageBitmap(bitmap)
+            adjustViewBounds = true
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Foto del sopralluogo")
+            .setView(preview)
+            .setPositiveButton("Chiudi", null)
+            .setNeutralButton("Elimina foto") { _, _ ->
+                AlertDialog.Builder(this).setTitle("Eliminare definitivamente la foto?")
+                    .setPositiveButton("Elimina") { _, _ ->
+                        file.delete()
+                        survey.photoFiles.remove(filename)
+                        persist(); render()
+                    }.setNegativeButton("Annulla", null).show()
+            }.show()
     }
 
     private fun stepReview() {
@@ -525,7 +559,8 @@ class SmartSurveyActivity : AppCompatActivity() {
     private fun info(value: String, holder: LinearLayout = body) {
         holder.addView(TextView(this).apply {
             text = value; textSize = 13f
-            setPadding(dp(4), dp(7), dp(4), dp(7))
+            setTextColor(Ge360Brand.TextSecondary)
+            setPadding(dp(7), dp(9), dp(7), dp(9))
         })
     }
     private fun button(label: String, onClick: () -> Unit) = MaterialButton(this).apply {
