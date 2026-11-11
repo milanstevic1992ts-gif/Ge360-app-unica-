@@ -98,6 +98,7 @@ class EstimateLifecycleStore(context: Context) : SQLiteOpenHelper(
 
     fun freezeAccepted(record: EstimateRecord, signer: String = "", note: String = "") {
         require(record.ge360Id.isNotBlank()) { "Preventivo senza ge360Id" }
+        require(!isLocked(record.ge360Id)) { "Accordo già congelato: lo snapshot non può essere sovrascritto" }
         val snapshot = snapshotJson(record)
         val values = ContentValues().apply {
             put("estimate_ge360_id", record.ge360Id)
@@ -111,7 +112,7 @@ class EstimateLifecycleStore(context: Context) : SQLiteOpenHelper(
             "accepted_snapshots",
             null,
             values,
-            SQLiteDatabase.CONFLICT_REPLACE
+            SQLiteDatabase.CONFLICT_ABORT
         )
         recordEvent(record, "ACCEPTED", "Preventivo accettato e congelato", buildString {
             if (signer.isNotBlank()) append("Accettato da: ").append(signer.trim())
