@@ -30,6 +30,8 @@ class OpenPlan3DMirrorStore(context: Context) {
     private val libraryStage = File(root, "library.part")
     private var incomingPhoto: PhotoUpload? = null
     private var incomingLibraryIndex = 0
+    private var dirtyEpoch = 0L
+    private var transferEpoch = 0L
 
     data class Photo(val id: String, val file: File)
     data class RestoreStatus(val pending: Boolean, val mode: String, val photos: List<String>)
@@ -45,6 +47,7 @@ class OpenPlan3DMirrorStore(context: Context) {
     }
 
     @Synchronized fun markDirty() {
+        dirtyEpoch++
         check(dirtyFile.exists() || dirtyFile.createNewFile()) {
             "Impossibile segnalare un aggiornamento OpenPlan3D pendente"
         }
@@ -52,6 +55,7 @@ class OpenPlan3DMirrorStore(context: Context) {
 
     /** Mark a partial library transaction before writing ANY payload. */
     @Synchronized fun beginLibrary() {
+        transferEpoch = dirtyEpoch
         check(dirtyFile.exists() || dirtyFile.createNewFile()) { "Impossibile segnalare salvataggio pendente" }
         if (libraryStage.exists()) libraryStage.delete()
         check(libraryStage.createNewFile()) { "Impossibile preparare lo snapshot" }
@@ -80,7 +84,11 @@ class OpenPlan3DMirrorStore(context: Context) {
         validateLibrary(raw)
         atomicReplace(libraryStage, libraryFile)
         check(readyFile.exists() || readyFile.createNewFile())
-        check(dirtyFile.delete()) { "Impossibile chiudere aggiornamento libreria" }
+        // Se la UI ha modificato un altro rilievo durante il trasferimento,
+        // resta dirty finché l’ultimo snapshot non arriva.
+        if (transferEpoch == dirtyEpoch) {
+            check(dirtyFile.delete()) { "Impossibile chiudere aggiornamento libreria" }
+        }
     }
 
     @Synchronized fun startPhoto(id: String, size: Long, sha256: String) {
