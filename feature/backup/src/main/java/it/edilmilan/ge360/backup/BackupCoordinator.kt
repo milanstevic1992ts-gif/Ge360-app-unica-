@@ -28,6 +28,7 @@ import it.edilmilan.ge360.giornata.DailyStore
 import it.edilmilan.ge360.giornata.CompensationStore
 import it.edilmilan.ge360.messaggi.TemplateStore
 import it.edilmilan.ge360.planimetrie.FloorPlanStore
+import it.edilmilan.ge360.planimetrie.OpenPlan3DMirrorStore
 import it.edilmilan.ge360.preventivi.EstimateStore
 import it.edilmilan.ge360.preventivi.MetricAgreementFilesV5
 import it.edilmilan.ge360.preventivi.MetricAgreementAttachmentV5
@@ -83,6 +84,7 @@ class BackupCoordinator(private val context: Context) {
         val estimateCustomizations = PreventiviCustomizationStore(context)
         val smartSurveys = SmartSurveyLocalStore(context)
         val floorPlans = FloorPlanStore(context)
+        val openPlan3d = OpenPlan3DMirrorStore(context)
         val tools = ToolsStore(context)
         val inventory = MaterialInventoryStore(context)
         val materialPlans = MaterialPlanStore(context)
@@ -110,6 +112,9 @@ class BackupCoordinator(private val context: Context) {
                 "modules/preventivi-customizations.json" to estimateCustomizations.exportFullJson(),
                 "modules/preventivi-smart-surveys-v1.json" to smartSurveys.exportJson(),
                 "modules/planimetrie.json" to floorPlans.exportJson(),
+                // Richiede una sincronizzazione WebView→nativo già completa:
+                // non pubblicare un backup apparentemente completo se non c'è.
+                OpenPlan3DMirrorStore.BACKUP_PATH to openPlan3d.readLibrary(),
                 "modules/attrezzi.json" to tools.exportJson(),
                 "modules/material-inventory-v2.json" to inventory.exportJson(),
                 "modules/material-plans-v1.json" to materialPlans.exportJson(),
@@ -223,6 +228,15 @@ class BackupCoordinator(private val context: Context) {
                 }
             }
 
+            // Foto OpenPlan3D: tutti i riferimenti devono esistere in nativo.
+            // L'archivio ZIP contiene sia i piani sia gli originali binari.
+            val openPlanPhotoMap = JSONObject()
+            openPlan3d.photosForBackup().forEach { photo ->
+                val zipPath = OpenPlan3DMirrorStore.PHOTO_PREFIX + photo.id + ".bin"
+                openPlanPhotoMap.put(photo.id, zipPath)
+                entries += BackupEntrySource(zipPath) { FileInputStream(photo.file) }
+            }
+
             val manifest = JSONObject()
                 .put("schema", "ge360.backup.v1")
                 .put("createdAt", System.currentTimeMillis())
@@ -234,6 +248,7 @@ class BackupCoordinator(private val context: Context) {
                 .put("jobsiteArchiveFiles", jobsiteArchiveMap)
                 .put("galleryFiles", galleryMap)
                 .put("smartSurveyPhotos", smartSurveyPhotoMap)
+                .put("openPlan3DPhotos", openPlanPhotoMap)
                 .put("galleryFilesSkipped", gallerySkipped)
                 .put("modules", JSONArray(textEntries.keys.toList()))
 
@@ -313,6 +328,7 @@ class BackupCoordinator(private val context: Context) {
         preflightAgreementEvidence(file, manifest)
         preflightDocumentArchiveLinks(file, manifest)
         preflightSmartSurveyPhotos(file, manifest)
+        preflightOpenPlan3D(file, manifest)
         // V10: check the UUID graph BEFORE saving clients, jobs, estimates,
         // documents or taking a destructive path through the module importers.
         // During emergency rollback, restore the PREVIOUS state even if it
@@ -352,6 +368,7 @@ class BackupCoordinator(private val context: Context) {
         val estimateCustomizations = PreventiviCustomizationStore(context)
         val smartSurveys = SmartSurveyLocalStore(context)
         val floorPlans = FloorPlanStore(context)
+        val openPlan3d = OpenPlan3DMirrorStore(context)
         val tools = ToolsStore(context)
         val inventory = MaterialInventoryStore(context)
         val materialPlans = MaterialPlanStore(context)
@@ -422,6 +439,30 @@ class BackupCoordinator(private val context: Context) {
                 counts["Sopralluoghi Smart"] = smartSurveys.importJson(smartJson, replaceAll)
             } else {
                 warnings += "Backup precedente ai Sopralluoghi Smart: archivio locale conservato."
+            }
+
+            // Restore OpenPlan3D in two stages: verified native file mirror
+            // now, merge/replace in WebView on its next trusted appassets launch.
+            val openPlan3DJson = runCatching {
+                archive.readText(file, OpenPlan3DMirrorStore.BACKUP_PATH)
+            }.getOrNull()
+            if (openPlan3DJson != null) {
+                val parsed = JSONObject(openPlan3DJson)
+                val images = linkedMapOf<String, File>()
+                val photos = openPlan3DPhotoIds(parsed)
+                try {
+                    photos.forEach { id ->
+                        val stage = File(context.cacheDir,
+                            "ge360-openplan-restore-" + UUID.randomUUID().toString() + ".tmp")
+                        archive.extractEntry(file, OpenPlan3DMirrorStore.PHOTO_PREFIX + id + ".bin", stage)
+                        images[id] = stage
+                    }
+                    openPlan3d.importVerified(openPlan3DJson, images, replaceAll)
+                    counts["Rilievi avanzati OpenPlan3D"] = parsed.getJSONArray("plans").length()
+                    warnings += "Apri Rilievi avanzati OpenPlan3D per finalizzare il recupero dei progetti e delle foto nel disegnatore."
+                } finally { images.values.forEach { it.delete() } }
+            } else {
+                warnings += "Backup precedente a OpenPlan3D nativo: rilievi WebView preesistenti conservati. Non è un ripristino completo dei rilievi avanzati."
             }
 
             val floorPlansJson = runCatching { archive.readText(file, "modules/planimetrie.json") }.getOrNull()
@@ -523,6 +564,68 @@ class BackupCoordinator(private val context: Context) {
      * only restore behavior; declared files may never be orphaned or aliased.
      */
     /** Confronta foto dichiarate e foto effettive prima di cambiare qualsiasi database. */
+    /** Strict correspondence between OpenPlan3D plan metadata, ZIP and manifest. */
+    private fun preflightOpenPlan3D(file: File, manifest: JSONObject) {
+        val path = OpenPlan3DMirrorStore.BACKUP_PATH
+        val declared = manifest.optJSONArray("modules")?.let { entries ->
+            (0 until entries.length()).any { entries.optString(it) == path }
+        } == true
+        val raw = runCatching { archive.readText(file, path) }.getOrNull()
+        require(!declared || raw != null) { "OpenPlan3D dichiarato ma assente dal backup" }
+        if (raw == null) {
+            require((manifest.optJSONObject("openPlan3DPhotos")?.length() ?: 0) == 0) {
+                "Foto OpenPlan3D senza database dei rilievi"
+            }
+            return
+        }
+        val root = JSONObject(raw)
+        require(root.optString("schema") == OpenPlan3DMirrorStore.SCHEMA) {
+            "Schema OpenPlan3D non compatibile"
+        }
+        val ids = openPlan3DPhotoIds(root).toSet()
+        val paths = manifest.optJSONObject("openPlan3DPhotos")
+            ?: error("Manifest OpenPlan3D senza elenco foto")
+        val found = mutableSetOf<String>()
+        val iter = paths.keys()
+        while (iter.hasNext()) {
+            val id = iter.next()
+            require(OpenPlan3DMirrorStore.validId(id) && found.add(id)) {
+                "Foto OpenPlan3D duplicata o nome non valido"
+            }
+            require(paths.optString(id) == OpenPlan3DMirrorStore.PHOTO_PREFIX + id + ".bin") {
+                "Percorso foto OpenPlan3D non attendibile"
+            }
+        }
+        require(found == ids) { "Backup OpenPlan3D: foto mancanti nel manifest" }
+        ids.forEach { id ->
+            val entry = OpenPlan3DMirrorStore.PHOTO_PREFIX + id + ".bin"
+            archive.openEntry(file, entry).use { input ->
+                require(input.read() >= 0) { "Foto OpenPlan3D mancante o vuota: " + id }
+            }
+        }
+    }
+
+    private fun openPlan3DPhotoIds(root: JSONObject): List<String> {
+        require(root.optString("schema") == OpenPlan3DMirrorStore.SCHEMA)
+        val plans = root.getJSONArray("plans")
+        require(plans.length() <= 10000) { "Troppi rilievi OpenPlan3D" }
+        val ids = mutableSetOf<String>()
+        val photos = mutableSetOf<String>()
+        for (i in 0 until plans.length()) {
+            val plan = plans.getJSONObject(i)
+            val id = plan.getString("id")
+            require(OpenPlan3DMirrorStore.validId(id) && ids.add(id)) { "ID rilievo OpenPlan3D duplicato" }
+            val rows = plan.optJSONArray("photos") ?: JSONArray()
+            for (j in 0 until rows.length()) {
+                val photo = rows.getJSONObject(j).getString("id")
+                require(OpenPlan3DMirrorStore.validId(photo) && photos.add(photo)) {
+                    "Foto OpenPlan3D duplicata o non valida"
+                }
+            }
+        }
+        return photos.sorted()
+    }
+
     private fun preflightSmartSurveyPhotos(file: File, manifest: JSONObject) {
         val module = "modules/preventivi-smart-surveys-v1.json"
         val declaredModules = manifest.optJSONArray("modules")
