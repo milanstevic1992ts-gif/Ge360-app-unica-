@@ -234,10 +234,23 @@ class OpenPlan3DMirrorStore(context: Context) {
         return photoFile(id).length()
     }
 
-    fun completeRestore() {
-        require(pendingRestoreFile.isFile)
+    @Synchronized fun completeRestore() {
+        require(pendingRestoreFile.isFile) { "Nessun ripristino OpenPlan3D da completare" }
+        // Never acknowledge a restored WebView merely because the UI issued
+        // "complete": the latest native library and every referenced photo must
+        // already be committed, with no pending edits or transfers.
+        check(!dirtyFile.exists() && !libraryStage.exists() && incomingPhoto == null) {
+            "Ripristino OpenPlan3D non completo: sincronizzazione ancora pendente"
+        }
+        check(hasSnapshot()) { "Libreria OpenPlan3D ripristinata non salvata" }
+        val current = validateLibrary(libraryFile.readText(Charsets.UTF_8))
+        val missing = photoIdsFor(current).filterNot { id ->
+            photoFile(id).isFile && photoFile(id).length() > 0
+        }
+        check(missing.isEmpty()) {
+            "Ripristino OpenPlan3D incompleto: foto assenti: " + missing.take(5).joinToString(", ")
+        }
         check(pendingRestoreFile.delete()) { "Flag ripristino OpenPlan3D non cancellabile" }
-        // JS salva successivamente la libreria riconciliata in modo normale.
     }
 
     private fun photoFile(id: String): File {
