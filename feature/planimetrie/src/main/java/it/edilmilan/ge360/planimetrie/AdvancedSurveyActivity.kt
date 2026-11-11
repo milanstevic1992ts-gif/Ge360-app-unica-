@@ -230,6 +230,7 @@ class AdvancedSurveyActivity : AppCompatActivity() {
         runCatching {
             when (type) {
                 "mirror-status" -> {
+                    mirror.recoverIfWebViewEmpty(request.optInt("planCount", -1))
                     val status = mirror.pendingStatus()
                     JSONObject()
                         .put("pending", status.pending)
