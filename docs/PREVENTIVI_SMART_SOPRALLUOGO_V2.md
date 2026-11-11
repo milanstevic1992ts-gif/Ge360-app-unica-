@@ -11,10 +11,12 @@ non si crea una seconda app.
 Dal modulo Preventivi, toccare SOPRALLUOGO SMART · 8 PASSI.
 1. Cliente, titolo, riferimento cantiere e descrizione
 2. Ambienti multipli (bagno, cucina, stanza, terrazza, altro)
-3. Misure L×P×H o m², m² pareti, soffitto e perimetro inseriti manualmente
+3. Misure L×P×H o m², m² pareti, soffitto e perimetro inseriti manualmente,
+   inclusa altezza rivestimenti del bagno o m² rivestimento misurati
 4. Demolizioni; alternative bagno da scegliere esplicitamente
 5. Impianti e tracce
-6. Finiture, checklist GE360, quantità, prezzi unitari/a corpo, optional
+6. Finiture, checklist GE360, lavorazioni libere senza limiti per ambiente,
+   quantità, prezzi unitari/a corpo e optional
 7. Materiali inclusi, materiali cliente, esclusioni, note, foto private e export JSON
 8. Controlli, totale provvisorio, copia/condivisione del prompt V3.1,
    creazione esplicita di una bozza Preventivi
@@ -34,7 +36,9 @@ integrato che usa il catalogo GE360 esistente.
 - Porte e finestre non vengono detratte senza una misura specifica
 - Quantità manuali sconosciute = 0, mai inventate; viene mostrato un avviso
 - Nessun prezzo inventato. I prezzi a zero sono segnalati
-- Gli optional sono fuori dal totale
+- Gli optional sono fuori dal totale, compresi gli extra manuali
+- La piastrellatura delle pareti bagno non assume automaticamente che le
+  mattonelle arrivino al soffitto: serve altezza/m² esplicita o quantità manuale
 - Se si usa il prezzo a corpo, le lavorazioni analitiche della stessa stanza
   sono descrittive e non raddoppiano l'importo
 - Per il prompt le note/costi interni non sono trasmessi
@@ -47,6 +51,9 @@ CREA BOZZA PREVENTIVO GE360.
 
 La conversione salva un nuovo EstimateRecord in stato Bozza,
 più i locali in EstimateRoomStore e i metadati sulle voci.
+Le quantità provenienti dallo Smart Sopralluogo rimangono protette dal
+ricalcolo silenzioso quando vengono riaperte con i configuratori storici,
+ma possono essere modificate esplicitamente dall'operatore.
 L'ID unico della sessione impedisce la creazione accidentale di una
 seconda bozza al secondo tocco; il documento creato può essere aperto
 nell'editor standard GE360. Nessuna scrittura su preventivi già accettati.
@@ -68,7 +75,8 @@ creato nel GPT, non automaticamente dall'app.
 - Test unitari SmartSurveyDraftV1Test e EstimateSopralluogoPromptV1Test
 - Su telefono: offline, sospensione/ripresa, misure manuali,
   checklist bagno, foto, prompt e creazione bozza
-- Verifica dei totali per prezzo a corpo e optional
+- Verifica dei totali per prezzo a corpo, optional e lavorazioni libere
+- Quote bagno con rivestimenti parziali e altezza di posa distinta
 - Verifica non regressione dei preventivi già esistenti e delle metriche
   importate dal Rilievo avanzato
 
