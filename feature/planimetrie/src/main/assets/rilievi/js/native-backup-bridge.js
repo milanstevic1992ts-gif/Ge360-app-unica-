@@ -168,22 +168,33 @@ export function createOpenPlan3DMirror({
     knownPhotos.add(id);
   }
 
-  function queuePhoto(id, blob) {
-    photoPipeline = photoPipeline.catch(() => {}).then(() => sendPhoto(id, blob))
-      .catch(err => onStatus('⚠ Foto OpenPlan3D non ancora copiata: ' + err.message));
-    return photoPipeline;
+  function queuePhoto(id, blob, strict = false) {
+    // Serialize uploads without permanently poisoning the queue on failure.
+    // Restore MUST observe the rejection; ordinary captures can report it
+    // without crashing the editor.
+    const operation = photoPipeline.catch(() => {}).then(() => sendPhoto(id, blob));
+    photoPipeline = operation.catch(err => {
+      onStatus('⚠ Foto OpenPlan3D non ancora copiata: ' + err.message);
+    });
+    return strict ? operation : photoPipeline;
   }
 
-  async function synchronizeMissingPhotos() {
+  async function synchronizeMissingPhotos(strict = false) {
     const refs = referencedPhotoRecords(getPlans());
     for (const [id] of refs) {
       if (knownPhotos.has(id)) continue;
       const stored = await readPhoto(id);
       if (!stored || !stored.blob) {
-        onStatus('⚠ Foto non leggibile in WebView: ' + id);
+        const error = new Error('Foto non leggibile in WebView: ' + id);
+        if (strict) throw error;
+        onStatus('⚠ ' + error.message);
         continue;
       }
-      await queuePhoto(id, stored.blob);
+      await queuePhoto(id, stored.blob, strict);
+    }
+    if (strict) {
+      const missing = [...refs.keys()].filter(id => !knownPhotos.has(id));
+      if (missing.length) throw new Error('Foto OpenPlan3D non verificate: ' + missing.join(', '));
     }
   }
 
@@ -242,7 +253,7 @@ export function createOpenPlan3DMirror({
     // plans may not be present in the incoming backup. Replicate all merged
     // geometry and their photos first, then acknowledge completion.
     await sendLibrary();
-    await synchronizeMissingPhotos();
+    await synchronizeMissingPhotos(true);
     if (pendingSync) {
       pendingSync = false;
       await sendLibrary();
