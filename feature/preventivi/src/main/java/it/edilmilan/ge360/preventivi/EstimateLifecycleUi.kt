@@ -16,6 +16,21 @@ import java.util.Date
 import java.util.Locale
 
 object EstimateLifecycleUi {
+    fun acceptWork(context: Context, estimate: EstimateRecord, onApplied: () -> Unit) {
+        val lifecycle = EstimateLifecycleStore(context)
+        val locked = try { lifecycle.isLocked(estimate.ge360Id) } finally { lifecycle.close() }
+        if (locked) {
+            // Consente di riprendere un'eventuale attivazione interrotta
+            // senza rigenerare lo snapshot contrattuale.
+            runCatching {
+                EstimateAcceptanceEngine.acceptAndActivate(context, estimate.ge360Id)
+            }.onSuccess {
+                onApplied()
+                toast(context, "✓ Cantiere " + it.jobsiteCode + " collegato al contratto.")
+            }.onFailure { toast(context, it.message ?: "Impossibile collegare il cantiere") }
+        } else acceptDialog(context, estimate, onApplied)
+    }
+
     fun show(context: Context, estimate: EstimateRecord, onApplied: () -> Unit) {
         val lifecycle = EstimateLifecycleStore(context)
         val locked = lifecycle.isLocked(estimate.ge360Id)
