@@ -72,7 +72,8 @@ async function sha256(bytes) {
 }
 
 export function createOpenPlan3DMirror({
-  nativeObject, getPlans, setPlans, readPhoto, writePhoto, onStatus = () => {}
+  nativeObject, getPlans, setPlans, getExtras = () => ({}), setExtras = () => {},
+  readPhoto, writePhoto, onStatus = () => {}
 }) {
   if (!nativeObject || typeof nativeObject.postMessage !== 'function') return null;
   const waiting = new Map();
@@ -120,7 +121,7 @@ export function createOpenPlan3DMirror({
 
   async function sendLibrary() {
     const library = validatePlans(getPlans());
-    const raw = JSON.stringify({ schema: MIRROR_SCHEMA, plans: library });
+    const raw = JSON.stringify({ schema: MIRROR_SCHEMA, plans: library, extras: getExtras() });
     const bytes = new TextEncoder().encode(raw);
     if (bytes.length > 50 * 1024 * 1024) throw new Error('Libreria OpenPlan3D oltre 50 MB');
     const digest = await sha256(bytes);
@@ -192,7 +193,7 @@ export function createOpenPlan3DMirror({
     const parsed = JSON.parse(text);
     if (parsed.schema !== MIRROR_SCHEMA) throw new Error('Schema restore non compatibile');
     validatePlans(parsed.plans);
-    return parsed.plans;
+    return parsed;
   }
 
   async function downloadRestoredPhoto(id, meta) {
@@ -213,7 +214,8 @@ export function createOpenPlan3DMirror({
 
   async function restoreFromNative() {
     const manifest = await request('mirror-restore-meta');
-    const incoming = await readRestoredLibrary(manifest.length);
+    const restored = await readRestoredLibrary(manifest.length);
+    const incoming = restored.plans;
     const incomingPhotos = referencedPhotoRecords(incoming);
     const selected = mergeOpenPlan3DPlans(getPlans(), incoming, manifest.mode);
     const desired = referencedPhotoRecords(selected);
@@ -230,6 +232,7 @@ export function createOpenPlan3DMirror({
       const blob = await downloadRestoredPhoto(id, meta);
       await writePhoto({ ...meta, blob });
     }
+    setExtras(restored.extras || {}, manifest.mode);
     setPlans(selected);
     await request('mirror-restore-complete');
     knownPhotos = new Set((await request('mirror-status', { planCount: selected.length })).knownPhotoIds);
