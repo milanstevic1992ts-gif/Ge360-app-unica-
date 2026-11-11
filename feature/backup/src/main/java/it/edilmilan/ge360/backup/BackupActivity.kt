@@ -383,13 +383,14 @@ class BackupActivity : AppCompatActivity() {
             runOnUiThread {
                 result.onSuccess { r ->
                     val total = r.counts.values.sum()
-                    status.text = "Ripristino completato · $total record · ${r.scannerFiles} PDF · ${r.galleryFiles} foto"
+                    status.text = "Dati GE360 recuperati · OpenPlan3D da finalizzare se presente · $total record · ${r.scannerFiles} PDF · ${r.galleryFiles} foto"
                     val detail = buildString {
                         r.counts.forEach { (k, v) -> appendLine("$k: $v") }
                         if (r.warnings.isNotEmpty()) { appendLine(); appendLine("Avvisi:"); r.warnings.forEach { appendLine("• $it") } }
                     }
-                    AlertDialog.Builder(this).setTitle("Ripristino completato")
-                        .setMessage(detail.trim()).setPositiveButton("OK", null).show()
+                    AlertDialog.Builder(this).setTitle("Ripristino dati nativi eseguito")
+                        .setMessage(detail.trim() + "\n\nSe il backup contiene OpenPlan3D, apri Rilievi avanzati e verifica geometrie e foto: finché non completi quel passaggio il ripristino non è totale.")
+                        .setPositiveButton("OK", null).show()
                 }.onFailure {
                     status.text = "Ripristino fallito: " + (it.message ?: "Errore")
                     toast(status.text.toString())
