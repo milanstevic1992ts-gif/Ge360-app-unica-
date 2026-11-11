@@ -104,6 +104,27 @@ avanzati almeno una volta prima di usare BACKUP COMPLETO.
   per **finalizzare** il ripristino. Fino ad allora il backup successivo
   rimane bloccato e il disegnatore potrebbe mostrare ancora dati vecchi
 
+### Collaudo logico e protezione dalle modifiche concorrenti
+In corso di revisione è emerso un caso di concorrenza: il browser poteva
+iniziare a trasmettere uno snapshot precedente dopo che l'utente aveva già
+effettuato un'altra modifica. Ora ogni richiesta di inizio snapshot porta
+la **revisione della libreria catturata prima della serializzazione e del
+calcolo SHA-256**. Il deposito Android conserva l'ultima revisione segnalata
+e cancella il marcatore di backup incompleto *solo* se la revisione consegnata
+corrisponde a quella più recente. Anche le modifiche durante l'inizializzazione
+del WebView marcano la copia nativa come non sincronizzata.
+
+**Verifiche eseguite sul sorgente corrente (ambiente di test isolato):**
+- 10/10 test JavaScript di logica effettivamente eseguiti, inclusa una
+  simulazione asincrona di modifica durante il trasferimento (revisioni 0,
+  1 e 2 senza dichiarare pulita la copia 1);
+- 10/10 controlli statici dei collegamenti fra JavaScript, Android, ZIP,
+  fotografia e cifratura superati; parser JavaScript app.js senza errori.
+
+**Non equivalgono a test Gradle, ad esecuzione sul telefono o a una prova
+completa di ripristino dopo disinstallazione.** Il runner GitHub Actions
+non è stato avviato e non è stato prodotto alcun APK.
+
 ### Limiti che restano
 - Non è stato eseguito un collaudo reale dell'intero ciclo su smartphone:
   gli unit test JS/Android sono predisposti ma non ancora eseguiti
