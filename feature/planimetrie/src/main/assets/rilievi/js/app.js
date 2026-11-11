@@ -17,6 +17,7 @@ import { constructionVisual, activeConstructionStates } from './construction-vis
 import { buildGeometryDiagnostics, visibleDiagnostics } from './geometry-diagnostics.js';
 import { buildEstimateHandoff } from './estimate-handoff.js';
 import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline, modeLabel } from './survey-mode.js';
+import { createOpenPlan3DMirror } from './native-backup-bridge.js';
 
 (function () {
   'use strict';
@@ -30,6 +31,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
   var SETTINGS_KEY = 'ge360-rilievo-settings-v1';
 
   var library = [];
+  var nativeMirror = null;
   var settings = { serverUrl: '', apiKey: '', bridgeConfigured: false, bridgeConnected: false, bridgeAddress: '', bridgeEndpoint: '', bridgePairedAt: null };
   var activePlanId = null;
   var mode = 'draw';
@@ -161,6 +163,9 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
 
   function saveLibrary() {
     localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+    // Replica verificata alla parte Android, separata dal disegnatore WebView.
+    // I segreti del backend restano esclusivamente nelle impostazioni WebView.
+    if (nativeMirror) nativeMirror.queueLibrary();
   }
 
   function loadAll() {
@@ -1764,6 +1769,7 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
       if (!Array.isArray(plan.photos)) plan.photos = [];
       plan.photos.push(meta);
       saveLibrary();
+      if (nativeMirror) nativeMirror.queuePhoto(id, file);
       renderNotePhotos();
       toast('Foto salvata sul telefono ✓');
       flushPendingPhotos();
@@ -7216,4 +7222,21 @@ import { SURVEY_MODE, normalizeSurveyMode, surveyModePolicy, freeSketchPolyline,
 
   loadAll();
   showDashboard();
+  nativeMirror = createOpenPlan3DMirror({
+    nativeObject: window.GE360Native,
+    getPlans: function () { return library; },
+    setPlans: function (restored) {
+      library = restored;
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+      showDashboard();
+      renderDashboard();
+    },
+    readPhoto: getPhotoBlob,
+    writePhoto: savePhotoBlob,
+    onStatus: function (message) {
+      if (message.startsWith('⚠')) toast(message);
+      else console.info('[GE360 backup]', message);
+    }
+  });
+  if (nativeMirror) nativeMirror.initialize();
 })();
