@@ -179,7 +179,8 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
     updateServerBadge();
     restoreBridgeTunnel();
     initLaser();
-    setTimeout(function () { flushOfflineQueue(); flushPendingPhotos(); }, 1200);
+    // La sync backend partirà solo dopo avere verificato il ripristino locale
+    // dei rilievi dal deposito Android (vedi initializeNativeMirror sotto).
     setTimeout(refreshConnectionIndicator, 1600);
   }
 
@@ -1807,6 +1808,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
   }
 
   async function flushPendingPhotos() {
+    if (nativeMirror && !nativeMirror.isReady()) return;
     if (!settings.serverUrl || !settings.apiKey || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     for (var i = 0; i < library.length; i++) {
       var plan = library[i];
@@ -4632,6 +4634,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
   }
 
   async function flushOfflineQueue() {
+    if (nativeMirror && !nativeMirror.isReady()) return;
     if (syncBusy || !settings.serverUrl || !settings.apiKey) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     var items = offlineQueue.list();
@@ -7262,5 +7265,12 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
       else console.info('[GE360 backup]', message);
     }
   });
-  if (nativeMirror) nativeMirror.initialize();
+  if (nativeMirror) {
+    nativeMirror.initialize().then(function (ready) {
+      if (ready) { flushOfflineQueue(); flushPendingPhotos(); }
+    });
+  } else {
+    // Browser non-Android: comportamento precedente, senza bridge nativo.
+    setTimeout(function () { flushOfflineQueue(); flushPendingPhotos(); }, 1200);
+  }
 })();
