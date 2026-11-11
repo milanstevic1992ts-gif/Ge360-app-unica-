@@ -256,6 +256,7 @@ class BackupCoordinator(private val context: Context) {
                 entries, manifest, if (includeGalleryFiles) "GE360_FULL" else "GE360_AUTO"
             ) { candidate ->
                 preflightAgreementEvidence(candidate, archive.readManifest(candidate))
+                preflightOpenPlan3D(candidate, archive.readManifest(candidate))
                 preflightMaterialEvidenceV13(candidate, replaceAll = true)
                 preflightMaterialCostsV15(candidate, replaceAll = true)
             }
