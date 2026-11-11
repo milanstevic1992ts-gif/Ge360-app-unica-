@@ -25,6 +25,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.cantieri.JobsiteStore
+import it.edilmilan.ge360.attrezzi.ResourceReminderDialog
 import it.edilmilan.ge360.clienti.ClientStore
 import it.edilmilan.ge360.clienti.ClientsActivity
 import it.edilmilan.ge360.core.common.Ge360Contracts
@@ -158,6 +159,15 @@ class AgendaActivity : AppCompatActivity() {
             }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(3) })
         }
         root.addView(creation)
+        root.addView(MaterialButton(this).apply {
+            text = "🧰 RICORDA MATERIALI E ATTREZZI"
+            isAllCaps = false
+            setOnClickListener {
+                ResourceReminderDialog.show(this@AgendaActivity, preferredJobsiteId = jobsiteContext)
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply {
+            topMargin = dp(5); bottomMargin = dp(6)
+        })
 
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         (if (hasContext) listOf("Collegati") else emptyList())
@@ -400,6 +410,7 @@ class AgendaActivity : AppCompatActivity() {
         val options = mutableListOf("Modifica")
         if (entry.kind != AgendaEntry.NOTE) options += if (entry.completed) "Riapri" else if (entry.repeat != AgendaEntry.REPEAT_NONE) "Completa la prossima occorrenza" else "Completa"
         if (entry.kind == AgendaEntry.NOTE) options += "Trasforma in attivita'"
+        if (entry.kind == AgendaEntry.NOTE && entry.scope == AgendaEntry.WORK) options += "Ricorda per il cantiere"
         options += "Elimina"
         AlertDialog.Builder(this)
             .setTitle(entry.title)
@@ -411,6 +422,13 @@ class AgendaActivity : AppCompatActivity() {
                     "Trasforma in attivita'" -> runAction {
                         store.promoteNote(entry.id)
                         filter = "Attivita'"
+                    }
+                    "Ricorda per il cantiere" -> ResourceReminderDialog.show(
+                        context = this,
+                        preferredJobsiteId = entry.jobsiteGe360Id.ifBlank { jobsiteContext },
+                        suggestedTitle = entry.title
+                    ) { job ->
+                        message("Nota conservata. Aggiunto alla checklist di " + job.code)
                     }
                     "Elimina" -> AlertDialog.Builder(this)
                         .setTitle("Eliminare questo elemento?")
