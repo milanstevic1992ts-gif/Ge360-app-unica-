@@ -33,6 +33,12 @@ class ToolsHubActivity : AppCompatActivity() {
         ))
 
         root.addView(modeCard(
+            title = "🧠  RICORDA DA PORTARE / COMPRARE",
+            subtitle = "Scrivi al volo cosa manca: attrezzo da prendere, materiale da caricare o da acquistare. La voce entra subito nella checklist del cantiere.",
+            action = "＋ AGGIUNGI PROMEMORIA"
+        ) { ResourceReminderDialog.show(this) })
+
+        root.addView(modeCard(
             title = "📦  MATERIALI 2.0",
             subtitle = "Magazzino reale con giacenze, scorte minime, fornitori, costi, ubicazioni e movimenti. Le richieste dei cantieri entrano automaticamente nella lista da acquistare.",
             action = "APRI MATERIALI"

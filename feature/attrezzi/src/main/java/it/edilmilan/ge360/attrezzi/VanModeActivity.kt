@@ -1,6 +1,7 @@
 package it.edilmilan.ge360.attrezzi
 
 import android.app.DatePickerDialog
+import androidx.appcompat.app.AlertDialog
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -106,6 +107,25 @@ class VanModeActivity : AppCompatActivity() {
             setPadding(dp(4), dp(10), dp(4), dp(8))
         }
         addView(summary)
+
+        addView(MaterialButton(this@VanModeActivity).apply {
+            text = "＋ RICORDA MATERIALE / ATTREZZO"
+            isAllCaps = false
+            minHeight = dp(50)
+            setOnClickListener {
+                ResourceReminderDialog.show(
+                    this@VanModeActivity,
+                    preferredJobsiteId = selectedJob()?.ge360Id.orEmpty()
+                ) { job ->
+                    val position = jobs.indexOfFirst { it.ge360Id == job.ge360Id }
+                    if (position >= 0) jobSpinner.setSelection(position + 1)
+                    refresh()
+                    syncCurrentPlanCounts()
+                }
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
+            bottomMargin = dp(6)
+        })
 
         addView(MaterialButton(this@VanModeActivity).apply {
             text = "📤 CONDIVIDI LISTA"
@@ -296,7 +316,9 @@ class VanModeActivity : AppCompatActivity() {
         )
         val toolCount = rows.count { it.kind == ResourceKind.TOOL }
         val materialCount = rows.count { it.kind == ResourceKind.MATERIAL }
-        summary.text = "${job.code} · DA PRENDERE ${rows.size} · 🔧 $toolCount · 📦 $materialCount"
+        val toBuy = rows.count { it.kind == ResourceKind.MATERIAL && it.status == "Da comprare" }
+        summary.text = "${job.code} · ${rows.size} da preparare · 🔧 $toolCount · 📦 $materialCount" +
+            if (toBuy > 0) " · 🛒 $toBuy da comprare" else ""
 
         if (rows.isEmpty()) {
             container.addView(readyCard(job))
@@ -340,22 +362,33 @@ class VanModeActivity : AppCompatActivity() {
                 setTypeface(typeface, Typeface.BOLD)
             })
             addView(TextView(this@VanModeActivity).apply {
-                text = if (item.kind == ResourceKind.TOOL && item.quantity == 1.0) {
-                    "DA PRENDERE"
-                } else {
-                    "${clean(item.quantity)} ${displayUnit(item)} · DA PRENDERE"
+                val status = when (item.status) {
+                    "Da comprare" -> "🛒 DA COMPRARE"
+                    "Mancante" -> "⚠ MANCANTE"
+                    "Comprato" -> "📦 COMPRATO · DA CARICARE"
+                    else -> "DA PRENDERE"
                 }
+                text = "${clean(item.quantity)} ${displayUnit(item)} · $status"
                 textSize = 13f
                 setTextColor(Ge360Brand.TextSecondary)
                 setPadding(0, dp(4), 0, dp(8))
             })
+            if (item.note.isNotBlank()) addView(TextView(this@VanModeActivity).apply {
+                text = "📝 " + item.note
+                textSize = 12f
+                setTextColor(Ge360Brand.TextSecondary)
+                setPadding(0, 0, 0, dp(8))
+            })
+            val needsPurchase = ResourceReminderRules.needsPurchase(item)
             addView(LinearLayout(this@VanModeActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(MaterialButton(this@VanModeActivity).apply {
-                    text = "✓ PRESO"
+                    text = if (needsPurchase) "🛒 COMPRATO" else "✓ PRESO"
                     textSize = 13f
                     minHeight = dp(52)
-                    setOnClickListener { completeItem(item) }
+                    setOnClickListener {
+                        if (needsPurchase) markPurchased(item) else completeItem(item)
+                    }
                 }, LinearLayout.LayoutParams(0, dp(56), 2f).apply { marginEnd = dp(4) })
                 addView(MaterialButton(this@VanModeActivity).apply {
                     text = "✕ TOGLI"
@@ -367,6 +400,19 @@ class VanModeActivity : AppCompatActivity() {
         })
     }
 
+    private fun markPurchased(item: JobResource) {
+        if (!ResourceReminderRules.needsPurchase(item)) return
+        runCatching {
+            // Comprato non significa caricato sul furgone.
+            item.status = ResourceReminderRules.afterPurchase(item)
+            tools.saveJobResource(item)
+        }.onSuccess {
+            toast("✓ " + item.name + " comprato: resta da caricare")
+            refresh()
+            syncCurrentPlanCounts()
+        }.onFailure { toast(it.message ?: "Impossibile aggiornare il materiale") }
+    }
+
     private fun completeItem(item: JobResource) {
         tools.deleteJobResource(item.id)
         Toast.makeText(this, "✓ ${item.name} preso", Toast.LENGTH_SHORT).show()
@@ -375,10 +421,14 @@ class VanModeActivity : AppCompatActivity() {
     }
 
     private fun removeItem(item: JobResource) {
-        tools.deleteJobResource(item.id)
-        Toast.makeText(this, "${item.name} tolto dalla checklist", Toast.LENGTH_SHORT).show()
-        refresh()
-        syncCurrentPlanCounts()
+        AlertDialog.Builder(this).setTitle("Togliere " + item.name + "?")
+            .setMessage("Sarà rimosso dalla checklist del cantiere. Non sarà segnato come preso.")
+            .setPositiveButton("TOGLI") { _, _ ->
+                tools.deleteJobResource(item.id)
+                Toast.makeText(this, "${item.name} tolto dalla checklist", Toast.LENGTH_SHORT).show()
+                refresh()
+                syncCurrentPlanCounts()
+            }.setNegativeButton("Annulla", null).show()
     }
 
     private fun displayUnit(item: JobResource): String {
