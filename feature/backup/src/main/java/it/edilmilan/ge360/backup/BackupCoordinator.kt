@@ -214,6 +214,13 @@ class BackupCoordinator(private val context: Context) {
                         galleryIncluded++
                     } else gallerySkipped++
                 }
+                // La parola COMPLETO deve significare tutte le foto della Galleria.
+                // In caso di URI scaduta o file non leggibile, il backup completo
+                // non deve produrre un archivio che sembri ripristinabile.
+                require(gallerySkipped == 0) {
+                    "Backup completo interrotto: " + gallerySkipped +
+                        " foto Galleria non leggibili. Ripara i file o usa il backup solo dati."
+                }
             }
 
             val manifest = JSONObject()
