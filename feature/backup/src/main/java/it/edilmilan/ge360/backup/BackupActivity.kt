@@ -316,7 +316,7 @@ class BackupActivity : AppCompatActivity() {
                     "dei dati attuali. Apri Rilievi avanzati OpenPlan3D almeno una volta " +
                     "per inizializzare/sincronizzare la sua copia nativa, poi torna " +
                     "qui e scegli Ripristina. Se c'è un precedente ripristino pendente, " +
-                    "completalo prima di avviarne un altro.\\n\\nDettaglio: " +
+                    "completalo prima di avviarne un altro.\n\nDettaglio: " +
                     (mirrorReady.exceptionOrNull()?.message ?: "Archivio non pronto")
                 )
                 .setPositiveButton("Apri Rilievi avanzati") { _, _ ->
