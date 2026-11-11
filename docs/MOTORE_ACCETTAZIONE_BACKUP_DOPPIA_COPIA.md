@@ -115,7 +115,7 @@ corrisponde a quella più recente. Anche le modifiche durante l'inizializzazione
 del WebView marcano la copia nativa come non sincronizzata.
 
 **Verifiche eseguite sul sorgente corrente (ambiente di test isolato):**
-- 11/11 test JavaScript di logica effettivamente eseguiti, inclusa una
+- 12/12 test JavaScript di logica effettivamente eseguiti, inclusa una
   simulazione asincrona di modifica durante il trasferimento (revisioni 0,
   1 e 2 senza dichiarare pulita la copia 1);
 - 10/10 controlli statici dei collegamenti fra JavaScript, Android, ZIP,
@@ -152,6 +152,51 @@ non è stato avviato e non è stato prodotto alcun APK.
    ritardare o far fallire una copia.
 10. Prima di ripristinare con "Sostituisci" l'app tenta un backup di
    sicurezza; **non disinstallare/azzerare l'app durante il ripristino**.
+
+## 5. Revisione del motore prima del rilascio (audit)
+
+Sono emersi e sono stati corretti alcuni casi di incoerenza importanti:
+
+- **Foto durante il restore**: una foto locale che non veniva copiata sul
+  mirror poteva produrre un avviso ma consentire alla UI di confermare il
+  ripristino. Ora la sincronizzazione richiesta dal restore è `strict`:
+  un errore lascia il restore in stato pendente. Anche Android rifiuta
+  `mirror-restore-complete` se esistono modifiche pendenti o foto mancanti.
+- **Sopralluoghi Smart durante il backup**: la corrispondenza fra JSON delle
+  sessioni e file foto viene ora verificata anche alla creazione dello ZIP,
+  non solo prima del ripristino.
+- **Rilievi aggiornati durante il backup**: dopo aver costruito lo ZIP si
+  confronta la libreria OpenPlan3D corrente con la revisione inserita nel
+  pacchetto. Una modifica concorrente invalida quella copia; non viene
+  dichiarata completa.
+- **Ripristino su nuovo telefono**: prima della selezione del backup viene
+  verificato che il mirror locale sia inizializzato, perché il motore deve
+  poter creare una copia di sicurezza dei dati correnti. La UI guida ad
+  aprire OpenPlan3D una volta per inizializzarlo; in questa versione il
+  bootstrap non è ancora interamente automatico.
+- **Esito ripristino**: il dialogo distingue la prima fase nativa dalla
+  riconciliazione OpenPlan3D, che deve avvenire riaprendo il disegnatore.
+
+**Verifica disponibile**: 12/12 test logici JavaScript della libreria mirror
+superati in ambiente isolato con oggetti simulati, inclusi ripristino con foto
+fallita e modifica durante il trasferimento. Controllo statico dei cinque
+principali file Kotlin modificati senza delimitatori incoerenti. **Non sono
+test Gradle, compilazione Android o prove reali del sistema di archiviazione.**
+
+**Rischi aperti da validare prima di considerarlo affidabile**:
+- SQLite di Preventivi, Cantieri e altri moduli usa database separati:
+  gli UUID e il recupero a tentativi riducono i duplicati, ma non offrono
+  una transazione ACID tra tutti i moduli
+- Backup e modifiche concorrenti agli altri archivi (non OpenPlan3D)
+  richiedono collaudi di consistenza su database reali
+- Una foto illeggibile nella Galleria fa fallire, correttamente, la modalità
+  backup completa e può impedire anche il backup di sicurezza pre-restore;
+  occorre una procedura operativa per riparare gli allegati difettosi
+- Il provider Google Drive via SAF può confermare la scrittura prima della
+  sincronizzazione effettiva: collaudare il download da un secondo telefono
+- `GE360-Backend` sul Debian resta esterno al backup dello smartphone
+- Non è ancora stata provata la procedura di ripristino dopo disinstallazione
+  o su dispositivo Android appena inizializzato.
 
 ## 5. Test e rilascio
 - Test nuovi per `EstimateAcceptanceEngine` (UUID stabile e verifiche stato)\n- Test JavaScript `scripts/test-openplan3d-native-mirror.mjs`: merge, replace, foto, path traversal e chunking
