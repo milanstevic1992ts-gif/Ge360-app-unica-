@@ -287,7 +287,7 @@ class OpenPlan3DMirrorStore(context: Context) {
                 md.update(bytes, 0, n)
             }
         }
-        return md.digest().joinToString("") { "%02x".format(it) }
+        return md.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
 
     companion object {
