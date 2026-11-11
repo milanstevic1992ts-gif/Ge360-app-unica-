@@ -137,7 +137,7 @@ object EstimateAcceptanceEngine {
             record.jobsiteId = job.ge360Id
             record.jobsiteCode = job.code
             record.jobsiteTitle = job.displayTitle()
-            if (linkNeedsSave) estimates.save(record)
+            if (linkNeedsSave) estimates.save(record, allowLifecycleTransition = true)
             if (!wasLocked) {
                 lifecycle.freezeAccepted(record, signer, note)
             }
