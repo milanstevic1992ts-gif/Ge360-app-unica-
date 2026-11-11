@@ -234,6 +234,15 @@ export function createOpenPlan3DMirror({
     }
     setExtras(restored.extras || {}, manifest.mode);
     setPlans(selected);
+    // Do NOT clear the pending-restore marker yet: during Merge, local
+    // plans may not be present in the incoming backup. Replicate all merged
+    // geometry and their photos first, then acknowledge completion.
+    await sendLibrary();
+    await synchronizeMissingPhotos();
+    if (pendingSync) {
+      pendingSync = false;
+      await sendLibrary();
+    }
     await request('mirror-restore-complete');
     knownPhotos = new Set((await request('mirror-status', { planCount: selected.length })).knownPhotoIds);
     onStatus('✓ Rilievi avanzati e foto ripristinati nel WebView');
