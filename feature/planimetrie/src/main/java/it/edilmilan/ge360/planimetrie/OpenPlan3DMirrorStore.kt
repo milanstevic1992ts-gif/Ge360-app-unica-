@@ -85,7 +85,7 @@ class OpenPlan3DMirrorStore(context: Context) {
 
     @Synchronized fun startPhoto(id: String, size: Long, sha256: String) {
         require(validId(id))
-        require(size in 1..MAX_PHOTO_BYTES && sha256.matches(Regex("[a-f0-9]{64}")))
+        require(size > 0L && size <= MAX_PHOTO_BYTES && sha256.matches(Regex("[a-f0-9]{64}")))
         check(incomingPhoto == null) { "Upload foto già in corso" }
         val stage = File(photosDir, ".$id.partial")
         if (stage.exists()) stage.delete()
@@ -119,6 +119,22 @@ class OpenPlan3DMirrorStore(context: Context) {
     @Synchronized fun photoIds(): List<String> =
         photosDir.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".bin") }
             .map { it.name.removeSuffix(".bin") }.filter(::validId).sorted()
+
+    /**
+     * If Android WebView storage was cleared but the native verified copy
+     * remains, restore instead of silently treating the empty JS library as
+     * authoritative. A dirty snapshot is never auto-restored.
+     */
+    fun recoverIfWebViewEmpty(planCount: Int) {
+        if (planCount != 0 || pendingRestoreFile.exists() || dirtyFile.exists() || !hasSnapshot()) return
+        val existing = runCatching {
+            JSONObject(libraryFile.readText()).getJSONArray("plans").length()
+        }.getOrDefault(0)
+        if (existing <= 0) return
+        val tmp = File(root, "restore.pending.part")
+        tmp.writeText(JSONObject().put("mode", "merge").toString())
+        atomicReplace(tmp, pendingRestoreFile)
+    }
 
     fun hasSnapshot(): Boolean = readyFile.isFile && libraryFile.isFile
     fun pendingStatus(): RestoreStatus {
