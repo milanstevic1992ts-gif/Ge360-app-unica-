@@ -13,6 +13,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.attrezzi.ToolsStore
+import it.edilmilan.ge360.attrezzi.ResourceReminderDialog
+import it.edilmilan.ge360.attrezzi.VanModeActivity
 import it.edilmilan.ge360.attrezzi.MaterialsActivity
 import it.edilmilan.ge360.attrezzi.MaterialEvidenceActivityV13
 import it.edilmilan.ge360.attrezzi.WorkPreparationActivity
@@ -153,6 +155,18 @@ class JobsiteHubActivity : AppCompatActivity() {
         body.addView(actionRow(
             ActionSpec("✍", "Nota veloce", "Salva una nota già collegata al cantiere") { openAgenda("NOTE") },
             ActionSpec("✅", "Nuova attività", "Promemoria collegato al cantiere") { openAgenda("TASK") }
+        ))
+        body.addView(actionRow(
+            ActionSpec("🧠", "Ricorda da portare", "Materiale, attrezzo o acquisto per questo cantiere") {
+                ResourceReminderDialog.show(this, preferredJobsiteId = jobsite.ge360Id) { savedJob ->
+                    if (savedJob.ge360Id == jobsite.ge360Id) refreshSummary()
+                }
+            },
+            ActionSpec("🚚", "Checklist furgone", "Spunta cosa comprare e caricare") {
+                startActivity(Intent(this, VanModeActivity::class.java).putExtra(
+                    VanModeActivity.EXTRA_JOB_ID, jobsite.ge360Id
+                ))
+            }
         ))
 
         body.addView(sectionTitle("DOCUMENTI E CLIENTE", "FIR, DDT, fatture, piante e appunti nello stesso archivio cantiere."))
