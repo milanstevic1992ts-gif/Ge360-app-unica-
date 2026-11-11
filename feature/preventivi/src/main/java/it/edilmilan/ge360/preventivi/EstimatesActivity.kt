@@ -190,7 +190,7 @@ class EstimatesActivity : AppCompatActivity() {
     private fun actions(r: EstimateRecord) {
         AlertDialog.Builder(this)
             .setTitle("${r.number} · ${r.clientName.ifBlank { "Senza cliente" }}")
-            .setItems(arrayOf("Apri / modifica", "Lavorazioni guidate, capitolato e prezzi", "Economia cantiere", "Condividi preventivo", "Prompt IA", "Duplica", "Varianti di metratura")) { _, i ->
+            .setItems(arrayOf("Apri / modifica", "Lavorazioni guidate, capitolato e prezzi", "Economia cantiere", "Condividi preventivo", "Prompt IA", "Duplica", "Varianti di metratura", "✓ LAVORO ACCETTATO → CANTIERE")) { _, i ->
                 when (i) {
                     0 -> editHeader(r)
                     1 -> editItems(r)
@@ -199,6 +199,7 @@ class EstimatesActivity : AppCompatActivity() {
                     4 -> showAiSopralluogoPrompt(r)
                     5 -> { store.duplicate(r); refresh(); toast("Preventivo duplicato") }
                     6 -> showMetricVariants(r.ge360Id)
+                    7 -> EstimateLifecycleUi.acceptWork(this, r) { refresh() }
                 }
             }.show()
     }
@@ -736,6 +737,7 @@ class EstimatesActivity : AppCompatActivity() {
     }
 
     private fun editHeader(source: EstimateRecord) {
+        if (source.id > 0 && !EstimateLifecycleUi.ensureEditable(this, source)) return
         val r = source.copy(items = source.items.map { it.copy() }.toMutableList())
         val clientRows = clients.search()
         val allJobs = jobsites.list()
@@ -837,7 +839,15 @@ class EstimatesActivity : AppCompatActivity() {
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                collect(); store.save(r); dialog.dismiss(); refresh()
+                collect()
+                if (r.status in setOf(EstimateStatuses.ACCEPTED, EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED) &&
+                    source.status !in setOf(EstimateStatuses.ACCEPTED, EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED)) {
+                    toast("Per rendere il lavoro effettivo usa LAVORO ACCETTATO: crea il contratto e il cantiere insieme.")
+                    return@setOnClickListener
+                }
+                runCatching { store.save(r) }
+                    .onSuccess { dialog.dismiss(); refresh() }
+                    .onFailure { toast(it.message ?: "Impossibile salvare il preventivo") }
             }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 collect(); editItems(r) { dialog.dismiss() }
@@ -847,6 +857,7 @@ class EstimatesActivity : AppCompatActivity() {
     }
 
     private fun editItems(source: EstimateRecord, afterSave: (() -> Unit)? = null) {
+        if (source.id > 0 && !EstimateLifecycleUi.ensureEditable(this, source)) return
         val r = if (source.id > 0) store.get(source.id) ?: source else source
         val metricConfirmations = mutableMapOf<String, String>()
         val root = LinearLayout(this).apply {
