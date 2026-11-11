@@ -14,6 +14,7 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.agenda.AgendaActivity
+import it.edilmilan.ge360.attrezzi.VanModeActivity
 import it.edilmilan.ge360.agenda.AgendaDayPlan
 import it.edilmilan.ge360.agenda.AgendaDaySnapshot
 import it.edilmilan.ge360.agenda.AgendaSourceProjection
@@ -417,6 +418,7 @@ class TodayFragment : Fragment() {
 
             add("La mia giornata", "Urgenze, impegni e attività", OperationalDayActivity::class.java)
             add("Agenda", "Oggi, settimana e mese", AgendaActivity::class.java)
+            add("Checklist furgone", "Attrezzi da portare · materiali da comprare o caricare", VanModeActivity::class.java)
             add("Settimana cantieri", "Squadra, sopralluoghi, materiali", WeeklySitePlannerActivity::class.java)
             add("Avvisi Jarvis", "Scadenze, materiali, anomalie costi", ProactiveAlertsActivity::class.java)
         }
