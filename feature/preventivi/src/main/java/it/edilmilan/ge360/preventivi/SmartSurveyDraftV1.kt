@@ -200,8 +200,10 @@ object SmartSurveyDraftV1 {
                 if (room.wetChoice == UNKNOWN) add("${room.name}: confermare vasca / doccia / nessuna")
             }
             val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
-            room.workCodes.forEach { code ->
-                val template = catalog[code] ?: return@forEach
+            val invalid = room.workCodes - catalog.keys
+            if (invalid.isNotEmpty()) add("${room.name}: lavorazioni non valide per il tipo di ambiente: " + invalid.joinToString(", "))
+            room.workCodes.forEach workLoop@ { code ->
+                val template = catalog[code] ?: return@workLoop
                 if (quantity(room, template) <= 0) add("${room.name} · ${template.title}: quantità da inserire")
                 if (room.pricingMode != RoomPricing.BODY && (room.unitPrices[code] ?: 0.0) <= 0) {
                     add("${room.name} · ${template.title}: prezzo mancante")
@@ -231,8 +233,9 @@ object SmartSurveyDraftV1 {
         session.rooms.forEachIndexed { index, sr ->
             val room = sr.toRoom(record.ge360Id, index)
             val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
+            require(sr.workCodes.all { it in catalog }) { "Lavorazioni non compatibili con ${room.name}: correggi il tipo di ambiente" }
             sr.workCodes.forEach { code ->
-                val template = catalog[code] ?: return@forEach
+                val template = catalog.getValue(code)
                 val body = room.pricingMode == RoomPricing.BODY
                 val item = EstimateItem(
                     ge360Id = UUID.randomUUID().toString(),
