@@ -9,6 +9,37 @@ import kotlin.math.round
  * Rilievo di preventivazione indipendente dall'archivio commerciale:
  * solo un'esplicita conversione genera un EstimateRecord (sempre BOZZA).
  */
+data class SmartSurveyManualWorkV1(
+    val id: String = UUID.randomUUID().toString(),
+    var name: String = "",
+    var description: String = "",
+    var category: String = "Personalizzate",
+    var quantity: Double = 0.0,
+    var unit: String = "corpo",
+    var unitPrice: Double = 0.0,
+    var optional: Boolean = false
+) {
+    fun toJson() = JSONObject().apply {
+        put("id", id); put("name", name); put("description", description)
+        put("category", category); put("quantity", quantity)
+        put("unit", unit); put("unitPrice", unitPrice); put("optional", optional)
+    }
+    companion object {
+        fun fromJson(o: JSONObject): SmartSurveyManualWorkV1 {
+            fun n(key: String) = o.optDouble(key, 0.0).let { if (it.isFinite() && it >= 0) it else 0.0 }
+            return SmartSurveyManualWorkV1(
+                id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
+                name = o.optString("name"), description = o.optString("description"),
+                category = o.optString("category", "Personalizzate"),
+                quantity = n("quantity"),
+                unit = o.optString("unit", "corpo"),
+                unitPrice = n("unitPrice"),
+                optional = o.optBoolean("optional", false)
+            )
+        }
+    }
+}
+
 data class SmartSurveyRoomV1(
     val id: String = UUID.randomUUID().toString(),
     var name: String = "Ambiente",
@@ -29,7 +60,8 @@ data class SmartSurveyRoomV1(
     val workCodes: MutableSet<String> = linkedSetOf(),
     val unitPrices: MutableMap<String, Double> = mutableMapOf(),
     val quantities: MutableMap<String, Double> = mutableMapOf(),
-    val options: MutableSet<String> = linkedSetOf()
+    val options: MutableSet<String> = linkedSetOf(),
+    val manualWorks: MutableList<SmartSurveyManualWorkV1> = mutableListOf()
 ) {
     fun floor() = if (floorManual > 0) floorManual else if (length > 0 && width > 0) length * width else 0.0
     fun ceiling() = if (ceilingManual > 0) ceilingManual else floor()
@@ -55,6 +87,7 @@ data class SmartSurveyRoomV1(
         put("unitPrices", JSONObject().apply { unitPrices.forEach { (k, v) -> put(k, v) } })
         put("quantities", JSONObject().apply { quantities.forEach { (k, v) -> put(k, v) } })
         put("options", JSONArray(options.toList()))
+        put("manualWorks", JSONArray().apply { manualWorks.forEach { put(it.toJson()) } })
     }
     companion object {
         fun fromJson(o: JSONObject): SmartSurveyRoomV1 {
@@ -67,6 +100,10 @@ data class SmartSurveyRoomV1(
                 } }
             }
             fun n(key: String) = o.optDouble(key, 0.0).let { if (it.isFinite() && it >= 0) it else 0.0 }
+            val manual = mutableListOf<SmartSurveyManualWorkV1>()
+            o.optJSONArray("manualWorks")?.let { a ->
+                for (i in 0 until a.length().coerceAtMost(100)) a.optJSONObject(i)?.let { manual += SmartSurveyManualWorkV1.fromJson(it) }
+            }
             return SmartSurveyRoomV1(
                 id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
                 name = o.optString("name", "Ambiente"),
@@ -80,7 +117,8 @@ data class SmartSurveyRoomV1(
                 pricingMode = o.optString("pricingMode", RoomPricing.MEASURE)
                     .takeIf { it in RoomPricing.ALL } ?: RoomPricing.MEASURE,
                 bodyPrice = n("bodyPrice"), workCodes = set("workCodes"),
-                unitPrices = prices("unitPrices"), quantities = prices("quantities"), options = set("options")
+                unitPrices = prices("unitPrices"), quantities = prices("quantities"),
+                options = set("options"), manualWorks = manual
             )
         }
     }
@@ -219,10 +257,16 @@ object SmartSurveyDraftV1 {
                     add("${room.name} · ${template.title}: prezzo mancante")
                 }
             }
+            room.manualWorks.forEach { m ->
+                if (m.name.isBlank()) add("${room.name}: lavorazione libera senza nome")
+                if (m.quantity <= 0) add("${room.name} · ${m.name}: quantità da confermare")
+                if ((room.pricingMode != RoomPricing.BODY || m.optional) && m.unitPrice <= 0)
+                    add("${room.name} · ${m.name}: prezzo da definire")
+            }
             if (room.pricingMode == RoomPricing.BODY && room.bodyPrice <= 0)
                 add("${room.name}: prezzo a corpo mancante")
         }
-        if (session.rooms.all { it.workCodes.isEmpty() }) add("Nessuna lavorazione selezionata")
+        if (session.rooms.all { it.workCodes.isEmpty() && it.manualWorks.isEmpty() }) add("Nessuna lavorazione selezionata")
     }.distinct()
     fun roomModels(session: SmartSurveySessionV1) = session.rooms.mapIndexed { index, r -> r.toRoom(session.id, index) }
 
@@ -267,6 +311,25 @@ object SmartSurveyDraftV1 {
                     internalNote = RoomWorkCatalog.attachMetadata(QUANTITY_SOURCE_MARKER, room, template.basis)
                 )
                 record.items += item
+            }
+            sr.manualWorks.forEach { m ->
+                if (m.name.isBlank()) return@forEach
+                val isBody = room.pricingMode == RoomPricing.BODY
+                record.items += EstimateItem(
+                    ge360Id = UUID.randomUUID().toString(),
+                    priceListCode = RoomManualWorkDialog.prefixFor(room.ge360Id) + m.id,
+                    section = RoomWorkCatalog.sectionFor(room), room = room.name,
+                    category = m.category.trim().ifBlank { "Personalizzate" },
+                    name = m.name.trim(), description = m.description.trim(),
+                    quantity = m.quantity, unit = m.unit,
+                    unitPrice = if (isBody && !m.optional) 0.0 else m.unitPrice,
+                    priceMode = if (m.unit in listOf("corpo", "forfait")) "body" else "unit",
+                    included = !isBody || m.optional,
+                    optional = m.optional,
+                    internalNote = RoomWorkCatalog.attachMetadata(
+                        QUANTITY_SOURCE_MARKER, room, QuantityBasis.MANUAL
+                    )
+                )
             }
             if (room.pricingMode == RoomPricing.BODY) record.items += EstimateItem(
                 ge360Id = UUID.randomUUID().toString(),
