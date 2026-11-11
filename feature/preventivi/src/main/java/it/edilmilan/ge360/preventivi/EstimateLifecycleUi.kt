@@ -73,11 +73,20 @@ object EstimateLifecycleUi {
         val store = EstimateLifecycleStore(context)
         val locked = store.isLocked(estimate.ge360Id)
         store.close()
-        if (!locked) return true
+        // Anche una conferma interrotta dopo il salvataggio del nuovo stato
+        // non deve permettere la modifica silenziosa del prezzo accettato.
+        if (!locked && estimate.status !in setOf(
+            EstimateStatuses.ACCEPTED, EstimateStatuses.IN_PROGRESS, EstimateStatuses.COMPLETED
+        )) return true
         AlertDialog.Builder(context)
             .setTitle("Preventivo bloccato")
-            .setMessage("Questo preventivo è stato accettato e congelato. Per cambiare lavorazioni o prezzi crea una Variante o un Extra: l'accordo originale resta invariato.")
-            .setPositiveButton("Gestisci") { _, _ -> show(context, estimate) {} }
+            .setMessage(
+                if (locked) "Questo preventivo è stato accettato e congelato. Per cambiare lavorazioni o prezzi crea una Variante o un Extra."
+                else "Questo lavoro risulta accettato ma la conferma non è stata completata. Usa LAVORO ACCETTATO per riparare il collegamento e congelare l'accordo."
+            )
+            .setPositiveButton(if (locked) "Gestisci" else "Completa") { _, _ ->
+                if (locked) show(context, estimate) {} else acceptWork(context, estimate) {}
+            }
             .setNegativeButton("Chiudi", null)
             .show()
         return false
