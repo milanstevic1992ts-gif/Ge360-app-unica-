@@ -699,7 +699,7 @@ object RoomPlanner {
             )
             item.section = section
             item.room = room.name
-            item.quantity = RoomWorkCatalog.quantity(room, template.basis)
+            if (!item.internalNote.contains(SmartSurveyDraftV1.QUANTITY_SOURCE_MARKER)) item.quantity = RoomWorkCatalog.quantity(room, template.basis)
             item.unit = template.unit
             item.priceMode = if (template.unit in listOf("corpo", "forfait")) "body" else "unit"
             if (room.pricingMode == RoomPricing.BODY) item.unitPrice = 0.0
