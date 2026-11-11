@@ -255,8 +255,14 @@ class BackupCoordinator(private val context: Context) {
             val info = archive.create(
                 entries, manifest, if (includeGalleryFiles) "GE360_FULL" else "GE360_AUTO"
             ) { candidate ->
-                preflightAgreementEvidence(candidate, archive.readManifest(candidate))
-                preflightOpenPlan3D(candidate, archive.readManifest(candidate))
+                val preparedManifest = archive.readManifest(candidate)
+                preflightAgreementEvidence(candidate, preparedManifest)
+                // Check the Smart Survey JSON/photo correspondence during backup
+                // creation as well, not only when an archive is restored.
+                // A user editing photos while the backup runs must not produce
+                // an apparently successful but semantically incomplete ZIP.
+                preflightSmartSurveyPhotos(candidate, preparedManifest)
+                preflightOpenPlan3D(candidate, preparedManifest)
                 preflightMaterialEvidenceV13(candidate, replaceAll = true)
                 preflightMaterialCostsV15(candidate, replaceAll = true)
             }
