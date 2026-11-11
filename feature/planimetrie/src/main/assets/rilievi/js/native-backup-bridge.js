@@ -259,9 +259,11 @@ export function createOpenPlan3DMirror({
       pendingSync = true;
       await syncLibrary();
       await synchronizeMissingPhotos();
+      return true;
     } catch (err) {
       suspended = true; // A blocked restore must never be overwritten by a new mirror.
       onStatus('⚠ Ripristino/sincronizzazione OpenPlan3D: ' + err.message);
+      return false;
     }
   }
 
@@ -273,5 +275,6 @@ export function createOpenPlan3DMirror({
     Promise.resolve().then(syncLibrary);
   }
 
-  return { initialize, queueLibrary, queuePhoto, syncLibrary };
+  return { initialize, queueLibrary, queuePhoto, syncLibrary,
+    isReady: () => initialized && !suspended };
 }
