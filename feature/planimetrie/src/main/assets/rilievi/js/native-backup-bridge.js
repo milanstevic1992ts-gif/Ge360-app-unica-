@@ -274,8 +274,10 @@ export function createOpenPlan3DMirror({
   function queueLibrary() {
     revision++;
     pendingSync = true;
-    if (suspended) return;
+    // Even while initializing or restoring, a user edit must invalidate the
+    // previous native copy immediately. It remains dirty until reconciliation.
     markDirty();
+    if (suspended) return;
     // Yield to the WebView loop so the drawing UI stays responsive.
     Promise.resolve().then(syncLibrary);
   }
