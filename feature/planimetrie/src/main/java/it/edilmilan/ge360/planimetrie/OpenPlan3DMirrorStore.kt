@@ -44,6 +44,12 @@ class OpenPlan3DMirrorStore(context: Context) {
         check(photosDir.isDirectory || photosDir.mkdirs()) { "Impossibile creare cartella foto OpenPlan3D" }
     }
 
+    @Synchronized fun markDirty() {
+        check(dirtyFile.exists() || dirtyFile.createNewFile()) {
+            "Impossibile segnalare un aggiornamento OpenPlan3D pendente"
+        }
+    }
+
     /** Mark a partial library transaction before writing ANY payload. */
     @Synchronized fun beginLibrary() {
         check(dirtyFile.exists() || dirtyFile.createNewFile()) { "Impossibile segnalare salvataggio pendente" }
