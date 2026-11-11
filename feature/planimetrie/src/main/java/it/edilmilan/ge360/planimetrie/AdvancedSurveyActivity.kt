@@ -237,8 +237,8 @@ class AdvancedSurveyActivity : AppCompatActivity() {
                         .put("mode", status.mode)
                         .put("knownPhotoIds", org.json.JSONArray(mirror.photoIds()))
                 }
-                "mirror-dirty" -> { mirror.markDirty(); JSONObject() }
-                "mirror-library-begin" -> { mirror.beginLibrary(); JSONObject() }
+                "mirror-dirty" -> { mirror.markDirty(request.getLong("revision")); JSONObject() }
+                "mirror-library-begin" -> { mirror.beginLibrary(request.getLong("revision")); JSONObject() }
                 "mirror-library-chunk" -> {
                     mirror.libraryChunk(request.getInt("index"), request.getString("base64"))
                     JSONObject()
