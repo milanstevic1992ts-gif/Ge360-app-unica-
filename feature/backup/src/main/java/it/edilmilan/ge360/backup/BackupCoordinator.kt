@@ -263,6 +263,13 @@ class BackupCoordinator(private val context: Context) {
                 // an apparently successful but semantically incomplete ZIP.
                 preflightSmartSurveyPhotos(candidate, preparedManifest)
                 preflightOpenPlan3D(candidate, preparedManifest)
+                // Fail closed if the WebView modified a plan while ZIP files
+                // were being collected. The backup must represent one coherent
+                // native OpenPlan3D library, not a stale snapshot whose photos
+                // might belong to the next revision.
+                check(openPlan3d.readLibrary() == textEntries.getValue(OpenPlan3DMirrorStore.BACKUP_PATH)) {
+                    "OpenPlan3D modificato durante il backup: ripeti la copia dopo il salvataggio"
+                }
                 preflightMaterialEvidenceV13(candidate, replaceAll = true)
                 preflightMaterialCostsV15(candidate, replaceAll = true)
             }
