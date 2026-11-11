@@ -4618,6 +4618,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
 
   function queueCalculation(plan, payload, error) {
     offlineQueue.enqueue(payload, payloadFingerprint(payload));
+    if (nativeMirror) nativeMirror.queueLibrary();
     plan.backend = Object.assign({}, plan.backend || {}, {
       planId: payload.planId,
       status: 'PENDING_SYNC',
@@ -4643,7 +4644,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
         var plan = library.find(function (p) { return p.id === item.planId; });
-        if (!plan) { offlineQueue.remove(item.planId); continue; }
+        if (!plan) { offlineQueue.remove(item.planId); if (nativeMirror) nativeMirror.queueLibrary(); continue; }
         try {
           var out = await backendClient().processPlan(item.payload);
           var compact = compactResult(out.status, out.processed, { fingerprint: item.fingerprint });
@@ -4658,10 +4659,12 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
             localHistory: carryLocalResultHistory(plan, compact)
           };
           offlineQueue.remove(item.planId);
+          if (nativeMirror) nativeMirror.queueLibrary();
           saveLibrary();
           await syncPlanPhotos(plan, out.submission.planId);
         } catch (e) {
           offlineQueue.markError(item.planId, e.message || e);
+          if (nativeMirror) nativeMirror.queueLibrary();
           if (isRetryableBackendError(e)) break;
           plan.backend = Object.assign({}, plan.backend || {}, { syncStatus: 'BLOCKED', lastError: e.message || String(e) });
           saveLibrary();
@@ -4721,6 +4724,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
         localHistory: carryLocalResultHistory(plan, compact)
       };
       offlineQueue.remove(plan.id);
+      if (nativeMirror) nativeMirror.queueLibrary();
       saveLibrary();
       await syncPlanPhotos(plan, out.submission.planId);
       if (fromModal) closeCalc();
@@ -5429,6 +5433,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
         workCatalogState = data;
         workCatalog = data.works;
         saveCachedWorkCatalog(data, localStorage);
+        if (nativeMirror) nativeMirror.queueLibrary();
         renderWorkSuggestions();
       }
     } catch (_) {}
@@ -5672,6 +5677,7 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
       createdAt: new Date().toISOString()
     });
     recordWorkUse(item.id, localStorage);
+    if (nativeMirror) nativeMirror.queueLibrary();
     var plan = currentPlan();
     if (plan && plan.backend) plan.backend.reportDirty = true;
     persistActive();
@@ -7225,6 +7231,24 @@ import { createOpenPlan3DMirror } from './native-backup-bridge.js';
   nativeMirror = createOpenPlan3DMirror({
     nativeObject: window.GE360Native,
     getPlans: function () { return library; },
+    getExtras: function () {
+      var keys = ['ge360-offline-sync-v1', 'ge360-work-usage-v1', 'ge360-work-catalog-cache-v1'];
+      var extras = {};
+      keys.forEach(function (key) {
+        var value = localStorage.getItem(key);
+        if (value !== null) extras[key] = value;
+      });
+      return extras;
+    },
+    setExtras: function (extras, mode) {
+      ['ge360-offline-sync-v1', 'ge360-work-usage-v1', 'ge360-work-catalog-cache-v1']
+        .forEach(function (key) {
+          if (typeof extras[key] !== 'string') return;
+          if (mode === 'replace' || localStorage.getItem(key) === null) {
+            localStorage.setItem(key, extras[key]);
+          }
+        });
+    },
     setPlans: function (restored) {
       library = restored;
       localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
