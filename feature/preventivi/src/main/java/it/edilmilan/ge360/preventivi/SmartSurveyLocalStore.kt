@@ -31,7 +31,16 @@ class SmartSurveyLocalStore(context: Context) {
     /** Versione portabile completa della parte testuale dei sopralluoghi. */
     fun exportJson(): String = JSONObject().apply {
         put("schema", BACKUP_SCHEMA)
-        put("sessions", JSONArray().apply { list().forEach { put(it.toJson()) } })
+        // Non perdere silenziosamente una sessione malformata: un backup
+        // dichiarato completo deve fallire anziché omettere dati dell'utente.
+        val rawSessions = prefs.all.filterKeys { it.startsWith("s/") }
+        val parsed = rawSessions.map { (key, value) ->
+            val session = SmartSurveySessionV1.fromJson(value as? String
+                ?: error("Sopralluogo non leggibile: " + key))
+            require("s/" + session.id == key) { "ID sopralluogo non coerente: " + key }
+            session
+        }
+        put("sessions", JSONArray().apply { parsed.forEach { put(it.toJson()) } })
     }.toString()
 
     /**
