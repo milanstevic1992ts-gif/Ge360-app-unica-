@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <title>GE360 Rilievo</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <section id="dashboard" class="screen">
+    <header class="dash-head">
+      <div><div class="eyebrow">GE360</div><h1>I miei rilievi</h1><p>Schizzi rapidi da cantiere</p></div>
+      <button id="settingsBtn" class="round-btn" aria-label="Impostazioni">⚙</button>
+    </header>
+    <div class="dash-actions">
+      <button id="newFreePlanBtn" class="new-plan">✏ NUOVO RILIEVO LIBERO</button>
+      <button id="newPlanBtn" class="new-plan new-plan-guided">📐 NUOVO RILIEVO GUIDATO</button>
+      <button id="serverBadge" class="server-badge offline" type="button" aria-label="Apri diagnostica connessione">● Debian non collegato</button>
+    </div>
+    <main class="library-wrap">
+      <div id="emptyLibrary" class="empty-library">
+        <div class="empty-icon">📐</div><h2>Nessun rilievo</h2><p>Scegli <b>Libero</b> per disegnare senza quote obbligatorie oppure <b>Guidato</b> per misurare passo passo.</p>
+      </div>
+      <div id="planGrid" class="plan-grid"></div>
+    </main>
+  </section>
+
+  <section id="editor" class="screen hidden">
+    <header class="topbar">
+      <button id="backBtn" class="icon-btn" aria-label="Torna ai rilievi">‹</button>
+      <div class="top-title"><input id="planName" value="Nuovo rilievo" maxlength="40" aria-label="Nome rilievo"></div>
+      <div class="top-actions">
+        <button id="undoBtn" class="icon-btn" aria-label="Annulla">↶</button>
+        <button id="toolsBtn" class="icon-btn tools-menu-btn hidden" aria-label="Apri strumenti">•••</button>
+        <button id="saveBtn" class="save-btn">SALVA</button>
+      </div>
+    </header>
+    <main id="stageWrap">
+      <canvas id="stage"></canvas>
+      <button id="surveyModeBtn" class="survey-mode-pill" type="button" aria-label="Cambia modalità rilievo">📐 RILIEVO GUIDATO</button>
+      <button id="surveyFreeNoteBtn" class="survey-free-note hidden" type="button">📝 APPUNTO / FOTO LIBERI</button>
+      <div id="emptyHint" class="empty-hint"><div class="finger">☝️</div><div class="hint-title">Disegna come su un foglio</div><div id="emptyHintText" class="hint-text">Trascina il dito per un muro o fai più lati di seguito.<br><b>Quando lasci il dito ti chiedo subito la misura.</b></div></div>
+      <button id="statusPill" class="status-pill hidden" type="button" aria-label="Apri controllo geometrico"></button>
+      <div id="constructionLegend" class="construction-legend hidden">
+        <span data-construction-state="demolish"><i class="demo"></i>DEMOLIRE</span>
+        <span data-construction-state="new"><i class="new"></i>NUOVO</span>
+        <span data-construction-state="close-opening"><i class="close"></i>CHIUSURA</span>
+        <span data-construction-state="new-opening"><i class="opening"></i>APERTURA</span>
+      </div>
+      <div id="roomPlacementBar" class="room-placement-bar hidden">
+        <div><b id="roomPlacementLabel">STANZA 3,00 × 2,00 m</b><small>Trascina e rilascia nel punto desiderato</small></div>
+        <button id="rotateRoomPlacementBtn" aria-label="Ruota stanza di 90 gradi">↻</button>
+        <button id="cancelRoomPlacementBtn">ANNULLA</button>
+      </div>
+      <div id="selectionBar" class="selection-bar hidden">
+        <div class="selection-info"><b id="selectionLabel">ELEMENTO SELEZIONATO</b><small id="selectionHint">Trascina con un dito per spostare</small></div>
+        <button id="editSelectedBtn" class="selection-edit" aria-label="Modifica elemento selezionato">MODIFICA</button>
+        <button id="wallStateBtn" class="selection-state hidden" aria-label="Stato costruttivo del muro">STATO</button>
+        <button id="workSelectedBtn" class="selection-work" aria-label="Aggiungi lavorazioni all'elemento selezionato">LAVORI</button>
+        <button id="deleteSelectedBtn" class="selection-delete" aria-label="Elimina elemento selezionato">🗑 ELIMINA</button>
+        <button id="closeSelectionBtn" class="selection-close" aria-label="Deseleziona">✕</button>
+      </div>
+      <div class="view-controls" aria-label="Controlli vista">
+        <button id="zoomOutBtn" aria-label="Zoom indietro">−</button>
+        <button id="zoomResetBtn" class="zoom-level" aria-label="Ripristina vista">100%</button>
+        <button id="zoomInBtn" aria-label="Zoom avanti">＋</button>
+        <button id="rotateBtn" class="rotate-view" aria-label="Ruota planimetria di 90 gradi">↻ 90°</button>
+      </div>
+    </main>
+    <footer class="bottom-bar">
+      <button id="drawBtn" class="tool active"><span class="tool-icon">✏️</span><span>SCHIZZA</span></button>
+      <button id="selectBtn" class="tool select-tool"><span class="tool-icon">☝️</span><span>SELEZ.</span></button>
+      <button id="createRoomBtn" class="tool room-tool"><span class="tool-icon">▭</span><span>STANZA</span></button>
+      <button id="doorBtn" class="tool"><span class="tool-icon">🚪</span><span>PORTA</span></button>
+      <button id="windowBtn" class="tool"><span class="tool-icon">▣</span><span>FINESTRA</span></button>
+      <button id="measureBtn" class="tool measure"><span class="tool-icon">📏</span><span id="measureLabel">MISURE</span></button>
+      <button id="doneBtn" class="tool done"><span class="tool-icon">✓</span><span>FATTO</span></button>
+    </footer>
+  </section>
+
+  <section id="worksScreen" class="works-screen hidden" aria-label="Lavorazioni del rilievo">
+    <header class="works-head">
+      <button id="closeWorksBtn" class="icon-btn light" aria-label="Torna alla pianta">‹</button>
+      <div><div class="eyebrow dark">CANTIERE</div><h2>Lavori</h2><p id="worksPlanName">Rilievo</p></div>
+      <button id="worksProcessBtn" class="save-btn">ELABORA</button>
+    </header>
+    <div class="works-room-strip" id="worksRoomStrip"></div>
+    <main class="works-body">
+      <section class="works-search-card">
+        <div id="worksTargetTitle" class="works-target-title">Tutta la casa</div>
+        <section id="constructionAutoCard" class="construction-auto-card hidden">
+          <div class="construction-auto-head"><b>CALCOLO AUTOMATICO</b><small>da misure reali</small></div>
+          <div id="constructionAutoBody" class="construction-auto-body"></div>
+        </section>
+        <label class="works-search">
+          <span>⌕</span>
+          <input id="workSearchInput" type="search" autocomplete="off" placeholder="Scrivi: piastrelle, rasatura, porta...">
+        </label>
+        <div class="works-search-hint">Scrivi poche lettere e tocca il suggerimento. Il campo si svuota da solo.</div>
+        <div id="workSuggestions" class="work-suggestions"></div>
+      </section>
+      <section class="works-selected-card">
+        <div class="works-section-head"><b>AGGIUNTI</b><span id="worksSelectedCount">0</span></div>
+        <div id="worksSelectedList" class="works-selected-list"></div>
+      </section>
+    </main>
+  </section>
+
+  <div id="toolsBackdrop" class="tools-backdrop hidden">
+    <section class="tools-sheet" aria-label="Strumenti rilievo">
+      <div class="grabber"></div>
+      <div class="tools-head">
+        <div>
+          <div class="eyebrow dark">RILIEVO</div>
+          <h2>Strumenti</h2>
+        </div>
+        <button id="closeToolsBtn" class="round-btn light" aria-label="Chiudi strumenti">✕</button>
+      </div>
+      <div class="tools-grid">
+        <button id="worksBtn" class="tool-card works-btn hidden"><span>🛠️</span><b>LAVORI</b><small>Segna velocemente cosa c'è da fare</small></button>
+        <button id="notesBtn" class="tool-card notes-btn hidden"><span>📝</span><b>APPUNTI</b><small>Note, foto e dettagli</small></button>
+        <button id="presentBtn" class="tool-card present-btn hidden"><span>👁</span><b>PIANTA PULITA</b><small>Vista tecnica senza comandi</small></button>
+        <button id="roomRectBtn" class="tool-card room-rect-btn"><span>▭</span><b>STANZA A MISURA</b><small>Es. 3 × 2 m e posiziona</small></button>
+        <button id="roomBtn" class="tool-card room-btn hidden"><span>🏷</span><b>AMBIENTE</b><small>Nomina la stanza</small></button>
+        <button id="surfacesBtn" class="tool-card surfaces-btn hidden"><span>📐</span><b>SUPERFICI</b><small>m² e pareti</small></button>
+        <button id="solvePlanBtn" class="tool-card solve-plan-btn hidden"><span>✨</span><b>SISTEMA PIANTA</b><small>Correggi lo schizzo</small></button>
+        <button id="calcBtn" class="tool-card calc-btn hidden"><span>🧮</span><b>CALCOLO PROFESSIONALE</b><small>Pianta esatta e m² dal server</small></button>
+        <button id="quoteBtn" class="tool-card quote-btn hidden"><span>📐</span><b>QUOTA / DIAGONALE</b><small>Misura tra due angoli</small></button>
+        <button id="clearBtn" class="tool-card danger-tool hidden"><span>🧹</span><b>PULISCI</b><small>Cancella il disegno</small></button>
+      </div>
+    </section>
+  </div>
+
+  <div id="sheetBackdrop" class="sheet-backdrop hidden">
+    <section class="sheet">
+      <div class="grabber"></div><div id="sheetKicker" class="sheet-kicker">MISURA MURO</div><div id="sheetValue" class="sheet-value">0,00 <span>m</span></div>
+      <div class="keypad">
+        <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button>
+        <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button>
+        <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button>
+        <button data-key=",">,</button><button data-key="0">0</button><button data-key="⌫">⌫</button>
+      </div>
+      <div id="cornerChoiceWrap" class="corner-choice hidden">
+        <button id="cornerLeftBtn" type="button">◀ DA ANGOLO SINISTRO</button>
+        <button id="cornerRightBtn" type="button">DA ANGOLO DESTRO ▶</button>
+      </div>
+      <button id="cornerToggleBtn" class="corner-toggle hidden">↔ CAMBIA ANGOLO</button>
+      <button id="deleteOpeningBtn" class="delete-opening hidden">🗑 ELIMINA APERTURA</button>
+      <div class="sheet-actions"><button id="laterBtn" class="secondary">DOPO</button><button id="confirmBtn" class="primary">CONFERMA ✓</button></div>
+    </section>
+  </div>
+
+  <div id="geometryCheckBackdrop" class="modal-backdrop hidden">
+    <section class="geometry-check-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">CONTROLLO GEOMETRICO</div><h2>Verifica pianta</h2><p id="geometryCheckMeta"></p></div>
+        <button id="closeGeometryCheckBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <div id="geometryCheckSummary" class="geometry-check-summary"></div>
+      <div id="geometryCheckList" class="geometry-check-list"></div>
+      <div class="geometry-check-footer">
+        <button id="resetGeometryIgnoredBtn" type="button" class="secondary">RIPRISTINA IGNORATI</button>
+        <button id="geometryOpenSolverBtn" type="button" class="primary">SISTEMA PIANTA</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="wallStateBackdrop" class="modal-backdrop hidden">
+    <section class="wall-state-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">MURO SELEZIONATO</div><h2>Stato del muro</h2></div>
+        <button id="closeWallStateBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <p class="wall-state-help">Definisci cosa deve succedere a questo muro. Lo spessore verrà chiesto solo quando serve davvero.</p>
+      <div class="wall-state-grid">
+        <button data-wall-state="existing"><b>━</b><span>ESISTENTE</span><small>Nessuna modifica</small></button>
+        <button data-wall-state="demolish"><b>╳</b><span>DA DEMOLIRE</span><small>Rimozione muro</small></button>
+        <button data-wall-state="new"><b>＋</b><span>NUOVO MURO</span><small>Nuova costruzione</small></button>
+        <button data-wall-state="close-opening"><b>▮</b><span>CHIUSURA APERTURA</span><small>Porta o vano da chiudere</small></button>
+        <button data-wall-state="new-opening"><b>▯</b><span>NUOVA APERTURA</span><small>Vano da realizzare</small></button>
+      </div>
+      <div id="wallThicknessPanel" class="wall-thickness-panel hidden">
+        <div class="wall-thickness-head">
+          <b>Spessore muro</b>
+          <small>Obbligatorio solo per demolizione o nuovo muro</small>
+        </div>
+        <div class="wall-thickness-presets">
+          <button type="button" data-wall-thickness="8">8 cm</button>
+          <button type="button" data-wall-thickness="10">10 cm</button>
+          <button type="button" data-wall-thickness="12">12 cm</button>
+          <button type="button" data-wall-thickness="15">15 cm</button>
+          <button type="button" data-wall-thickness="20">20 cm</button>
+          <button type="button" data-wall-thickness="25">25 cm</button>
+        </div>
+        <label class="wall-thickness-custom">Personalizzato
+          <div class="rect-room-input"><input id="wallThicknessCustom" inputmode="decimal" placeholder="es. 13,5"><span>cm</span></div>
+        </label>
+      </div>
+      <div id="wallStateSummary" class="wall-state-summary"></div>
+      <button id="saveWallStateBtn" class="primary block">CONFERMA STATO ✓</button>
+    </section>
+  </div>
+
+  <div id="openingQuickBackdrop" class="modal-backdrop hidden">
+    <section class="opening-quick-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">APERTURA</div><h2 id="openingQuickTitle">Porta</h2></div>
+        <button id="closeOpeningQuickBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <p id="openingQuickHint" class="opening-quick-hint">Scegli la misura. La posizione è già presa dal punto toccato sul muro.</p>
+
+      <div id="doorTypeWrap" class="door-type-grid">
+        <button data-door-kind="internal"><b>🚪</b><small>INTERNA</small></button>
+        <button data-door-kind="double"><b>🚪🚪</b><small>DOPPIA</small></button>
+        <button data-door-kind="sliding"><b>⇆</b><small>SCORREVOLE</small></button>
+        <button data-door-kind="armored"><b>🛡</b><small>BLINDATA</small></button>
+        <button data-door-kind="armored-double"><b>🛡🛡</b><small>BLINDATA DOPPIA</small></button>
+      </div>
+      <div id="doorPresetWrap" class="opening-preset-grid"></div>
+
+      <div id="windowTypeWrap" class="window-type-grid hidden">
+        <button data-window-kind="single"><b>▯</b><small>SINGOLA</small></button>
+        <button data-window-kind="double"><b>▯▯</b><small>DOPPIA</small></button>
+        <button data-window-kind="triple"><b>▯▯▯</b><small>TRIPLA</small></button>
+        <button data-window-kind="sliding"><b>⇆</b><small>SCORREVOLE</small></button>
+        <button data-window-kind="balcony"><b>▯</b><small>PORTAFINESTRA</small></button>
+        <button data-window-kind="balcony-double"><b>▯▯</b><small>PORTAFINESTRA 2 ANTE</small></button>
+      </div>
+      <div id="windowPresetWrap" class="opening-preset-grid window hidden">
+        <button data-opening-preset="standard"><b>✓</b><small>STANDARD</small><span id="standardWindowSize"></span></button>
+        <button data-opening-preset="custom" class="custom"><b>✎</b><small>PERSONALIZZATA</small></button>
+      </div>
+
+      <div id="openingPresetMeta" class="opening-preset-meta"></div>
+
+      <div id="doorSwingControls" class="door-swing-controls hidden">
+        <button id="doorHingeBtn" type="button"><b>↔</b><span>CERNIERA</span><small id="doorHingeValue">SINISTRA</small></button>
+        <button id="doorSwingBtn" type="button"><b>↶</b><span>APERTURA</span><small id="doorSwingValue">INTERNA</small></button>
+        <button id="doorInvertBtn" type="button" class="invert"><b>⇄</b><span>INVERTI</span><small>porta</small></button>
+      </div>
+
+      <details id="openingAdvanced" class="opening-advanced">
+        <summary>⚙ AVANZATE <span>solo se servono quote precise</span></summary>
+        <div class="opening-advanced-grid">
+          <label>Larghezza
+            <div class="rect-room-input"><input id="openingAdvancedWidth" inputmode="decimal"><span>cm</span></div>
+          </label>
+          <label>Altezza
+            <div class="rect-room-input"><input id="openingAdvancedHeight" inputmode="decimal"><span>cm</span></div>
+          </label>
+          <label id="openingAdvancedSillRow">Davanzale
+            <div class="rect-room-input"><input id="openingAdvancedSill" inputmode="decimal"><span>cm</span></div>
+          </label>
+          <label>Distanza dall’angolo
+            <div class="rect-room-input"><input id="openingAdvancedOffset" inputmode="decimal" placeholder="automatica"><span>cm</span></div>
+          </label>
+        </div>
+        <button id="openingReferenceBtn" class="opening-reference-btn">↔ MISURA DAL LATO OPPOSTO</button>
+        <button id="saveOpeningAdvancedBtn" class="primary block">SALVA DATI AVANZATI ✓</button>
+      </details>
+
+      <button id="deleteOpeningQuickBtn" class="delete-opening hidden">🗑 ELIMINA APERTURA</button>
+    </section>
+  </div>
+
+  <div id="connectionDiagBackdrop" class="connection-diagnostic-backdrop hidden">
+    <section class="connection-diagnostic-card" aria-label="Diagnostica connessione GE360">
+      <header class="connection-diagnostic-head">
+        <button id="closeConnectionDiagBtn" class="icon-btn light" aria-label="Chiudi diagnostica">‹</button>
+        <div>
+          <div class="eyebrow dark">GE360 DIRECT BRIDGE</div>
+          <h2>Stato connessione</h2>
+          <p>Controllo reale tra telefono e server Debian</p>
+        </div>
+        <button id="runConnectionDiagBtn" class="diag-refresh-btn" type="button">RIPROVA</button>
+      </header>
+
+      <main class="connection-diagnostic-body">
+        <section id="diagOverall" class="diag-overall checking">
+          <div id="diagOverallIcon" class="diag-overall-icon">…</div>
+          <div>
+            <b id="diagOverallTitle">Controllo connessione…</b>
+            <span id="diagOverallText">Verifico tunnel, backend, API e PDF.</span>
+          </div>
+        </section>
+
+        <section class="diag-grid">
+          <article id="diagBridge" class="diag-row checking">
+            <span class="diag-dot"></span>
+            <div><b>Direct Bridge</b><small id="diagBridgeText">Controllo tunnel WireGuard…</small></div>
+            <strong id="diagBridgeValue">…</strong>
+          </article>
+          <article id="diagBackend" class="diag-row checking">
+            <span class="diag-dot"></span>
+            <div><b>Server Debian</b><small id="diagBackendText">Controllo /healthz…</small></div>
+            <strong id="diagBackendValue">…</strong>
+          </article>
+          <article id="diagAuth" class="diag-row checking">
+            <span class="diag-dot"></span>
+            <div><b>API Key</b><small id="diagAuthText">Controllo accesso autenticato…</small></div>
+            <strong id="diagAuthValue">…</strong>
+          </article>
+          <article id="diagApi" class="diag-row checking">
+            <span class="diag-dot"></span>
+            <div><b>API rilievi</b><small id="diagApiText">Controllo scambio dati JSON…</small></div>
+            <strong id="diagApiValue">…</strong>
+          </article>
+          <article id="diagPdf" class="diag-row checking">
+            <span class="diag-dot"></span>
+            <div><b>Canale PDF</b><small id="diagPdfText">Cerco un PDF recente da provare…</small></div>
+            <strong id="diagPdfValue">…</strong>
+          </article>
+        </section>
+
+        <section class="diag-tech">
+          <h3>Dettagli tecnici</h3>
+          <div><span>Backend</span><code id="diagServerUrl">—</code></div>
+          <div><span>VPN telefono</span><code id="diagBridgeAddress">—</code></div>
+          <div><span>Endpoint pubblico</span><code id="diagBridgeEndpoint">—</code></div>
+          <div><span>Latenza</span><code id="diagLatency">—</code></div>
+          <div><span>Ultimo test</span><code id="diagLastTest">—</code></div>
+        </section>
+
+        <div id="diagAdvice" class="diag-advice hidden"></div>
+
+        <div class="diag-actions">
+          <button id="diagReconnectBtn" class="secondary block" type="button">RICONNETTI BRIDGE</button>
+          <button id="diagSettingsBtn" class="primary block" type="button">IMPOSTAZIONI CONNESSIONE</button>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <div id="settingsBackdrop" class="modal-backdrop hidden">
+    <section class="settings-card">
+      <div class="settings-head"><div><div class="eyebrow dark">GE360 DIRECT BRIDGE</div><h2>Collega il backend</h2></div><button id="closeSettingsBtn" class="round-btn light">✕</button></div>
+      <div class="bridge-connect">
+        <div class="bridge-connect-head">
+          <div><b>Connessione tramite QR</b><small>WireGuard privato · backend 9888</small></div>
+          <span id="bridgeStatus" class="bridge-status">NON COLLEGATO</span>
+        </div>
+        <p>Dal server GE360 apri la schermata di collegamento, crea il dispositivo e inquadra il QR.</p>
+        <button id="scanQrBtn" class="qr-connect-btn">▣ SCANSIONA QR SERVER</button>
+        <div id="bridgeMeta" class="bridge-meta hidden"></div>
+        <div class="bridge-mini-actions">
+          <button id="reconnectBridgeBtn" class="secondary hidden">RICONNETTI</button>
+          <button id="disconnectBridgeBtn" class="secondary hidden">DISCONNETTI</button>
+        </div>
+      </div>
+      <div class="laser-connect">
+        <div class="bridge-connect-head">
+          <div><b>Metro laser Bluetooth</b><small>Leica DISTO · Bosch GLM / PLR compatibili</small></div>
+          <span id="laserStatus" class="bridge-status">NON COLLEGATO</span>
+        </div>
+        <p>Collega il laser una volta. Quando una misura è aperta sullo schermo, premi il tasto del laser e GE360 inserisce automaticamente il valore.</p>
+        <button id="scanLaserBtn" class="laser-scan-btn">📡 CERCA METRO LASER</button>
+        <select id="laserDeviceSelect" class="laser-select hidden"></select>
+        <div class="bridge-mini-actions">
+          <button id="connectLaserBtn" class="secondary hidden">COLLEGA</button>
+          <button id="disconnectLaserBtn" class="secondary hidden">DISCONNETTI</button>
+        </div>
+        <div id="laserLastMeasurement" class="bridge-meta hidden"></div>
+      </div>
+      <div class="settings-divider"><span>oppure configurazione manuale</span></div>
+      <label>Indirizzo server<input id="serverUrl" placeholder="http://10.88.0.1:9888/api/v1"></label>
+      <label>API Key<input id="apiKey" type="password" placeholder="Incolla la chiave API"></label>
+      <p class="security-note">Il profilo WireGuard resta nella memoria privata Android. La chiave API resta sul telefono e non viene salvata nella repo GitHub.</p>
+      <button id="openConnectionDiagBtn" class="connection-diagnostic-link" type="button">◉ APRI DIAGNOSTICA COMPLETA</button>
+      <div class="settings-actions"><button id="testServerBtn" class="secondary block">TEST COLLEGAMENTO</button><button id="saveSettingsBtn" class="primary block">SALVA</button></div>
+    </section>
+  </div>
+
+  <div id="solveBackdrop" class="solver-backdrop hidden">
+    <section class="solver-card">
+      <div class="solver-head">
+        <div><div class="eyebrow dark">MOTORE GEOMETRICO</div><h2>Sistema pianta</h2></div>
+        <button id="closeSolverBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <p class="solver-note">Lo schizzo suggerisce la forma. <b>Le misure reali non vengono cambiate.</b></p>
+      <div class="solver-modes" role="group" aria-label="Intensità correzione">
+        <button data-solver-mode="light">LEGGERO</button>
+        <button data-solver-mode="normal" class="active">NORMALE</button>
+        <button data-solver-mode="strong">FORTE</button>
+      </div>
+      <div class="solver-compare">
+        <div class="solver-preview"><div class="solver-label">PRIMA</div><canvas id="solverBefore"></canvas></div>
+        <div class="solver-preview after"><div class="solver-label">DOPO</div><canvas id="solverAfter"></canvas></div>
+      </div>
+      <div id="solverSummary" class="solver-summary"></div>
+      <div id="solverMessages" class="solver-messages"></div>
+      <div class="solver-actions">
+        <button id="cancelSolverBtn" class="secondary">ANNULLA</button>
+        <button id="applySolverBtn" class="primary">USA VERSIONE SISTEMATA ✓</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="roomBackdrop" class="modal-backdrop hidden">
+    <section class="room-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">AMBIENTE</div><h2>Che stanza è?</h2></div>
+        <button id="closeRoomBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <div class="room-presets">
+        <button data-room-name="Open space">OPEN SPACE</button>
+        <button data-room-name="Cucina">CUCINA</button>
+        <button data-room-name="Bagno">BAGNO</button>
+        <button data-room-name="Camera">CAMERA</button>
+        <button data-room-name="Soggiorno">SOGGIORNO</button>
+        <button data-room-name="Corridoio">CORRIDOIO</button>
+        <button data-room-name="Ingresso">INGRESSO</button>
+        <button data-room-name="Ripostiglio">RIPOSTIGLIO</button>
+        <button data-room-name="Terrazza">TERRAZZA</button>
+        <button data-room-name="Altro">ALTRO</button>
+      </div>
+      <label class="room-custom-label">Nome personalizzato
+        <input id="roomCustomName" placeholder="Es. Studio, lavanderia...">
+      </label>
+      <div class="room-extra">
+        <label>Altezza stanza<div class="rect-room-input"><input id="roomHeightInput" inputmode="decimal" placeholder="come pianta"><span>m</span></div></label>
+        <label>Rivestimento fino a<div class="rect-room-input"><input id="roomTilingInput" inputmode="decimal" placeholder="bagno 2,20"><span>m</span></div></label>
+      </div>
+      <button id="saveRoomBtn" class="primary block">SALVA AMBIENTE ✓</button>
+    </section>
+  </div>
+
+  <div id="rectRoomBackdrop" class="modal-backdrop hidden">
+    <section class="rect-room-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">STANZA PARAMETRICA</div><h2>Crea stanza a misura</h2></div>
+        <button id="closeRectRoomBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <p class="rect-room-help">Inserisci le misure interne della stanza. GE360 crea automaticamente quattro muri già misurati e poi te la fa posizionare sulla pianta.</p>
+      <label class="room-custom-label">Nome ambiente
+        <input id="rectRoomName" placeholder="Es. Bagno, Camera..." value="Ambiente">
+      </label>
+      <div class="rect-room-dimensions">
+        <label>Larghezza
+          <div class="rect-room-input"><input id="rectRoomWidth" inputmode="decimal" value="3,00"><span>m</span></div>
+        </label>
+        <button id="swapRectRoomBtn" class="swap-room-btn" aria-label="Scambia larghezza e profondità">↔</button>
+        <label>Profondità
+          <div class="rect-room-input"><input id="rectRoomHeight" inputmode="decimal" value="2,00"><span>m</span></div>
+        </label>
+      </div>
+      <div class="rect-room-presets">
+        <button data-rect-size="2x2">2 × 2</button>
+        <button data-rect-size="3x2">3 × 2</button>
+        <button data-rect-size="4x3">4 × 3</button>
+        <button data-rect-size="4x4">4 × 4</button>
+      </div>
+      <button id="startRectRoomBtn" class="primary block">▭ POSIZIONA STANZA</button>
+    </section>
+  </div>
+
+  <div id="surfacesBackdrop" class="modal-backdrop hidden">
+    <section class="surfaces-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">RIEPILOGO</div><h2>Superfici indicative</h2></div>
+        <button id="closeSurfacesBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <div class="height-row">
+        <label>Altezza pareti
+          <div class="height-input-wrap"><input id="wallHeightInput" inputmode="decimal" value="2,70"><span>m</span></div>
+        </label>
+      </div>
+      <div id="surfaceTotals" class="surface-totals"></div>
+      <div class="surface-note">Calcolo <b>indicativo da cantiere</b>: piccoli gap vengono chiusi automaticamente per stimare i m². Pareti lorde: porte e finestre non vengono sottratte. Il soffitto viene considerato uguale al pavimento. Per i m² esatti usa <b>CALCOLO PROFESSIONALE</b>.</div>
+      <div id="surfaceRooms" class="surface-rooms"></div>
+    </section>
+  </div>
+
+  <div id="noteTargetBackdrop" class="modal-backdrop hidden">
+    <section class="note-target-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">APPUNTI DI CANTIERE</div><h2>Cosa vuoi annotare?</h2></div>
+        <button id="closeNoteTargetBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <div class="note-target-grid">
+        <button data-note-target="room">🏠<span>AMBIENTE</span></button>
+        <button data-note-target="floor">▰<span>PAVIMENTO</span></button>
+        <button data-note-target="ceiling">▱<span>SOFFITTO</span></button>
+        <button data-note-target="wall">▮<span>MURO</span></button>
+        <button data-note-target="opening">🚪<span>PORTA / FINESTRA</span></button>
+      </div>
+      <p class="note-target-help">Scegli il tipo, poi tocca direttamente l'elemento sulla pianta.</p>
+    </section>
+  </div>
+
+  <div id="noteEditorBackdrop" class="modal-backdrop hidden">
+    <section class="note-editor-card">
+      <div class="settings-head">
+        <div>
+          <div class="eyebrow dark">APPUNTO</div>
+          <h2 id="noteTargetTitle">Elemento</h2>
+          <div id="noteTargetMeta" class="note-target-meta"></div>
+        </div>
+        <button id="closeNoteEditorBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+
+      <label class="note-label">Appunto grezzo
+        <textarea id="noteRawText" rows="7" placeholder="Es. togli piastrelle, sistemare tracce idraulico, impermeabilizzare doccia e nuove fino 120..."></textarea>
+      </label>
+
+      <div id="noteAiResult" class="note-ai-result hidden">
+        <div class="note-ai-head">✨ VERSIONE SISTEMATA</div>
+        <div id="noteCleanedText" class="note-cleaned-text"></div>
+        <div id="noteTasks" class="note-tasks"></div>
+        <div id="noteClarifications" class="note-clarifications"></div>
+      </div>
+
+      <div class="note-photo-tools">
+        <button id="addPhotoBtn" class="secondary">📷 AGGIUNGI FOTO</button>
+        <span id="notePhotoCount">Nessuna foto</span>
+      </div>
+      <div id="notePhotos" class="note-photos"></div>
+      <input id="photoInput" class="hidden" type="file" accept="image/jpeg,image/png,image/webp" capture="environment">
+      <div class="note-actions">
+        <button id="saveRawNoteBtn" class="secondary">SALVA GREZZO</button>
+        <button id="rewriteNoteBtn" class="primary">✨ SISTEMA CON IA</button>
+      </div>
+      <button id="deleteNoteBtn" class="delete-opening hidden">🗑 ELIMINA APPUNTO</button>
+    </section>
+  </div>
+
+  <div id="roomCardBackdrop" class="modal-backdrop hidden">
+    <section class="room-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">SCHEDA AMBIENTE</div><h2 id="roomCardTitle">Stanza</h2><p id="roomCardMeta"></p></div>
+        <button id="closeRoomCardBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <div id="roomCardMetrics" class="room-card-metrics"></div>
+      <div id="roomCardCounts" class="room-card-counts"></div>
+      <div class="room-card-actions">
+        <button id="roomCardEditBtn" class="secondary">MODIFICA DATI</button>
+        <button id="roomCardWorksBtn" class="primary">LAVORI</button>
+        <button id="roomCardNotesBtn" class="secondary">APPUNTI / FOTO</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="presentationBackdrop" class="presentation-backdrop hidden">
+    <section class="presentation-sheet">
+      <header class="presentation-head">
+        <div>
+          <div class="eyebrow dark">PIANTA PULITA</div>
+          <h2 id="presentationTitle">Planimetria</h2>
+          <div id="presentationStamp" class="presentation-stamp">Rilievo indicativo</div>
+        </div>
+        <button id="closePresentationBtn" class="round-btn light" aria-label="Chiudi presentazione">✕</button>
+      </header>
+      <div class="presentation-canvas-wrap">
+        <canvas id="presentationCanvas"></canvas>
+      </div>
+      <div id="presentationSummary" class="presentation-summary"></div>
+      <div id="presentationRooms" class="presentation-rooms"></div>
+      <div class="presentation-foot">Vista tecnica pulita · nessun comando di modifica e nessuna quota superflua.</div>
+    </section>
+  </div>
+
+  <div id="calcBackdrop" class="modal-backdrop hidden">
+    <section class="calc-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">CALCOLO PROFESSIONALE</div><h2>Pianta esatta dal server</h2></div>
+        <button id="closeCalcBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <p class="calc-help">Lo schizzo è solo una traccia: il server ricostruisce la pianta dalle misure, calcola i muri non misurati quando è possibile e restituisce i m² di ogni stanza.</p>
+      <div class="calc-grid single">
+        <label>Altezza pareti<div class="rect-room-input"><input id="calcHeightInput" inputmode="decimal" value="2,70"><span>m</span></div></label>
+      </div>
+      <p class="calc-rule-note">Lo spessore non viene richiesto nel rilievo base. Verrà chiesto solo quando una lavorazione lo rende necessario, ad esempio nuovo muro o demolizione.</p>
+      <label class="room-custom-label">Come hai misurato
+        <select id="calcReferenceSelect" class="calc-select">
+          <option value="interior">Ogni stanza a filo interno</option>
+          <option value="partitionAxis">Lunghezze totali attraverso i tramezzi</option>
+          <option value="axis">Tutto in asse muro</option>
+        </select>
+      </label>
+      <div id="calcInfo" class="calc-info"></div>
+      <div id="calcProgress" class="calc-progress hidden"><div class="spinner"></div><span id="calcProgressText">Invio…</span></div>
+      <button id="calcSendBtn" class="primary block">🧮 CALCOLA</button>
+      <button id="calcExportBtn" class="link-btn">Esporta JSON</button>
+    </section>
+  </div>
+  <div id="resultBackdrop" class="presentation-backdrop hidden">
+    <section class="presentation-sheet result-sheet">
+      <header class="presentation-head">
+        <div>
+          <div class="eyebrow dark">CALCOLO PROFESSIONALE</div>
+          <h2 id="resultTitle">Risultato</h2>
+          <div id="resultStamp" class="presentation-stamp"></div>
+        </div>
+        <button id="closeResultBtn" class="round-btn light" aria-label="Chiudi risultato">✕</button>
+      </header>
+      <div class="result-version-bar">
+        <span id="resultVersionBadge">VERSIONE —</span>
+        <button id="resultHistoryBtn">🕘 CRONOLOGIA</button>
+      </div>
+      <div id="resultHistoryNotice" class="result-history-notice hidden">Stai guardando una versione precedente. <button id="resultLatestBtn">TORNA ALL'ULTIMA</button></div>
+      <div id="resultStale" class="result-stale hidden">Il rilievo è cambiato dopo questo calcolo. <button id="resultStaleBtn">RICALCOLA</button></div>
+      <div class="presentation-canvas-wrap result-canvas-wrap"><canvas id="resultCanvas"></canvas></div>
+      <div class="result-legend"><span class="lg measured">misurato</span><span class="lg calculated">calcolato</span><span class="lg sketch">da schizzo</span><span class="lg suspect">da verificare</span><span class="lg corrected">corretto dall’agente</span></div>
+      <div id="resultAi" class="result-ai hidden"></div>
+      <div id="resultQuestions" class="result-questions"></div>
+      <div id="resultTotals" class="presentation-summary"></div>
+      <div id="resultRooms" class="result-rooms"></div>
+      <div id="resultWalls" class="result-walls"></div>
+      <div class="result-downloads">
+        <button id="resultPdfBtn" class="secondary">PDF</button>
+        <button id="resultDxfBtn" class="secondary">DXF</button>
+        <button id="resultPngBtn" class="secondary">PNG</button>
+      </div>
+      <div class="result-actions">
+        <button id="resultToEstimateBtn" class="primary">📐 INVIA MISURE AI PREVENTIVI</button>
+        <button id="resultEditBtn" class="secondary">MODIFICA / NUOVA VERSIONE</button>
+        <button id="resultRecalcBtn" class="primary">🧮 RICALCOLA</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="resultVersionsBackdrop" class="modal-backdrop hidden">
+    <section class="version-history-card">
+      <div class="settings-head">
+        <div><div class="eyebrow dark">RILIEVO</div><h2>Cronologia versioni</h2></div>
+        <button id="closeResultVersionsBtn" class="round-btn light" aria-label="Chiudi">✕</button>
+      </div>
+      <p class="version-history-help">Ogni rielaborazione crea una nuova versione. Le precedenti restano archiviate e non vengono sovrascritte.</p>
+      <div id="resultVersionsList" class="version-history-list"></div>
+    </section>
+  </div>
+  <div id="pdfArchiveBackdrop" class="modal-backdrop hidden">
+    <section class="pdf-archive-card">
+      <div class="settings-head">
+        <div>
+          <div class="eyebrow dark">DOCUMENTI RILIEVO</div>
+          <h2 id="pdfArchiveTitle">Archivio PDF</h2>
+        </div>
+        <button id="closePdfArchiveBtn" class="round-btn light" aria-label="Chiudi archivio PDF">✕</button>
+      </div>
+      <p class="pdf-archive-help">Qui trovi i PDF delle varie elaborazioni. Ogni ricalcolo resta collegato alla propria versione.</p>
+      <div id="pdfArchiveStatus" class="pdf-archive-status hidden"></div>
+      <div id="pdfArchiveList" class="pdf-archive-list"></div>
+    </section>
+  </div>
+
+  <div id="pdfReaderBackdrop" class="presentation-backdrop hidden">
+    <section class="pdf-reader-sheet">
+      <header class="pdf-reader-head">
+        <div class="pdf-reader-title">
+          <div class="eyebrow dark">LETTORE PDF</div>
+          <h2 id="pdfReaderTitle">Report</h2>
+          <div id="pdfReaderMeta" class="presentation-stamp"></div>
+        </div>
+        <button id="closePdfReaderBtn" class="round-btn light" aria-label="Chiudi PDF">✕</button>
+      </header>
+      <div id="pdfReaderLoading" class="pdf-reader-loading hidden"><div class="spinner"></div><span>Carico PDF…</span></div>
+      <div id="pdfReaderError" class="pdf-reader-error hidden"></div>
+      <div id="pdfReaderViewport" class="pdf-reader-viewport">
+        <canvas id="pdfReaderCanvas"></canvas>
+        <iframe id="pdfReaderFallback" class="pdf-reader-fallback hidden" title="Anteprima PDF"></iframe>
+      </div>
+      <div class="pdf-reader-controls">
+        <button id="pdfPrevBtn" aria-label="Pagina precedente">‹</button>
+        <span id="pdfPageLabel">1 / 1</span>
+        <button id="pdfNextBtn" aria-label="Pagina successiva">›</button>
+        <button id="pdfZoomOutBtn" aria-label="Riduci zoom">−</button>
+        <span id="pdfZoomLabel">100%</span>
+        <button id="pdfZoomInBtn" aria-label="Aumenta zoom">＋</button>
+      </div>
+      <div class="pdf-reader-actions">
+        <button id="pdfBackArchiveBtn" class="secondary">← ARCHIVIO PDF</button>
+        <button id="pdfSaveBtn" class="primary">SALVA / CONDIVIDI</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

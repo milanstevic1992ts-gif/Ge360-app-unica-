@@ -40,6 +40,7 @@ import it.edilmilan.ge360.jarvis.JarvisActivity
 import it.edilmilan.ge360.marketing.MarketingActivity
 import it.edilmilan.ge360.messaggi.MessagesActivity
 import it.edilmilan.ge360.planimetrie.FloorPlanEditorActivity
+import it.edilmilan.ge360.planimetrie.AdvancedSurveyActivity
 import it.edilmilan.ge360.planimetrie.FloorPlanStore
 import it.edilmilan.ge360.planimetrie.FloorPlansActivity
 import it.edilmilan.ge360.preventivi.EstimateStatuses
@@ -166,7 +167,13 @@ class MainSectionFragment : Fragment() {
 
     private fun renderFloorPlans() {
         title("Rilievi", "Misura prima, decidi dopo: un rilievo può restare indipendente oppure diventare preventivo e cantiere.")
-        primaryButton("+ Nuovo rilievo") {
+        // OpenPlan3D fa parte della stessa GE360 App Unica, non è una app a sé.
+        // Da qui si apre direttamente il disegnatore: libero oppure guidato,
+        // anche offline. I rilievi nativi esistenti restano disponibili.
+        primaryButton("✏ RILIEVO LIBERO / GUIDATO") {
+            startActivity(Intent(requireContext(), AdvancedSurveyActivity::class.java))
+        }
+        secondaryButton("+ Rilievo tradizionale") {
             startActivity(Intent(requireContext(), FloorPlansActivity::class.java).putExtra(FloorPlansActivity.EXTRA_CREATE_NEW, true))
         }
 
