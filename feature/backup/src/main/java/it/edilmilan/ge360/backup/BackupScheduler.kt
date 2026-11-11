@@ -46,19 +46,28 @@ class BackupJobService : JobService() {
         if (worker?.isAlive == true) return false
         stopped = false
         worker = thread(name = "ge360-backup") {
+            // Per la doppia copia non basta aver creato il ZIP locale: le due
+            // destinazioni SAF devono essere scritte e SHA-256 verificate.
             val result = runCatching {
-                if (Thread.currentThread().isInterrupted) return@runCatching
                 val coordinator = BackupCoordinator(this)
-                val result = coordinator.createBackup(includeGalleryFiles = true, copyToDrive = true)
-                if (!Thread.currentThread().isInterrupted && coordinator.archive.persistentLocalReady()) {
-                    coordinator.archive.copyToPersistentLocal(result.info.file)
-                }
+                val a = coordinator.archive
+                val created = coordinator.createBackup(includeGalleryFiles = true, copyToDrive = false)
+                if (Thread.currentThread().isInterrupted) return@runCatching "Backup interrotto"
+                val local = if (a.persistentLocalReady()) runCatching {
+                    a.copyToPersistentLocal(created.info.file)
+                    "OK"
+                }.getOrElse { "ERRORE: " + (it.message ?: "copia") } else "DA CONFIGURARE"
+                val drive = if (a.driveReady()) runCatching {
+                    a.copyToDrive(created.info.file)
+                    "OK"
+                }.getOrElse { "ERRORE: " + (it.message ?: "copia") } else "DA CONFIGURARE"
+                val completed = local == "OK" && drive == "OK"
+                (if (completed) "Backup doppia copia riuscito" else "Backup INCOMPLETO") +
+                    " · archivio interno OK · telefono: " + local + " · Drive: " + drive
             }
             getSharedPreferences("ge360_backup_schedule", Context.MODE_PRIVATE).edit()
-                .putString("last_status", result.fold(
-                    onSuccess = { "Backup automatico completo riuscito" },
-                    onFailure = { "Backup automatico fallito: ${it.message ?: it.javaClass.simpleName}" }
-                ))
+                .putString("last_status", result.getOrElse { "Backup automatico fallito: " +
+                    (it.message ?: it.javaClass.simpleName) })
                 .putLong("last_attempt_at", System.currentTimeMillis())
                 .apply()
             if (!stopped && !Thread.currentThread().isInterrupted) jobFinished(params, false)
