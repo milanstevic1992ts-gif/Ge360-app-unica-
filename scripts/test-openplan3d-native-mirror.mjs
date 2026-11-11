@@ -70,6 +70,24 @@ test('rifiuta dimensioni di chunk non sicure', () => {
   assert.throws(() => byteChunks(new Uint8Array(2), 0));
 });
 
+test('modifiche prima della prima sincronizzazione bloccano il backup precedente', () => {
+  const sent = [];
+  const native = { postMessage: raw => sent.push(JSON.parse(raw)) };
+  const mirror = createOpenPlan3DMirror({
+    nativeObject: native,
+    getPlans: () => [],
+    setPlans: () => {},
+    readPhoto: async () => null,
+    writePhoto: async () => {}
+  });
+  mirror.queueLibrary();
+  mirror.queueLibrary();
+  assert.deepEqual(
+    sent.filter(x => x.type === 'mirror-dirty').map(x => x.revision),
+    [1, 2]
+  );
+});
+
 test('una modifica durante il trasferimento non certifica una copia vecchia', async () => {
   const plans = [];
   const sent = [];
