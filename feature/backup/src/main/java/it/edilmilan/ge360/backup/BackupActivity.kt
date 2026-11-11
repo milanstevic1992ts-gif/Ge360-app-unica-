@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import it.edilmilan.ge360.core.backup.BackupScratchV9
+import it.edilmilan.ge360.planimetrie.AdvancedSurveyActivity
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,13 +70,22 @@ class BackupActivity : AppCompatActivity() {
 
         root.addView(button("Proteggi i nuovi backup con password") { activateEncryption() })
         root.addView(button("Ripara accesso ai backup automatici") { chooseKeyRepair() })
-        root.addView(button("BACKUP COMPLETO · telefono + Drive") { confirmFullBackup() })
+        root.addView(button("BACKUP GE360 NATIVO · telefono + Drive") { confirmFullBackup() })
         root.addView(button("Backup rapido solo dati (senza foto Galleria)") { runBackup(false) })
         root.addView(button("Scegli cartella backup sul telefono") { choosePersistentLocal() })
         root.addView(button("Copia ultimo backup nella cartella telefono") { copyLatestPersistentLocal() })
         root.addView(button("Scegli cartella Google Drive") { chooseDrive() })
         root.addView(button("Copia ultimo backup su Drive") { copyLatestToDrive() })
         root.addView(button("Ripristina da backup GE360") { chooseRestore() })
+        root.addView(button("Esporta a parte i rilievi OpenPlan3D avanzati") {
+            startActivity(Intent(this, AdvancedSurveyActivity::class.java))
+        })
+        root.addView(TextView(this).apply {
+            text = "⚠ COPERTURA PARZIALE: OpenPlan3D salva ancora geometrie e fotografie nel WebView (localStorage/IndexedDB). Non sono nel file GE360 backup. Esporta i rilievi avanzati dal disegnatore prima di cancellare o cambiare telefono."
+            textSize = 12f
+            setPadding(dp(10), dp(10), dp(10), dp(14))
+        })
+
 
         root.addView(TextView(this).apply {
             text = "Copie di lavoro locali"; textSize = 18f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(2), dp(18), dp(2), dp(8))
@@ -226,7 +236,7 @@ class BackupActivity : AppCompatActivity() {
                     val driveOk = drive?.isSuccess == true
                     val doubleOk = localOk && driveOk && full
                     status.text = buildString {
-                        append(if (doubleOk) "✓ BACKUP COMPLETO · DOPPIA COPIA VERIFICATA" else "⚠ Backup creato · DOPPIA COPIA NON COMPLETA")
+                        append(if (doubleOk) "✓ BACKUP NATIVO · DOPPIA COPIA VERIFICATA" else "⚠ Backup creato · DOPPIA COPIA NON COMPLETA")
                         append("\nArchivio interno: OK · ").append(human(created.info.sizeBytes))
                         append("\nSHA-256: ").append(created.info.sha256.take(16)).append("…")
                         append("\nCartella persistente telefono: ").append(
@@ -254,7 +264,7 @@ class BackupActivity : AppCompatActivity() {
     private fun confirmFullBackup() {
         AlertDialog.Builder(this)
             .setTitle("Backup completo")
-            .setMessage("Crea una copia completa, incluse foto Galleria e Sopralluoghi Smart, e prova a salvarla in due cartelle diverse (telefono e Google Drive). Il risultato mostrerà separatamente le due copie. Il file può essere grande. Procedere?")
+            .setMessage("Crea una copia dei moduli nativi, incluse foto Galleria e Sopralluoghi Smart, in cartelle diverse (telefono e Drive). ATTENZIONE: i dati OpenPlan3D WebView NON sono ancora inclusi, esportali separatamente. Il file può essere grande. Procedere?")
             .setPositiveButton("Procedi") { _, _ -> runBackup(true) }
             .setNegativeButton("Annulla", null).show()
     }
