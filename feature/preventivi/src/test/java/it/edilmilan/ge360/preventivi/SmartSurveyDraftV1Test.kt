@@ -47,6 +47,21 @@ class SmartSurveyDraftV1Test {
         assertEquals(7.5, SmartSurveyDraftV1.quantity(room, t), 0.001)
     }
 
+    @Test fun bathroomTilingNeedsExplicitHeightOrMeasuredSurface() {
+        val room = bagno().apply { workCodes += "PIASTRELLE" }
+        val template = RoomWorkCatalog.forType(RoomTypes.BATHROOM).first { it.code == "PIASTRELLE" }
+        assertEquals(0.0, SmartSurveyDraftV1.quantity(room, template), 0.001)
+        val initial = SmartSurveyDraftV1.checks(SmartSurveySessionV1(rooms = mutableListOf(room)))
+        assertTrue(initial.any { it.contains("altezza rivestimenti") })
+        room.tilingHeight = 1.2
+        assertEquals(18.0, SmartSurveyDraftV1.quantity(room, template), 0.001)
+        room.tilingWallsManual = 14.0
+        assertEquals(20.0, SmartSurveyDraftV1.quantity(room, template), 0.001)
+        val restored = SmartSurveyRoomV1.fromJson(room.toJson())
+        assertEquals(1.2, restored.tilingHeight, 0.001)
+        assertEquals(14.0, restored.tilingWallsManual, 0.001)
+    }
+
     @Test fun missingManualQuantitiesAreNotInvented() {
         val room = bagno()
         val t = RoomWorkCatalog.forType(RoomTypes.BATHROOM).first { it.basis == QuantityBasis.MANUAL }
