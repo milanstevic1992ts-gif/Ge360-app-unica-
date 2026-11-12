@@ -97,7 +97,10 @@ data class RoomWorkTemplate(
     val basis: QuantityBasis,
     val category: String,
     val enabledByDefault: Boolean,
-    val references: List<String> = emptyList()
+    val references: List<String> = emptyList(),
+    // Per garantire che TUTTO il capitolato sia selezionabile nel sopralluogo,
+    // senza duplicare una voce standard gia presente nel tipo di ambiente.
+    val standardSourceCode: String? = null
 )
 
 object RoomWorkCatalog {
@@ -114,7 +117,7 @@ object RoomWorkCatalog {
         unit: String? = null
     ): RoomWorkTemplate {
         val e = requireNotNull(StandardWorkCatalog.byCode(capCode)) { "Voce capitolato mancante: $capCode" }
-        return RoomWorkTemplate(code, title ?: e.title, e.description, unit ?: e.unit, basis, e.group, enabled, e.references)
+        return RoomWorkTemplate(code, title ?: e.title, e.description, unit ?: e.unit, basis, e.group, enabled, e.references, e.code)
     }
 
     private fun custom(
@@ -234,13 +237,44 @@ object RoomWorkCatalog {
         cap("ACCESSO", "CAP-39", QuantityBasis.BODY, false)
     ) + commonEnd
 
-    fun forType(type: String): List<RoomWorkTemplate> = when (type) {
-        RoomTypes.BATHROOM -> bathroom
-        RoomTypes.KITCHEN -> kitchen
-        RoomTypes.ROOM -> room
-        RoomTypes.BALCONY -> balcony
-        else -> other
-    }.distinctBy { it.code }
+    /**
+     * Copertura 2026: le lavorazioni usuali rimangono in alto; le altre voci del
+     * capitolato e le specialistiche sono disponibili con ricerca/categorie.
+     * Non vengono preselezionate, non portano prezzi e non creano righe economiche
+     * finché l'operatore non le spunta in un ambiente.
+     */
+    private val fullStandardCatalog: List<RoomWorkTemplate> by lazy {
+        StandardWorkCatalog.entries.map { entry ->
+            RoomWorkTemplate(
+                code = "CAT-" + entry.code,
+                title = entry.title,
+                description = entry.description,
+                unit = entry.unit,
+                // Meglio chiedere una quantita precisa, che ipotizzare superfici.
+                basis = if (entry.unit == "corpo" || entry.unit == "forfait") QuantityBasis.BODY else QuantityBasis.MANUAL,
+                category = entry.group,
+                enabledByDefault = false,
+                references = entry.references,
+                standardSourceCode = entry.code
+            )
+        }
+    }
+
+    fun forType(type: String): List<RoomWorkTemplate> {
+        val preferred = when (type) {
+            RoomTypes.BATHROOM -> bathroom
+            RoomTypes.KITCHEN -> kitchen
+            RoomTypes.ROOM -> room
+            RoomTypes.BALCONY -> balcony
+            else -> other
+        }
+        val covered = preferred.mapNotNull { it.standardSourceCode }.toSet()
+        val otherStandard = fullStandardCatalog.filter { it.standardSourceCode !in covered }
+        val specialized = SpecializedWorkCatalog.entries.filter { extra ->
+            preferred.none { it.title.equals(extra.title, ignoreCase = true) }
+        }
+        return (preferred + specialized + otherStandard).distinctBy { it.code }
+    }
 
     fun itemCode(roomId: String, workCode: String) = "$ITEM_PREFIX$roomId/$workCode"
     fun bodyItemCode(roomId: String) = itemCode(roomId, BODY_CODE)
