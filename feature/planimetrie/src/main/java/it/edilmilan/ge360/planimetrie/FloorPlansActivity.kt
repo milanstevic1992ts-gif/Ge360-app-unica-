@@ -183,9 +183,18 @@ class FloorPlansActivity : AppCompatActivity() {
                     setPadding(0, dp(4), 0, 0)
                 })
                 addView(MaterialButton(this@FloorPlansActivity).apply {
-                    text = "COLLEGA AMBIENTI / LAVORAZIONI"
+                    text = "→ PREVENTIVO · SCEGLI LAVORI PER MURO / SOFFITTO / PAVIMENTO"
+                    isAllCaps = false
+                    setOnClickListener {
+                        startActivity(Intent(this@FloorPlansActivity, RilievoQuoteActivity::class.java)
+                            .putExtra(RilievoQuoteActivity.EXTRA_PLAN_ID, plan.ge360Id))
+                    }
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+                addView(MaterialButton(this@FloorPlansActivity).apply {
+                    text = "Dati metrici tecnici (avanzato)"
+                    isAllCaps = false
                     setOnClickListener { chooseWorkBinding(plan) }
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
                 val bindings = store.workBindings(plan.ge360Id)
                 if (bindings.isNotEmpty()) {
                     addView(MaterialButton(this@FloorPlansActivity).apply {
