@@ -919,16 +919,21 @@ class SmartSurveyActivity : AppCompatActivity() {
         return EstimateSopralluogoPromptV1.build(quote, models, { m ->
             val r = survey.rooms.firstOrNull { it.id == m.ge360Id }
             if (r == null) m.measuresSummary()
-            else "Manuale / geometrico · pavimento " + fmt(r.floor()) + " m² · soffitto " +
-                fmt(r.ceiling()) + " m² · pareti " + fmt(r.walls()) +
-                " m² · perimetro " + fmt(r.perimeter()) +
-                " ml · rivestimento pareti " + fmt(r.tilingWalls()) + " m²" +
-                if (r.wallsList.isEmpty()) "" else " · PARETI MISURATE: " +
-                    r.wallsList.joinToString(" | ") { wall ->
+            else buildString {
+                append("Manuale / geometrico · pavimento ").append(fmt(r.floor())).append(" m²")
+                append(" · soffitto ").append(fmt(r.ceiling())).append(" m²")
+                append(" · pareti ").append(fmt(r.walls())).append(" m²")
+                append(" · perimetro ").append(fmt(r.perimeter())).append(" ml")
+                append(" · rivestimento pareti ").append(fmt(r.tilingWalls())).append(" m²")
+                if (r.wallsList.isNotEmpty()) {
+                    append(" · PARETI MISURATE: ")
+                    append(r.wallsList.joinToString(" | ") { wall ->
                         wall.name + " " + fmt(wall.width) + "×" + fmt(wall.height) +
                             " m; aperture " + fmt(wall.openingsArea) +
                             " m²; superficie netta " + fmt(wall.netArea()) + " m²"
-                    }
+                    })
+                }
+            }
         })
     }
 
