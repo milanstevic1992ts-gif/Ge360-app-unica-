@@ -165,7 +165,12 @@ object SurveySurfaceEngine {
                     room.scopedWorks += SurveyScopedWorkV1(workCode = code, scopeId = scopeId)
                 }
             }
-            if (replaceOverlaps) room.workCodes.removeAll(conflicts)
+            if (replaceOverlaps) {
+                room.workCodes.removeAll(conflicts)
+                room.quantities.keys.removeAll(conflicts)
+                room.unitPrices.keys.removeAll(conflicts)
+                room.options.removeAll(conflicts)
+            }
         }
     }
 
