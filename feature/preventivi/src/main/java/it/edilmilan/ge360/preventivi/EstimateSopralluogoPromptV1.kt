@@ -89,6 +89,13 @@ object EstimateSopralluogoPromptV1 {
             put("priceMode", item.priceMode)
             put("unitPriceEuro", item.unitPrice)
             put("totalEuro", calculateItemTotal(item))
+            SurveySurfaceEngine.parseMetadata(item.internalNote)?.let { scope ->
+                put("surface", JSONObject().apply {
+                    put("id", scope.optString("scopeId"))
+                    put("name", scope.optString("scopeTitle"))
+                    put("kind", scope.optString("scopeKind"))
+                })
+            }
         }
         fun arrayOfItems(items: List<EstimateItem>) = JSONArray().apply {
             items.forEach { put(itemJson(it)) }

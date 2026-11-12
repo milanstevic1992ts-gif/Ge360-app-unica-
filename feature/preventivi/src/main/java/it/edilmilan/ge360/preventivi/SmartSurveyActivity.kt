@@ -140,7 +140,7 @@ class SmartSurveyActivity : AppCompatActivity() {
             setPadding(dp(4), dp(2), dp(4), dp(24))
         }
         root.addView(ScrollView(this).apply {
-            fillViewport = true
+            isFillViewport = true
             addView(body)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -240,7 +240,10 @@ class SmartSurveyActivity : AppCompatActivity() {
                 val newType = type.selectedItem.toString()
                 val newName = name.text.toString().trim().ifBlank { "Ambiente" }
                 val allowed = RoomWorkCatalog.forType(newType).map { it.code }.toSet()
-                val toRemove = if (newType != room.type) room.workCodes.filter { it !in allowed } else emptyList()
+                val toRemove = if (newType != room.type)
+                    room.workCodes.filter { it !in allowed } +
+                        room.scopedWorks.filter { it.workCode !in allowed }.map { it.workCode }
+                else emptyList()
                 val applyChange: () -> Unit = {
                     room.name = newName
                     if (newType != room.type) {
@@ -248,6 +251,7 @@ class SmartSurveyActivity : AppCompatActivity() {
                         room.unitPrices.keys.retainAll(allowed)
                         room.quantities.keys.retainAll(allowed)
                         room.options.retainAll(allowed)
+                        room.scopedWorks.removeAll { it.workCode !in allowed }
                         if (newType != RoomTypes.BATHROOM) {
                             room.floorChoice = SmartSurveyDraftV1.UNKNOWN
                             room.wetChoice = SmartSurveyDraftV1.UNKNOWN
@@ -282,6 +286,12 @@ class SmartSurveyActivity : AppCompatActivity() {
         survey.rooms.forEach { room ->
             val summary = "${room.name} · pav. ${fmt(room.floor())} m² · pareti ${fmt(room.walls())} m²"
             action(summary) { editMeasures(room) }
+            action("🧱 PARETI DI " + room.name.uppercase(Locale.ITALY) +
+                " · " + room.wallsList.size + " registrate") { manageWalls(room) }
+            if (room.wallsList.isNotEmpty()) info(
+                "Pareti censite: " + fmt(room.wallsList.sumOf { it.netArea() }) +
+                    " m² netti (non sostituiscono automaticamente i m² totali dell'ambiente)."
+            )
         }
         if (survey.rooms.isEmpty()) action("+ Aggiungi ambiente") { survey.step = 1; persist(); render() }
     }
@@ -319,6 +329,93 @@ class SmartSurveyActivity : AppCompatActivity() {
             }
     }
 
+    /** Nome + dimensioni + aperture della parete, conservando l'UUID tra i rilievi. */
+    private fun manageWalls(room: SmartSurveyRoomV1) {
+        val labels = room.wallsList.map { wall ->
+            "🧱 ${wall.name} · ${fmt(wall.netArea())} m² netti · " +
+                room.scopedWorks.count { it.scopeId == wall.id } + " lavorazioni"
+        } + "＋ AGGIUNGI PARETE"
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · pareti")
+            .setItems(labels.toTypedArray()) { _, index ->
+                if (index == room.wallsList.size) {
+                    editWall(room, SurveyWallV1(name = "Parete " + (room.wallsList.size + 1)), true)
+                } else editWall(room, room.wallsList[index], false)
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun editWall(room: SmartSurveyRoomV1, wall: SurveyWallV1, isNew: Boolean) {
+        val layout = form()
+        val name = input("Nome parete (es. Parete finestra / Parete 1)", wall.name, holder = layout)
+        val width = number("Lunghezza parete (m)", wall.width, layout)
+        val height = number("Altezza parete (m)", if (wall.height > 0.0) wall.height else room.height, layout)
+        val openings = number("Aperture da sottrarre (m²) · facoltativo", wall.openingsArea, layout)
+        val note = input("Note e particolarità della parete", wall.note, true, layout)
+        info("Area netta parete = lunghezza × altezza − aperture misurate. " +
+            "Le aperture non sono mai dedotte in automatico.", layout)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (isNew) "Nuova parete · " + room.name else "Modifica · " + wall.name)
+            .setView(ScrollView(this).apply { addView(layout) })
+            .setPositiveButton("Salva parete", null)
+            .setNegativeButton("Annulla", null)
+            .apply { if (!isNew) setNeutralButton("Elimina parete", null) }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val w = amount(width)
+                val h = amount(height)
+                val o = amount(openings)
+                if (w == null || h == null || o == null || w <= 0 || h <= 0 || o >= w * h) {
+                    return@setOnClickListener toast("Controlla lunghezza, altezza e aperture (minori dell'area lorda)")
+                }
+                wall.name = name.text.toString().trim().ifBlank { "Parete " + (room.wallsList.size + 1) }
+                wall.width = w; wall.height = h; wall.openingsArea = o
+                wall.note = note.text.toString().trim()
+                if (isNew) room.wallsList += wall
+                persist()
+                dialog.dismiss()
+                render()
+            }
+            if (!isNew) dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                AlertDialog.Builder(this@SmartSurveyActivity)
+                    .setTitle("Eliminare " + wall.name + "?")
+                    .setMessage("Verranno eliminate anche le " +
+                        room.scopedWorks.count { it.scopeId == wall.id } +
+                        " lavorazioni assegnate a questa parete. Gli altri locali non cambiano.")
+                    .setPositiveButton("Elimina") { _, _ ->
+                        SurveySurfaceEngine.removeWall(room, wall.id)
+                        persist()
+                        dialog.dismiss()
+                        render()
+                    }.setNegativeButton("Annulla", null).show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun chooseWorkSurface(room: SmartSurveyRoomV1) {
+        val scopes = SurveySurfaceEngine.scopes(room)
+        val options = scopes.map { scope ->
+            val count = if (scope.id == SurveySurfaceEngine.ROOM) room.workCodes.size
+            else room.scopedWorks.count { it.scopeId == scope.id }
+            "${scope.title} · ${count} lavori"
+        } + "＋ Aggiungi una nuova parete"
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · DOVE si eseguono i lavori?")
+            .setItems(options.toTypedArray()) { _, index ->
+                if (index == scopes.size) {
+                    editWall(room, SurveyWallV1(name = "Parete " + (room.wallsList.size + 1)), true)
+                } else {
+                    checklist(room, null, scopes[index].id)
+                }
+            }
+            .setNegativeButton("Indietro", null)
+            .show()
+    }
+
     private fun stepWorks(phase: Int) {
         info(when (phase) {
             3 -> "Demolizioni: seleziona ciò che è previsto. Per il bagno scegli alternative esclusive; non vengono assunte automaticamente."
@@ -329,8 +426,12 @@ class SmartSurveyActivity : AppCompatActivity() {
             val total = room.workCodes.count { code ->
                 RoomWorkCatalog.forType(room.type).any { it.code == code && SmartSurveyDraftV1.phase(it) == phase }
             }
-            label(room.name + " · " + total + " selezioni", true)
+            label(room.name + " · " + total + " selezioni · " +
+                room.scopedWorks.size + " lavori su superfici", true)
             if (phase == 3) {
+                action("🧱 DOVE LAVORIAMO? · Stanza / Parete / Soffitto / Pavimento") {
+                    chooseWorkSurface(room)
+                }
                 action("☑ CHECKLIST COMPLETA · TUTTE LE LAVORAZIONI") { checklist(room, null) }
                 info("Cerca un lavoro per nome e spuntalo. Le voci del capitolato e le lavorazioni specifiche sono tutte disponibili; nessun prezzo precompilato.")
             }
@@ -365,6 +466,7 @@ class SmartSurveyActivity : AppCompatActivity() {
             }
             action("☑ " + SmartSurveyDraftV1.STEPS[phase] + " · scegli lavori") { checklist(room, phase) }
             if (phase == 5) {
+                action("🧱 ASSEGNA LAVORI A PARETI / SOFFITTO / PAVIMENTO") { chooseWorkSurface(room) }
                 action("€ COMPILA QUANTITÀ E PREZZI · TUTTO INSIEME") { quickPrices(room) }
                 action("€ Modifica una singola voce") { editPrices(room) }
                 action("＋ LAVORAZIONE LIBERA") { editManualWork(room, SmartSurveyManualWorkV1(), true) }
@@ -396,7 +498,7 @@ class SmartSurveyActivity : AppCompatActivity() {
      * Checklist unica in stile form: ricerca istantanea, categorie e multi-spunta.
      * Non modifica i dati fino a "Applica": Annulla ripristina le selezioni.
      */
-    private fun checklist(room: SmartSurveyRoomV1, phase: Int?) {
+    private fun checklist(room: SmartSurveyRoomV1, phase: Int?, scopeId: String = SurveySurfaceEngine.ROOM) {
         // Le alternative specifiche del bagno si scelgono dai comandi esclusivi.
         val excludedBath = if (room.type == RoomTypes.BATHROOM) {
             setOf("DEM-PAV", "POSA-SU-POSA", "DEM-VASCA", "DEM-DOCCIA")
@@ -406,7 +508,10 @@ class SmartSurveyActivity : AppCompatActivity() {
             .distinctBy { it.code }
         if (templates.isEmpty()) return toast("Nessuna voce prevista per questa fase")
 
-        val chosen = room.workCodes.toMutableSet()
+        val chosen = if (scopeId == SurveySurfaceEngine.ROOM) room.workCodes.toMutableSet()
+            else room.scopedWorks.filter { it.scopeId == scopeId }.map { it.workCode }.toMutableSet()
+        val scopeName = SurveySurfaceEngine.scope(room, scopeId)?.title
+            ?: return toast("Questa superficie non esiste più")
         val layout = form()
         val search = EditText(this).apply {
             hint = "🔎 Cerca: stuccatura, SPC, massetto, finestra..."
@@ -462,15 +567,31 @@ class SmartSurveyActivity : AppCompatActivity() {
         showEntries("")
 
         AlertDialog.Builder(this)
-            .setTitle(room.name + " · " + (if (phase == null) "Tutte le lavorazioni" else SmartSurveyDraftV1.STEPS[phase]))
+            .setTitle(room.name + " · " + scopeName)
             .setView(layout)
             .setPositiveButton("Applica selezioni") { _, _ ->
                 val eligibleCodes = templates.map { it.code }.toSet()
-                room.workCodes.removeAll(eligibleCodes)
-                room.workCodes.addAll(chosen.intersect(eligibleCodes))
-                room.options.retainAll(room.workCodes)
-                persist()
-                render()
+                val selectedCodes = chosen.intersect(eligibleCodes)
+                val overlaps = SurveySurfaceEngine.overlappingCodes(room, scopeId, selectedCodes)
+                val apply: (Boolean) -> Unit = { replace ->
+                    runCatching {
+                        SurveySurfaceEngine.applySelection(
+                            room, scopeId, eligibleCodes, selectedCodes, replaceOverlaps = replace
+                        )
+                        room.options.retainAll(room.workCodes)
+                        persist()
+                        render()
+                    }.onFailure { toast(it.message ?: "Impossibile salvare le selezioni") }
+                }
+                if (overlaps.isEmpty()) apply(false)
+                else AlertDialog.Builder(this)
+                    .setTitle("Evitiamo di contare due volte?")
+                    .setMessage(overlaps.size.toString() + " lavorazioni sono già attribuite " +
+                        "all'intera stanza o a una superficie specifica. Vuoi SPOSTARLE su " +
+                        scopeName + " rimuovendo la vecchia assegnazione e i suoi importi?")
+                    .setPositiveButton("Sposta lavori") { _, _ -> apply(true) }
+                    .setNegativeButton("Mantieni come prima", null)
+                    .show()
             }
             .setNegativeButton("Annulla", null)
             .show()
@@ -478,45 +599,62 @@ class SmartSurveyActivity : AppCompatActivity() {
 
     private data class QuickWorkInput(
         val template: RoomWorkTemplate,
+        val assignment: SurveyScopedWorkV1?,
         val quantity: EditText,
         val price: EditText,
         val optional: CheckBox
     )
 
     /**
-     * Modulo rapido a scorrimento: quantità / prezzo / optional per tutte le
-     * lavorazioni selezionate, con UN SOLO salvataggio e controlli atomici.
+     * Un solo modulo: lavori sull'intera stanza + lavori su ogni superficie.
+     * Identità per (room UUID, superficie UUID, workCode), senza mescolare i
+     * prezzi di una parete con quelli delle altre.
      */
     private fun quickPrices(room: SmartSurveyRoomV1) {
         val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
-        val items = room.workCodes.mapNotNull(catalog::get)
-            .sortedWith(compareBy<RoomWorkTemplate> { it.category }.thenBy { it.title })
-        if (items.isEmpty()) return toast("Scegli prima le lavorazioni nella checklist")
+        val general = room.workCodes.mapNotNull(catalog::get).sortedBy { it.title }
+        val scoped = room.scopedWorks
+            .filter { catalog[it.workCode] != null }
+            .sortedWith(compareBy<SurveyScopedWorkV1> {
+                SurveySurfaceEngine.scope(room, it.scopeId)?.title ?: ""
+            }.thenBy { it.workCode })
+
+        if (general.isEmpty() && scoped.isEmpty()) return toast("Scegli prima le lavorazioni nella checklist")
 
         val layout = form()
-        info("Quantità proposte dalle misure inserite. Correggile quando serve. Prezzi a zero = da definire; non vengono inventati. Gli optional non entrano nel totale.", layout)
+        info("Una quantità per stanza, parete, soffitto o pavimento. Le superfici misurate propongono una quantità; " +
+            "puoi correggerla. Prezzi mai inventati, optional esclusi dal totale.", layout)
         val inputs = mutableListOf<QuickWorkInput>()
-        items.forEach { work ->
-            label(work.title + " · " + work.unit, true, layout)
-            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val q = numberField("Qtà " + work.unit, room.quantities[work.code] ?: SmartSurveyDraftV1.quantity(room, work))
-            val p = numberField("€ / " + work.unit, room.unitPrices[work.code] ?: 0.0)
-            line.addView(q, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(8) })
-            line.addView(p, LinearLayout.LayoutParams(0, dp(52), 1f))
-            layout.addView(line)
+
+        fun addInput(work: RoomWorkTemplate, assigned: SurveyScopedWorkV1?) {
+            val scopeName = if (assigned == null) "Tutto l'ambiente" else {
+                SurveySurfaceEngine.scope(room, assigned.scopeId)?.title ?: "Superficie da verificare"
+            }
+            label(scopeName + " · " + work.title + " · " + work.unit, true, layout)
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val q0 = if (assigned == null) SmartSurveyDraftV1.quantity(room, work)
+                else SurveySurfaceEngine.quantity(room, assigned, work)
+            val p0 = if (assigned == null) room.unitPrices[work.code] ?: 0.0 else assigned.unitPrice
+            val quantity = numberField("Qtà " + work.unit, q0)
+            val price = numberField("€ / " + work.unit, p0)
+            row.addView(quantity, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(8) })
+            row.addView(price, LinearLayout.LayoutParams(0, dp(52), 1f))
+            layout.addView(row)
             val optional = CheckBox(this).apply {
                 text = "Optional · fuori dal totale"
-                isChecked = work.code in room.options
+                isChecked = if (assigned == null) work.code in room.options else assigned.optional
                 textSize = 12f
             }
             layout.addView(optional)
-            inputs += QuickWorkInput(work, q, p, optional)
+            inputs += QuickWorkInput(work, assigned, quantity, price, optional)
         }
 
-        val scroller = ScrollView(this).apply { addView(layout) }
+        general.forEach { addInput(it, null) }
+        scoped.forEach { assignment -> catalog[assignment.workCode]?.let { addInput(it, assignment) } }
+
         AlertDialog.Builder(this)
             .setTitle(room.name + " · Quantità e prezzi")
-            .setView(scroller)
+            .setView(ScrollView(this).apply { addView(layout) })
             .setPositiveButton("Salva tutto", null)
             .setNegativeButton("Annulla", null)
             .create().apply {
@@ -527,15 +665,30 @@ class SmartSurveyActivity : AppCompatActivity() {
                             val quantity = amount(entry.quantity)
                             val price = amount(entry.price)
                             if (quantity == null || price == null) {
-                                return@setOnClickListener toast("Verifica quantità e prezzo di: " + entry.template.title)
+                                return@setOnClickListener toast(
+                                    "Verifica quantità e prezzo: " + entry.template.title
+                                )
                             }
                             updates += Triple(entry, quantity, price)
                         }
                         updates.forEach { (entry, quantity, price) ->
-                            val code = entry.template.code
-                            room.quantities[code] = quantity
-                            room.unitPrices[code] = price
-                            if (entry.optional.isChecked) room.options += code else room.options -= code
+                            val assignment = entry.assignment
+                            if (assignment == null) {
+                                room.quantities[entry.template.code] = quantity
+                                room.unitPrices[entry.template.code] = price
+                                if (entry.optional.isChecked) room.options += entry.template.code
+                                else room.options -= entry.template.code
+                            } else {
+                                // Se coincide con la geometria reale, lascia attivo
+                                // il collegamento dinamico alla superficie.
+                                val geometry = SurveySurfaceEngine.quantity(
+                                    room, assignment.copy(manualQuantity = null), entry.template
+                                )
+                                assignment.manualQuantity = if (kotlin.math.abs(quantity - geometry) < 0.001)
+                                    null else quantity
+                                assignment.unitPrice = price
+                                assignment.optional = entry.optional.isChecked
+                            }
                         }
                         persist()
                         dismiss()
@@ -727,10 +880,13 @@ class SmartSurveyActivity : AppCompatActivity() {
         label(survey.clientName.ifBlank { "Cliente non indicato" }, true)
         label(survey.title.ifBlank { "Intervento senza titolo" })
         label("Ambienti: " + survey.rooms.size + " · Foto locali: " + survey.photoFiles.size)
-        val count = survey.rooms.sumOf { it.workCodes.size + it.manualWorks.size }
+        val count = survey.rooms.sumOf { it.workCodes.size + it.scopedWorks.size + it.manualWorks.size }
         label("Lavorazioni selezionate: " + count, true)
         survey.rooms.forEach { room ->
-            label("• " + room.name + " · pav. " + fmt(room.floor()) + " m² · pareti " + fmt(room.walls()) + " m²")
+            label("• " + room.name + " · pav. " + fmt(room.floor()) +
+                " m² · pareti " + fmt(room.walls()) +
+                " m² · " + room.wallsList.size + " pareti nominate · " +
+                room.scopedWorks.size + " lavori per superficie")
         }
         val warnings = SmartSurveyDraftV1.checks(survey)
         label("Controlli da completare: " + warnings.size, true)
@@ -764,9 +920,21 @@ class SmartSurveyActivity : AppCompatActivity() {
         return EstimateSopralluogoPromptV1.build(quote, models, { m ->
             val r = survey.rooms.firstOrNull { it.id == m.ge360Id }
             if (r == null) m.measuresSummary()
-            else "Manuale / geometrico · pavimento " + fmt(r.floor()) + " m² · soffitto " +
-                fmt(r.ceiling()) + " m² · pareti " + fmt(r.walls()) +
-                " m² · perimetro " + fmt(r.perimeter()) + " ml · rivestimento pareti " + fmt(r.tilingWalls()) + " m²"
+            else buildString {
+                append("Manuale / geometrico · pavimento ").append(fmt(r.floor())).append(" m²")
+                append(" · soffitto ").append(fmt(r.ceiling())).append(" m²")
+                append(" · pareti ").append(fmt(r.walls())).append(" m²")
+                append(" · perimetro ").append(fmt(r.perimeter())).append(" ml")
+                append(" · rivestimento pareti ").append(fmt(r.tilingWalls())).append(" m²")
+                if (r.wallsList.isNotEmpty()) {
+                    append(" · PARETI MISURATE: ")
+                    append(r.wallsList.joinToString(" | ") { wall ->
+                        wall.name + " " + fmt(wall.width) + "×" + fmt(wall.height) +
+                            " m; aperture " + fmt(wall.openingsArea) +
+                            " m²; superficie netta " + fmt(wall.netArea()) + " m²"
+                    })
+                }
+            }
         })
     }
 

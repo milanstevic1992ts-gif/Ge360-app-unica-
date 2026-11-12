@@ -61,7 +61,9 @@ data class SmartSurveyRoomV1(
     val unitPrices: MutableMap<String, Double> = mutableMapOf(),
     val quantities: MutableMap<String, Double> = mutableMapOf(),
     val options: MutableSet<String> = linkedSetOf(),
-    val manualWorks: MutableList<SmartSurveyManualWorkV1> = mutableListOf()
+    val manualWorks: MutableList<SmartSurveyManualWorkV1> = mutableListOf(),
+    val wallsList: MutableList<SurveyWallV1> = mutableListOf(),
+    val scopedWorks: MutableList<SurveyScopedWorkV1> = mutableListOf()
 ) {
     fun floor() = if (floorManual > 0) floorManual else if (length > 0 && width > 0) length * width else 0.0
     fun ceiling() = if (ceilingManual > 0) ceilingManual else floor()
@@ -88,6 +90,8 @@ data class SmartSurveyRoomV1(
         put("quantities", JSONObject().apply { quantities.forEach { (k, v) -> put(k, v) } })
         put("options", JSONArray(options.toList()))
         put("manualWorks", JSONArray().apply { manualWorks.forEach { put(it.toJson()) } })
+        put("wallsList", SurveySurfaceEngine.wallsToJson(wallsList))
+        put("scopedWorks", SurveySurfaceEngine.assignmentsToJson(scopedWorks))
     }
     companion object {
         fun fromJson(o: JSONObject): SmartSurveyRoomV1 {
@@ -104,6 +108,16 @@ data class SmartSurveyRoomV1(
             o.optJSONArray("manualWorks")?.let { a ->
                 for (i in 0 until a.length().coerceAtMost(100)) a.optJSONObject(i)?.let { manual += SmartSurveyManualWorkV1.fromJson(it) }
             }
+            val wallsList = mutableListOf<SurveyWallV1>()
+            o.optJSONArray("wallsList")?.let { a ->
+                for (i in 0 until a.length().coerceAtMost(100)) a.optJSONObject(i)?.let { wallsList += SurveyWallV1.fromJson(it) }
+            }
+            val scopedWorks = mutableListOf<SurveyScopedWorkV1>()
+            o.optJSONArray("scopedWorks")?.let { a ->
+                for (i in 0 until a.length().coerceAtMost(1000)) a.optJSONObject(i)?.let {
+                    SurveyScopedWorkV1.fromJson(it)?.let(scopedWorks::add)
+                }
+            }
             return SmartSurveyRoomV1(
                 id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
                 name = o.optString("name", "Ambiente"),
@@ -118,7 +132,8 @@ data class SmartSurveyRoomV1(
                     .takeIf { it in RoomPricing.ALL } ?: RoomPricing.MEASURE,
                 bodyPrice = n("bodyPrice"), workCodes = set("workCodes"),
                 unitPrices = prices("unitPrices"), quantities = prices("quantities"),
-                options = set("options"), manualWorks = manual
+                options = set("options"), manualWorks = manual,
+                wallsList = wallsList, scopedWorks = scopedWorks
             )
         }
     }
@@ -249,8 +264,9 @@ object SmartSurveyDraftV1 {
             }
             // Evita che i pacchetti siano addebitati insieme alle stesse opere
             // analitiche: non eliminiamo nulla in automatico, chiediamo verifica.
-            if ("SPC-PACCHETTO" in room.workCodes &&
-                room.workCodes.any { it in setOf("SPC", "PAV-SPC", "DEM-PAV") }) {
+            val allCodes = room.workCodes + room.scopedWorks.map { it.workCode }
+            if ("SPC-PACCHETTO" in allCodes &&
+                allCodes.any { it in setOf("SPC", "PAV-SPC", "DEM-PAV") }) {
                 add("${room.name}: pacchetto rimozione + posa SPC insieme a voci separate: verifica il doppio conteggio")
             }
             val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
@@ -263,6 +279,7 @@ object SmartSurveyDraftV1 {
                     add("${room.name} · ${template.title}: prezzo mancante")
                 }
             }
+            addAll(SurveySurfaceEngine.checks(room))
             room.manualWorks.forEach { m ->
                 if (m.name.isBlank()) add("${room.name}: lavorazione libera senza nome")
                 if (m.quantity <= 0) add("${room.name} · ${m.name}: quantità da confermare")
@@ -272,7 +289,7 @@ object SmartSurveyDraftV1 {
             if (room.pricingMode == RoomPricing.BODY && room.bodyPrice <= 0)
                 add("${room.name}: prezzo a corpo mancante")
         }
-        if (session.rooms.all { it.workCodes.isEmpty() && it.manualWorks.isEmpty() }) add("Nessuna lavorazione selezionata")
+        if (session.rooms.all { !SurveySurfaceEngine.hasWorks(it) }) add("Nessuna lavorazione selezionata")
     }.distinct()
     fun roomModels(session: SmartSurveySessionV1) = session.rooms.mapIndexed { index, r -> r.toRoom(session.id, index) }
 
@@ -317,6 +334,42 @@ object SmartSurveyDraftV1 {
                     internalNote = RoomWorkCatalog.attachMetadata(QUANTITY_SOURCE_MARKER, room, template.basis)
                 )
                 record.items += item
+            }
+            // Le voci riferite a una superficie sono righe autonome, con codice
+            // SURFACE/ distinto dagli elementi di RoomPlanner. Non possono essere
+            // attribuite anche all'intero ambiente: fail-safe contro doppioni.
+            require(!SurveySurfaceEngine.hasFatalConflicts(sr)) {
+                "Correggi assegnazioni duplicate o superfici mancanti di ${room.name} prima di creare la bozza"
+            }
+            sr.scopedWorks.forEach { assignment ->
+                val template = catalog[assignment.workCode]
+                    ?: error("Lavorazione non valida: ${assignment.workCode}")
+                val scope = SurveySurfaceEngine.scope(sr, assignment.scopeId)
+                    ?: error("Superficie non disponibile: ${assignment.scopeId}")
+                require(scope.id != SurveySurfaceEngine.ROOM) { "La superficie ambiente va gestita con la checklist esistente" }
+                val isBody = room.pricingMode == RoomPricing.BODY
+                val isOptional = assignment.optional
+                record.items += EstimateItem(
+                    ge360Id = UUID.randomUUID().toString(),
+                    priceListCode = SurveySurfaceEngine.itemCode(room.ge360Id, assignment),
+                    section = RoomWorkCatalog.sectionFor(room), room = room.name,
+                    category = template.category,
+                    name = "${template.title} — ${scope.title}",
+                    description = template.description +
+                        "\nUbicazione del lavoro: ${room.name} / ${scope.title}." +
+                        (if (template.references.isEmpty()) "" else
+                            "\nRiferimenti da verificare: " + template.references.joinToString("; ")),
+                    quantity = SurveySurfaceEngine.quantity(sr, assignment, template),
+                    unit = template.unit,
+                    unitPrice = if (isBody && !isOptional) 0.0 else assignment.unitPrice,
+                    priceMode = if (template.unit in listOf("corpo", "forfait")) "body" else "unit",
+                    included = !isBody || isOptional,
+                    optional = isOptional,
+                    internalNote = RoomWorkCatalog.attachMetadata(
+                        QUANTITY_SOURCE_MARKER + "\n" + SurveySurfaceEngine.metadata(scope),
+                        room, template.basis
+                    )
+                )
             }
             sr.manualWorks.forEach { m ->
                 if (m.name.isBlank()) return@forEach
