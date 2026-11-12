@@ -638,7 +638,10 @@ object RoomPlanner {
                         .setTitle("Elimina ${room.name}?")
                         .setMessage("Verranno rimosse solo le voci generate automaticamente da questo ambiente. Le voci manuali restano intatte.")
                         .setPositiveButton("Elimina") { _, _ ->
-                            estimate.items.removeAll { it.priceListCode.startsWith("${RoomWorkCatalog.ITEM_PREFIX}${room.ge360Id}/") }
+                            estimate.items.removeAll { item ->
+                                item.priceListCode.startsWith("${RoomWorkCatalog.ITEM_PREFIX}${room.ge360Id}/") ||
+                                    item.priceListCode.startsWith("${SurveySurfaceEngine.ITEM_PREFIX}${room.ge360Id}/")
+                            }
                             store.delete(room.ge360Id)
                             onApplied()
                             showRooms(context, estimate, store, onApplied)
