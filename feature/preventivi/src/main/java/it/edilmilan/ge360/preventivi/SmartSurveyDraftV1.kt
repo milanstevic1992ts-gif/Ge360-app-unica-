@@ -366,8 +366,9 @@ object SmartSurveyDraftV1 {
                     included = !isBody || isOptional,
                     optional = isOptional,
                     internalNote = RoomWorkCatalog.attachMetadata(
-                        QUANTITY_SOURCE_MARKER, room, template.basis
-                    ) + "\n" + SurveySurfaceEngine.metadata(scope)
+                        QUANTITY_SOURCE_MARKER + "\n" + SurveySurfaceEngine.metadata(scope),
+                        room, template.basis
+                    )
                 )
             }
             sr.manualWorks.forEach { m ->
