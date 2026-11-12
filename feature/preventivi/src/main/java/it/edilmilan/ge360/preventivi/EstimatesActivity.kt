@@ -113,6 +113,16 @@ class EstimatesActivity : AppCompatActivity() {
         }
         root.addView(statusText)
 
+        // Percorso principale: rilevo una volta, preventivo da superfici già misurate.
+        root.addView(MaterialButton(this).apply {
+            text = "1 · RIPRENDI UN RILIEVO → SCEGLI LAVORAZIONI"
+            isAllCaps = false
+            minHeight = dp(58)
+            setOnClickListener { openRilievoQuote() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)).apply {
+            bottomMargin = dp(8)
+        })
+
         search = EditText(this).apply {
             hint = "Cerca numero, cliente, cantiere, lavoro…"
             isSingleLine = true
@@ -168,11 +178,11 @@ class EstimatesActivity : AppCompatActivity() {
             }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
         })
         root.addView(MaterialButton(this).apply {
-            text = "✏ SOPRALLUOGO SMART · 8 PASSI"
+            text = "Sopralluogo manuale (senza rilievo)"
             setOnClickListener { openSmartSurveys() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)).apply { topMargin = dp(8) })
         root.addView(MaterialButton(this).apply {
-            text = "+ Nuovo preventivo classico"
+            text = "+ Preventivo classico senza rilievo"
             setOnClickListener { editHeader(EstimateRecord()) }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(6) })
         return root
@@ -190,16 +200,23 @@ class EstimatesActivity : AppCompatActivity() {
     private fun actions(r: EstimateRecord) {
         AlertDialog.Builder(this)
             .setTitle("${r.number} · ${r.clientName.ifBlank { "Senza cliente" }}")
-            .setItems(arrayOf("Apri / modifica", "Lavorazioni guidate, capitolato e prezzi", "Economia cantiere", "Condividi preventivo", "Prompt IA", "Duplica", "Varianti di metratura", "✓ LAVORO ACCETTATO → CANTIERE")) { _, i ->
+            .setItems(arrayOf(
+                "Apri / modifica",
+                "Lavorazioni da rilievo · muri, pavimento, soffitto",
+                "Lavorazioni manuali, capitolato e prezzi",
+                "Economia cantiere", "Condividi preventivo", "Prompt IA", "Duplica",
+                "Varianti di metratura", "✓ LAVORO ACCETTATO → CANTIERE"
+            )) { _, i ->
                 when (i) {
                     0 -> editHeader(r)
-                    1 -> editItems(r)
-                    2 -> economics(r)
-                    3 -> share(customerSummary(r), "Preventivo ${r.number}")
-                    4 -> showAiSopralluogoPrompt(r)
-                    5 -> { store.duplicate(r); refresh(); toast("Preventivo duplicato") }
-                    6 -> showMetricVariants(r.ge360Id)
-                    7 -> EstimateLifecycleUi.acceptWork(this, r) { refresh() }
+                    1 -> openRilievoQuote(r.ge360Id)
+                    2 -> editItems(r)
+                    3 -> economics(r)
+                    4 -> share(customerSummary(r), "Preventivo ${r.number}")
+                    5 -> showAiSopralluogoPrompt(r)
+                    6 -> { store.duplicate(r); refresh(); toast("Preventivo duplicato") }
+                    7 -> showMetricVariants(r.ge360Id)
+                    8 -> EstimateLifecycleUi.acceptWork(this, r) { refresh() }
                 }
             }.show()
     }
@@ -1402,6 +1419,23 @@ class EstimatesActivity : AppCompatActivity() {
                 refs.forEach { append("• ").append(it).append('\n') }
             }
         }.trimEnd()
+    }
+
+    /**
+     * Il modulo Rilievi già dipende da Preventivi. Usiamo un Intent esplicito
+     * per evitare una dipendenza Gradle circolare (Preventivi -> Rilievi).
+     */
+    private fun openRilievoQuote(estimateId: String? = null) {
+        runCatching {
+            val intent = Intent().setClassName(
+                packageName,
+                "it.edilmilan.ge360.planimetrie.RilievoQuoteActivity"
+            )
+            estimateId?.takeIf { it.isNotBlank() }?.let {
+                intent.putExtra("ge360_survey_quote_estimate_id", it)
+            }
+            startActivity(intent)
+        }.onFailure { toast("Modulo Rilievi non apribile: " + it.message) }
     }
 
     private fun openSmartSurveys() {
