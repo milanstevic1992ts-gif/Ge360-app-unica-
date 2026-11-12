@@ -106,7 +106,8 @@ class RilievoQuoteActivity : AppCompatActivity() {
     }
 
     private fun refreshQuote() {
-        val selected = plan?.estimateId.orEmpty().ifBlank { requestedEstimateId }
+        // Non collegare mai automaticamente un preventivo a un altro rilievo.
+        val selected = plan?.estimateId.orEmpty()
         estimate = selected.takeIf { it.isNotBlank() }?.let(quotes::getByGe360Id)
     }
 
@@ -162,6 +163,32 @@ class RilievoQuoteActivity : AppCompatActivity() {
         title(p.title, 20)
         small("Rilievo selezionato · ${plans.rooms(p.ge360Id).size} ambienti")
         text("Ora colleghiamo il rilievo a un preventivo. Le metrature restano nel rilievo.", true)
+        if (requestedEstimateId.isNotBlank()) {
+            val requested = quotes.getByGe360Id(requestedEstimateId)
+            if (requested != null && canEdit(requested)) {
+                action("Collega alla bozza selezionata · " +
+                    requested.number.ifBlank { requested.title }, true) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Conferma collegamento")
+                        .setMessage("Usare le stanze di " + p.title +
+                            " nel preventivo " + requested.number +
+                            "? Nessuna metratura o lavorazione precedente viene modificata automaticamente.")
+                        .setPositiveButton("Collega") { _, _ ->
+                            val used = plans.list().firstOrNull { it.ge360Id != p.ge360Id && it.estimateId == requested.ge360Id }
+                            if (used != null) toast("Preventivo già collegato al rilievo " + used.title)
+                            else {
+                                p.estimateId = requested.ge360Id
+                                plans.save(p)
+                                requestedEstimateId = ""
+                                estimate = requested
+                                render()
+                            }
+                        }
+                        .setNegativeButton("Annulla", null)
+                        .show()
+                }
+            }
+        }
         action("＋ Crea preventivo da questo rilievo", true) { createQuote(p) }
         action("Collega a una bozza esistente", false) { chooseDraft(p) }
         action("Scegli un altro rilievo", false) { plan = null; roomId = null; scopeId = null; render() }
@@ -258,6 +285,12 @@ class RilievoQuoteActivity : AppCompatActivity() {
             startActivity(Intent(this, FloorPlansActivity::class.java))
         }
         title("Seleziona la superficie", 17)
+        if (walls.isEmpty()) {
+            small("Non hai ancora quotato i muri uno per uno. Puoi usare pareti complessive, soffitto e pavimento, oppure tornare in Rilievi per aggiungere le pareti.")
+            action("Quota le pareti in Rilievi", false) {
+                startActivity(Intent(this, FloorPlansActivity::class.java))
+            }
+        }
         val quote = estimate ?: return
         RilievoQuoteEngine.targets(room, walls).forEach { target ->
             val workCount = quote.items.count {
