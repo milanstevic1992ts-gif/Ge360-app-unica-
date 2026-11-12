@@ -33,6 +33,7 @@ import it.edilmilan.ge360.core.common.ui.applyGe360Card
 import it.edilmilan.ge360.core.common.ui.brandRounded
 import it.edilmilan.ge360.giornata.DailyStore
 import it.edilmilan.ge360.giornata.DailyWorkActivity
+import it.edilmilan.ge360.giornata.EveningReportActivity
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -192,6 +193,15 @@ class TodayDashboardView @JvmOverloads constructor(
                 }
             })
         }, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        addView(MaterialButton(context).apply {
+            text = "📝 RAPPORTINO SERALE · ${reports.size} oggi"
+            textSize = 15f
+            minHeight = dp(54)
+            setOnClickListener { context.startActivity(Intent(context, EveningReportActivity::class.java)) }
+        }, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)).apply {
+            topMargin = dp(10)
+        })
 
         addView(reminderCard(dueReminders, futureReminderCount), LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
