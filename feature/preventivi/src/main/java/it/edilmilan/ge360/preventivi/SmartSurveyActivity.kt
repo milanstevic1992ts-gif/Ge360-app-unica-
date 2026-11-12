@@ -921,7 +921,14 @@ class SmartSurveyActivity : AppCompatActivity() {
             if (r == null) m.measuresSummary()
             else "Manuale / geometrico · pavimento " + fmt(r.floor()) + " m² · soffitto " +
                 fmt(r.ceiling()) + " m² · pareti " + fmt(r.walls()) +
-                " m² · perimetro " + fmt(r.perimeter()) + " ml · rivestimento pareti " + fmt(r.tilingWalls()) + " m²"
+                " m² · perimetro " + fmt(r.perimeter()) +
+                " ml · rivestimento pareti " + fmt(r.tilingWalls()) + " m²" +
+                if (r.wallsList.isEmpty()) "" else " · PARETI MISURATE: " +
+                    r.wallsList.joinToString(" | ") { wall ->
+                        wall.name + " " + fmt(wall.width) + "×" + fmt(wall.height) +
+                            " m; aperture " + fmt(wall.openingsArea) +
+                            " m²; superficie netta " + fmt(wall.netArea()) + " m²"
+                    }
         })
     }
 
