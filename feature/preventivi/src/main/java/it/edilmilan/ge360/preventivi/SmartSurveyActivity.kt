@@ -466,6 +466,7 @@ class SmartSurveyActivity : AppCompatActivity() {
             }
             action("☑ " + SmartSurveyDraftV1.STEPS[phase] + " · scegli lavori") { checklist(room, phase) }
             if (phase == 5) {
+                action("🧱 ASSEGNA LAVORI A PARETI / SOFFITTO / PAVIMENTO") { chooseWorkSurface(room) }
                 action("€ COMPILA QUANTITÀ E PREZZI · TUTTO INSIEME") { quickPrices(room) }
                 action("€ Modifica una singola voce") { editPrices(room) }
                 action("＋ LAVORAZIONE LIBERA") { editManualWork(room, SmartSurveyManualWorkV1(), true) }
