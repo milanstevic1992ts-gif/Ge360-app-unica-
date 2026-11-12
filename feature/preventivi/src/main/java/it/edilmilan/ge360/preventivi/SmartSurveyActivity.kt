@@ -598,45 +598,62 @@ class SmartSurveyActivity : AppCompatActivity() {
 
     private data class QuickWorkInput(
         val template: RoomWorkTemplate,
+        val assignment: SurveyScopedWorkV1?,
         val quantity: EditText,
         val price: EditText,
         val optional: CheckBox
     )
 
     /**
-     * Modulo rapido a scorrimento: quantità / prezzo / optional per tutte le
-     * lavorazioni selezionate, con UN SOLO salvataggio e controlli atomici.
+     * Un solo modulo: lavori sull'intera stanza + lavori su ogni superficie.
+     * Identità per (room UUID, superficie UUID, workCode), senza mescolare i
+     * prezzi di una parete con quelli delle altre.
      */
     private fun quickPrices(room: SmartSurveyRoomV1) {
         val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
-        val items = room.workCodes.mapNotNull(catalog::get)
-            .sortedWith(compareBy<RoomWorkTemplate> { it.category }.thenBy { it.title })
-        if (items.isEmpty()) return toast("Scegli prima le lavorazioni nella checklist")
+        val general = room.workCodes.mapNotNull(catalog::get).sortedBy { it.title }
+        val scoped = room.scopedWorks
+            .filter { catalog[it.workCode] != null }
+            .sortedWith(compareBy<SurveyScopedWorkV1> {
+                SurveySurfaceEngine.scope(room, it.scopeId)?.title ?: ""
+            }.thenBy { it.workCode })
+
+        if (general.isEmpty() && scoped.isEmpty()) return toast("Scegli prima le lavorazioni nella checklist")
 
         val layout = form()
-        info("Quantità proposte dalle misure inserite. Correggile quando serve. Prezzi a zero = da definire; non vengono inventati. Gli optional non entrano nel totale.", layout)
+        info("Una quantità per stanza, parete, soffitto o pavimento. Le superfici misurate propongono una quantità; " +
+            "puoi correggerla. Prezzi mai inventati, optional esclusi dal totale.", layout)
         val inputs = mutableListOf<QuickWorkInput>()
-        items.forEach { work ->
-            label(work.title + " · " + work.unit, true, layout)
-            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val q = numberField("Qtà " + work.unit, room.quantities[work.code] ?: SmartSurveyDraftV1.quantity(room, work))
-            val p = numberField("€ / " + work.unit, room.unitPrices[work.code] ?: 0.0)
-            line.addView(q, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(8) })
-            line.addView(p, LinearLayout.LayoutParams(0, dp(52), 1f))
-            layout.addView(line)
+
+        fun addInput(work: RoomWorkTemplate, assigned: SurveyScopedWorkV1?) {
+            val scopeName = if (assigned == null) "Tutto l'ambiente" else {
+                SurveySurfaceEngine.scope(room, assigned.scopeId)?.title ?: "Superficie da verificare"
+            }
+            label(scopeName + " · " + work.title + " · " + work.unit, true, layout)
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val q0 = if (assigned == null) SmartSurveyDraftV1.quantity(room, work)
+                else SurveySurfaceEngine.quantity(room, assigned, work)
+            val p0 = if (assigned == null) room.unitPrices[work.code] ?: 0.0 else assigned.unitPrice
+            val quantity = numberField("Qtà " + work.unit, q0)
+            val price = numberField("€ / " + work.unit, p0)
+            row.addView(quantity, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(8) })
+            row.addView(price, LinearLayout.LayoutParams(0, dp(52), 1f))
+            layout.addView(row)
             val optional = CheckBox(this).apply {
                 text = "Optional · fuori dal totale"
-                isChecked = work.code in room.options
+                isChecked = if (assigned == null) work.code in room.options else assigned.optional
                 textSize = 12f
             }
             layout.addView(optional)
-            inputs += QuickWorkInput(work, q, p, optional)
+            inputs += QuickWorkInput(work, assigned, quantity, price, optional)
         }
 
-        val scroller = ScrollView(this).apply { addView(layout) }
+        general.forEach { addInput(it, null) }
+        scoped.forEach { assignment -> catalog[assignment.workCode]?.let { addInput(it, assignment) } }
+
         AlertDialog.Builder(this)
             .setTitle(room.name + " · Quantità e prezzi")
-            .setView(scroller)
+            .setView(ScrollView(this).apply { addView(layout) })
             .setPositiveButton("Salva tutto", null)
             .setNegativeButton("Annulla", null)
             .create().apply {
@@ -647,15 +664,30 @@ class SmartSurveyActivity : AppCompatActivity() {
                             val quantity = amount(entry.quantity)
                             val price = amount(entry.price)
                             if (quantity == null || price == null) {
-                                return@setOnClickListener toast("Verifica quantità e prezzo di: " + entry.template.title)
+                                return@setOnClickListener toast(
+                                    "Verifica quantità e prezzo: " + entry.template.title
+                                )
                             }
                             updates += Triple(entry, quantity, price)
                         }
                         updates.forEach { (entry, quantity, price) ->
-                            val code = entry.template.code
-                            room.quantities[code] = quantity
-                            room.unitPrices[code] = price
-                            if (entry.optional.isChecked) room.options += code else room.options -= code
+                            val assignment = entry.assignment
+                            if (assignment == null) {
+                                room.quantities[entry.template.code] = quantity
+                                room.unitPrices[entry.template.code] = price
+                                if (entry.optional.isChecked) room.options += entry.template.code
+                                else room.options -= entry.template.code
+                            } else {
+                                // Se coincide con la geometria reale, lascia attivo
+                                // il collegamento dinamico alla superficie.
+                                val geometry = SurveySurfaceEngine.quantity(
+                                    room, assignment.copy(manualQuantity = null), entry.template
+                                )
+                                assignment.manualQuantity = if (kotlin.math.abs(quantity - geometry) < 0.001)
+                                    null else quantity
+                                assignment.unitPrice = price
+                                assignment.optional = entry.optional.isChecked
+                            }
                         }
                         persist()
                         dismiss()
