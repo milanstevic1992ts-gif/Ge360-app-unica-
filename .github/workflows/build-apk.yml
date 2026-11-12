@@ -6,6 +6,7 @@ on:
     branches:
       - feat/integrazione-rilievi-openplan3d-20261110
       - feat/motore-superfici-lavorazioni-20261112
+      - feat/preventivi-da-rilievo-flusso-lineare-20261112
 
 concurrency:
   group: ge360-apk-${{ github.ref }}
@@ -78,7 +79,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: GE360-App-Unica-Superfici-TEST
+          name: GE360-App-Unica-Rilievo-Preventivo-TEST
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
