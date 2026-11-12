@@ -338,10 +338,9 @@ object SmartSurveyDraftV1 {
             // Le voci riferite a una superficie sono righe autonome, con codice
             // SURFACE/ distinto dagli elementi di RoomPlanner. Non possono essere
             // attribuite anche all'intero ambiente: fail-safe contro doppioni.
-            require(SurveySurfaceEngine.checks(sr).none {
-                it.contains("doppio conteggio") || it.contains("duplicata") ||
-                    it.contains("inesistente") || it.contains("non valida")
-            }) { "Correggi le assegnazioni delle superfici di ${room.name} prima di creare la bozza" }
+            require(!SurveySurfaceEngine.hasFatalConflicts(sr)) {
+                "Correggi assegnazioni duplicate o superfici mancanti di ${room.name} prima di creare la bozza"
+            }
             sr.scopedWorks.forEach { assignment ->
                 val template = catalog[assignment.workCode]
                     ?: error("Lavorazione non valida: ${assignment.workCode}")
