@@ -497,7 +497,7 @@ class SmartSurveyActivity : AppCompatActivity() {
      * Checklist unica in stile form: ricerca istantanea, categorie e multi-spunta.
      * Non modifica i dati fino a "Applica": Annulla ripristina le selezioni.
      */
-    private fun checklist(room: SmartSurveyRoomV1, phase: Int?) {
+    private fun checklist(room: SmartSurveyRoomV1, phase: Int?, scopeId: String = SurveySurfaceEngine.ROOM) {
         // Le alternative specifiche del bagno si scelgono dai comandi esclusivi.
         val excludedBath = if (room.type == RoomTypes.BATHROOM) {
             setOf("DEM-PAV", "POSA-SU-POSA", "DEM-VASCA", "DEM-DOCCIA")
@@ -507,7 +507,10 @@ class SmartSurveyActivity : AppCompatActivity() {
             .distinctBy { it.code }
         if (templates.isEmpty()) return toast("Nessuna voce prevista per questa fase")
 
-        val chosen = room.workCodes.toMutableSet()
+        val chosen = if (scopeId == SurveySurfaceEngine.ROOM) room.workCodes.toMutableSet()
+            else room.scopedWorks.filter { it.scopeId == scopeId }.map { it.workCode }.toMutableSet()
+        val scopeName = SurveySurfaceEngine.scope(room, scopeId)?.title
+            ?: return toast("Questa superficie non esiste più")
         val layout = form()
         val search = EditText(this).apply {
             hint = "🔎 Cerca: stuccatura, SPC, massetto, finestra..."
@@ -563,15 +566,31 @@ class SmartSurveyActivity : AppCompatActivity() {
         showEntries("")
 
         AlertDialog.Builder(this)
-            .setTitle(room.name + " · " + (if (phase == null) "Tutte le lavorazioni" else SmartSurveyDraftV1.STEPS[phase]))
+            .setTitle(room.name + " · " + scopeName)
             .setView(layout)
             .setPositiveButton("Applica selezioni") { _, _ ->
                 val eligibleCodes = templates.map { it.code }.toSet()
-                room.workCodes.removeAll(eligibleCodes)
-                room.workCodes.addAll(chosen.intersect(eligibleCodes))
-                room.options.retainAll(room.workCodes)
-                persist()
-                render()
+                val selectedCodes = chosen.intersect(eligibleCodes)
+                val overlaps = SurveySurfaceEngine.overlappingCodes(room, scopeId, selectedCodes)
+                val apply: (Boolean) -> Unit = { replace ->
+                    runCatching {
+                        SurveySurfaceEngine.applySelection(
+                            room, scopeId, eligibleCodes, selectedCodes, replaceOverlaps = replace
+                        )
+                        room.options.retainAll(room.workCodes)
+                        persist()
+                        render()
+                    }.onFailure { toast(it.message ?: "Impossibile salvare le selezioni") }
+                }
+                if (overlaps.isEmpty()) apply(false)
+                else AlertDialog.Builder(this)
+                    .setTitle("Evitiamo di contare due volte?")
+                    .setMessage(overlaps.size.toString() + " lavorazioni sono già attribuite " +
+                        "all'intera stanza o a una superficie specifica. Vuoi SPOSTARLE su " +
+                        scopeName + " rimuovendo la vecchia assegnazione e i suoi importi?")
+                    .setPositiveButton("Sposta lavori") { _, _ -> apply(true) }
+                    .setNegativeButton("Mantieni come prima", null)
+                    .show()
             }
             .setNegativeButton("Annulla", null)
             .show()
