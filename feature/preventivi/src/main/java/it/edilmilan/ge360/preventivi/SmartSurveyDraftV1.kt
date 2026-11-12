@@ -247,6 +247,12 @@ object SmartSurveyDraftV1 {
                 if (room.floorChoice == UNKNOWN) add("${room.name}: confermare demolizione / sovrapposizione / mantenimento pavimento")
                 if (room.wetChoice == UNKNOWN) add("${room.name}: confermare vasca / doccia / nessuna")
             }
+            // Evita che i pacchetti siano addebitati insieme alle stesse opere
+            // analitiche: non eliminiamo nulla in automatico, chiediamo verifica.
+            if ("SPC-PACCHETTO" in room.workCodes &&
+                room.workCodes.any { it in setOf("SPC", "PAV-SPC", "DEM-PAV") }) {
+                add("${room.name}: pacchetto rimozione + posa SPC insieme a voci separate: verifica il doppio conteggio")
+            }
             val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
             val invalid = room.workCodes - catalog.keys
             if (invalid.isNotEmpty()) add("${room.name}: lavorazioni non valide per il tipo di ambiente: " + invalid.joinToString(", "))

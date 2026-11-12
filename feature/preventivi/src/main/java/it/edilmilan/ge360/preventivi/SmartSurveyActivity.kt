@@ -11,6 +11,8 @@ import android.widget.ProgressBar
 import it.edilmilan.ge360.core.common.ui.Ge360Brand
 import android.graphics.Typeface
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -328,6 +330,10 @@ class SmartSurveyActivity : AppCompatActivity() {
                 RoomWorkCatalog.forType(room.type).any { it.code == code && SmartSurveyDraftV1.phase(it) == phase }
             }
             label(room.name + " · " + total + " selezioni", true)
+            if (phase == 3) {
+                action("☑ CHECKLIST COMPLETA · TUTTE LE LAVORAZIONI") { checklist(room, null) }
+                info("Cerca un lavoro per nome e spuntalo. Le voci del capitolato e le lavorazioni specifiche sono tutte disponibili; nessun prezzo precompilato.")
+            }
             if (phase == 3) action("⚡ SUGGERISCI CHECKLIST STANDARD") {
                 val defaults = RoomWorkCatalog.forType(room.type)
                     .filter { it.enabledByDefault && it.code !in setOf("DEM-PAV", "POSA-SU-POSA", "DEM-VASCA", "DEM-DOCCIA") }
@@ -357,9 +363,10 @@ class SmartSurveyActivity : AppCompatActivity() {
                     ), room.wetChoice) { SmartSurveyDraftV1.setWet(room, it) }
                 }
             }
-            action("☑ Checklist " + room.name) { checklist(room, phase) }
+            action("☑ " + SmartSurveyDraftV1.STEPS[phase] + " · scegli lavori") { checklist(room, phase) }
             if (phase == 5) {
-                action("€ Quantità, prezzi e optional") { editPrices(room) }
+                action("€ COMPILA QUANTITÀ E PREZZI · TUTTO INSIEME") { quickPrices(room) }
+                action("€ Modifica una singola voce") { editPrices(room) }
                 action("＋ LAVORAZIONE LIBERA") { editManualWork(room, SmartSurveyManualWorkV1(), true) }
                 room.manualWorks.forEach { custom ->
                     action("✎ " + custom.name.ifBlank { "Lavorazione da completare" } +
@@ -385,26 +392,166 @@ class SmartSurveyActivity : AppCompatActivity() {
             .setNegativeButton("Annulla", null).show()
     }
 
-    private fun checklist(room: SmartSurveyRoomV1, phase: Int) {
-        val excluded = setOf("DEM-PAV", "POSA-SU-POSA", "DEM-VASCA", "DEM-DOCCIA")
+    /**
+     * Checklist unica in stile form: ricerca istantanea, categorie e multi-spunta.
+     * Non modifica i dati fino a "Applica": Annulla ripristina le selezioni.
+     */
+    private fun checklist(room: SmartSurveyRoomV1, phase: Int?) {
+        // Le alternative specifiche del bagno si scelgono dai comandi esclusivi.
+        val excludedBath = if (room.type == RoomTypes.BATHROOM) {
+            setOf("DEM-PAV", "POSA-SU-POSA", "DEM-VASCA", "DEM-DOCCIA")
+        } else emptySet()
         val templates = RoomWorkCatalog.forType(room.type)
-            .filter { SmartSurveyDraftV1.phase(it) == phase && (phase != 3 || it.code !in excluded) }
+            .filter { it.code !in excludedBath && (phase == null || SmartSurveyDraftV1.phase(it) == phase) }
+            .distinctBy { it.code }
         if (templates.isEmpty()) return toast("Nessuna voce prevista per questa fase")
-        val selected = templates.map { it.code in room.workCodes }.toBooleanArray()
-        AlertDialog.Builder(this)
-            .setTitle(room.name + " · " + SmartSurveyDraftV1.STEPS[phase])
-            .setMultiChoiceItems(templates.map { it.title }.toTypedArray(), selected) { _, index, checked ->
-                selected[index] = checked
+
+        val chosen = room.workCodes.toMutableSet()
+        val layout = form()
+        val search = EditText(this).apply {
+            hint = "🔎 Cerca: stuccatura, SPC, massetto, finestra..."
+            inputType = InputType.TYPE_CLASS_TEXT
+            isSingleLine = true
+        }
+        layout.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)))
+
+        val countLabel = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Ge360Brand.TextSecondary)
+            setPadding(dp(4), dp(7), dp(4), dp(10))
+        }
+        layout.addView(countLabel)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        layout.addView(ScrollView(this).apply { addView(list) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(430)))
+
+        fun showEntries(query: String) {
+            list.removeAllViews()
+            val normalized = query.trim().lowercase(Locale.ITALY)
+            val visible = templates.filter { t ->
+                normalized.isEmpty() ||
+                    listOf(t.title, t.category, t.description, t.code)
+                        .any { it.lowercase(Locale.ITALY).contains(normalized) }
             }
-            .setPositiveButton("Applica") { _, _ ->
-                templates.forEachIndexed { index, t ->
-                    if (selected[index]) room.workCodes += t.code else {
-                        room.workCodes -= t.code; room.options -= t.code
+            countLabel.text = "${chosen.count { code -> templates.any { it.code == code } }} selezionate · ${visible.size} visualizzate"
+            if (visible.isEmpty()) {
+                info("Nessuna voce trovata. Puoi aggiungere una lavorazione libera nel passo Finiture.", list)
+            }
+            visible.groupBy { it.category }.forEach { (category, works) ->
+                label(category.uppercase(Locale.ITALY), true, list)
+                works.forEach { work ->
+                    list.addView(CheckBox(this).apply {
+                        text = work.title + " · " + work.unit
+                        textSize = 14f
+                        minHeight = dp(52)
+                        isChecked = work.code in chosen
+                        setOnCheckedChangeListener { _, checked ->
+                            if (checked) chosen += work.code else chosen -= work.code
+                            countLabel.text = "${chosen.count { code -> templates.any { it.code == code } }} selezionate · ${visible.size} visualizzate"
+                        }
+                    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                }
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = showEntries(s?.toString().orEmpty())
+        })
+        showEntries("")
+
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · " + (if (phase == null) "Tutte le lavorazioni" else SmartSurveyDraftV1.STEPS[phase]))
+            .setView(layout)
+            .setPositiveButton("Applica selezioni") { _, _ ->
+                val eligibleCodes = templates.map { it.code }.toSet()
+                room.workCodes.removeAll(eligibleCodes)
+                room.workCodes.addAll(chosen.intersect(eligibleCodes))
+                room.options.retainAll(room.workCodes)
+                persist()
+                render()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private data class QuickWorkInput(
+        val template: RoomWorkTemplate,
+        val quantity: EditText,
+        val price: EditText,
+        val optional: CheckBox
+    )
+
+    /**
+     * Modulo rapido a scorrimento: quantità / prezzo / optional per tutte le
+     * lavorazioni selezionate, con UN SOLO salvataggio e controlli atomici.
+     */
+    private fun quickPrices(room: SmartSurveyRoomV1) {
+        val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
+        val items = room.workCodes.mapNotNull(catalog::get)
+            .sortedWith(compareBy<RoomWorkTemplate> { it.category }.thenBy { it.title })
+        if (items.isEmpty()) return toast("Scegli prima le lavorazioni nella checklist")
+
+        val layout = form()
+        info("Quantità proposte dalle misure inserite. Correggile quando serve. Prezzi a zero = da definire; non vengono inventati. Gli optional non entrano nel totale.", layout)
+        val inputs = mutableListOf<QuickWorkInput>()
+        items.forEach { work ->
+            label(work.title + " · " + work.unit, true, layout)
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val q = numberField("Qtà " + work.unit, room.quantities[work.code] ?: SmartSurveyDraftV1.quantity(room, work))
+            val p = numberField("€ / " + work.unit, room.unitPrices[work.code] ?: 0.0)
+            line.addView(q, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(8) })
+            line.addView(p, LinearLayout.LayoutParams(0, dp(52), 1f))
+            layout.addView(line)
+            val optional = CheckBox(this).apply {
+                text = "Optional · fuori dal totale"
+                isChecked = work.code in room.options
+                textSize = 12f
+            }
+            layout.addView(optional)
+            inputs += QuickWorkInput(work, q, p, optional)
+        }
+
+        val scroller = ScrollView(this).apply { addView(layout) }
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · Quantità e prezzi")
+            .setView(scroller)
+            .setPositiveButton("Salva tutto", null)
+            .setNegativeButton("Annulla", null)
+            .create().apply {
+                setOnShowListener {
+                    getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val updates = mutableListOf<Triple<QuickWorkInput, Double, Double>>()
+                        for (entry in inputs) {
+                            val quantity = amount(entry.quantity)
+                            val price = amount(entry.price)
+                            if (quantity == null || price == null) {
+                                return@setOnClickListener toast("Verifica quantità e prezzo di: " + entry.template.title)
+                            }
+                            updates += Triple(entry, quantity, price)
+                        }
+                        updates.forEach { (entry, quantity, price) ->
+                            val code = entry.template.code
+                            room.quantities[code] = quantity
+                            room.unitPrices[code] = price
+                            if (entry.optional.isChecked) room.options += code else room.options -= code
+                        }
+                        persist()
+                        dismiss()
+                        render()
                     }
                 }
-                persist(); render()
+                show()
             }
-            .setNegativeButton("Annulla", null).show()
+    }
+
+    private fun numberField(hint: String, value: Double): EditText = EditText(this).apply {
+        this.hint = hint
+        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        isSingleLine = true
+        textSize = 15f
+        setText(if (value > 0.0) fmt(value) else "")
     }
 
     private fun editPrices(room: SmartSurveyRoomV1) {

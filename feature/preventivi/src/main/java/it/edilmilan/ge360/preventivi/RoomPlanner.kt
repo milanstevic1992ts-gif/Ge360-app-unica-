@@ -97,7 +97,8 @@ data class RoomWorkTemplate(
     val basis: QuantityBasis,
     val category: String,
     val enabledByDefault: Boolean,
-    val references: List<String> = emptyList()
+    val references: List<String> = emptyList(),
+    val catalogCode: String? = null
 )
 
 object RoomWorkCatalog {
@@ -114,7 +115,7 @@ object RoomWorkCatalog {
         unit: String? = null
     ): RoomWorkTemplate {
         val e = requireNotNull(StandardWorkCatalog.byCode(capCode)) { "Voce capitolato mancante: $capCode" }
-        return RoomWorkTemplate(code, title ?: e.title, e.description, unit ?: e.unit, basis, e.group, enabled, e.references)
+        return RoomWorkTemplate(code, title ?: e.title, e.description, unit ?: e.unit, basis, e.group, enabled, e.references, e.code)
     }
 
     private fun custom(
@@ -234,13 +235,121 @@ object RoomWorkCatalog {
         cap("ACCESSO", "CAP-39", QuantityBasis.BODY, false)
     ) + commonEnd
 
-    fun forType(type: String): List<RoomWorkTemplate> = when (type) {
-        RoomTypes.BATHROOM -> bathroom
-        RoomTypes.KITCHEN -> kitchen
-        RoomTypes.ROOM -> room
-        RoomTypes.BALCONY -> balcony
-        else -> other
-    }.distinctBy { it.code }
+    /**
+     * Lavorazioni specifiche EDIL MILAN STEVIC, ricercabili nella checklist
+     * senza obbligare l'operatore a scriverle a mano durante il sopralluogo.
+     * Nessuna è preselezionata e nessuna riceve un prezzo automatico.
+     */
+    private val specialistExtras: List<RoomWorkTemplate> = listOf(
+        custom("DEM-INTONACO", "Rimozione intonaco e malte ammalorate",
+            "Rimozione controllata di intonaci e strati di malta incoerenti fino al supporto sano, pulizia e preparazione per il ripristino. Quantità da verificare anche dopo l'apertura delle parti degradate.",
+            "m²", QuantityBasis.WALLS, "Demolizioni e smaltimenti"),
+        custom("DEM-TRAMEZZA", "Demolizione tramezza non portante",
+            "Demolizione di partizione accertata come non strutturale, protezioni, raccolta delle macerie e ripristino preliminare dei raccordi. Verifiche tecniche e titoli edilizi ove necessari esclusi dalla presente voce.",
+            "m²", QuantityBasis.WALLS, "Demolizioni e smaltimenti"),
+        custom("DEM-BATTISCOPA", "Rimozione battiscopa esistente",
+            "Distacco controllato del battiscopa, pulizia delle fasce e preparazione del fondo per il nuovo zoccolino.",
+            "ml", QuantityBasis.PERIMETER, "Demolizioni e smaltimenti"),
+        custom("AUTOLIV", "Autolivellante per pavimenti",
+            "Controllo del supporto, preparazione e primer compatibile, applicazione di autolivellante per regolarizzare la planarità in funzione dello spessore necessario.",
+            "m²", QuantityBasis.FLOOR, "Massetti e supporti"),
+        custom("SPC-PACCHETTO", "Rimozione pavimento e posa SPC · pacchetto",
+            "Rimozione del pavimento previsto e posa della nuova pavimentazione SPC. Voce a pacchetto: non sommare nuovamente rimozione e posa già comprese.",
+            "m²", QuantityBasis.FLOOR, "Pavimenti e rivestimenti"),
+        custom("PARQUET-LEV", "Levigatura e finitura parquet",
+            "Preparazione, levigatura progressiva del parquet, trattamento di finitura concordato e pulizia sommaria.",
+            "m²", QuantityBasis.FLOOR, "Pavimenti e rivestimenti"),
+        custom("PARQUET-POSA", "Posa parquet prefinito",
+            "Controllo del supporto, posa del parquet prefinito secondo il sistema previsto, tagli e raccordi di finitura.",
+            "m²", QuantityBasis.FLOOR, "Pavimenti e rivestimenti"),
+        custom("RAS-ARM", "Rasatura armata con rete",
+            "Preparazione del supporto, rasante con rete di armatura e successive mani di regolarizzazione e finitura.",
+            "m²", QuantityBasis.WALLS_CEILING, "Pitture e finiture"),
+        custom("STUCCO-Q3Q4", "Stuccatura cartongesso Q3 / Q4",
+            "Trattamento dei giunti, rasature estese e carteggiatura del cartongesso fino al livello di finitura Q3 o Q4 concordato; pitturazione da computare separatamente se non inclusa.",
+            "m²", QuantityBasis.WALLS_CEILING, "Pitture e finiture"),
+        custom("PARASPIGOLI", "Profili e paraspigoli",
+            "Fornitura e posa dei profili di rinforzo sugli spigoli interessati, fissaggio, rasatura e raccordi.",
+            "ml", QuantityBasis.MANUAL, "Pitture e finiture"),
+        custom("VELETTA", "Veletta in cartongesso copritubi",
+            "Realizzazione di veletta tecnica con orditura e lastre, chiusura tubazioni a vista, trattamento dei giunti e preparazione alla pittura; predisposizioni impiantistiche da coordinare.",
+            "ml", QuantityBasis.MANUAL, "Cartongesso"),
+        custom("COPRI-CALDAIA", "Copertura caldaia e vani tecnici",
+            "Realizzazione di chiusura tecnica con accessi di ispezione e aerazione ove prescritti dal produttore e dalla normativa applicabile.",
+            "corpo", QuantityBasis.BODY, "Cartongesso"),
+        custom("ISOL-ACUST", "Isolamento acustico in lana di roccia",
+            "Posa di materiale isolante nelle intercapedini previste del sistema a secco; quantità e prestazione da verificare in funzione di stratigrafia e dettagli esecutivi.",
+            "m²", QuantityBasis.MANUAL, "Cartongesso"),
+        custom("BARR-VAP", "Barriera o freno al vapore",
+            "Posa dello strato di controllo del vapore se richiesto dalla stratigrafia verificata, sigillatura dei sormonti e raccordi.",
+            "m²", QuantityBasis.MANUAL, "Cartongesso"),
+        custom("CARTA-PARATI", "Posa carta da parati",
+            "Preparazione del fondo idoneo, tracciamento e posa della carta da parati con rifilo e raccordo dei teli; materiale da definire.",
+            "m²", QuantityBasis.WALLS, "Pitture e finiture"),
+        custom("SERR-FINESTRA", "Ripristino murario vano finestra",
+            "Ripristino di spallette, sottobancale, architrave e finiture murarie interessate dall'installazione del falso telaio o serramento, secondo interventi necessari.",
+            "cad.", QuantityBasis.MANUAL, "Serramenti e aperture"),
+        custom("SERR-PORTAFINESTRA", "Ripristino murario vano portafinestra",
+            "Ripristino delle spallette e delle finiture murarie del vano portafinestra dopo installazione del telaio o serramento.",
+            "cad.", QuantityBasis.MANUAL, "Serramenti e aperture"),
+        custom("CAROTAGGIO", "Carotaggio per passaggio impianti",
+            "Esecuzione di foro con carotatrice su elemento verificato e in posizione concordata; verifica preliminare di eventuali strutture o sottoservizi.",
+            "cad.", QuantityBasis.MANUAL, "Murature e ripristini"),
+        custom("ARCHITRAVE", "Architrave e modifica apertura",
+            "Preparazione del vano e posa del sostegno previsto, subordinata alle verifiche progettuali e strutturali ove necessarie.",
+            "cad.", QuantityBasis.MANUAL, "Murature e ripristini"),
+        custom("NICCHIA-RAD", "Nicchia radiatore e ripristino parete",
+            "Apertura o modifica di nicchia non strutturale, opere murarie di raccordo e ripristino delle finiture.",
+            "cad.", QuantityBasis.MANUAL, "Murature e ripristini"),
+        custom("IMP-IDRAULICO", "Interventi idraulici · da coordinare",
+            "Predisposizione o modifica di punti acqua e scarico secondo il progetto dell'impiantista incaricato; importo e responsabilità da confermare.",
+            "cad.", QuantityBasis.MANUAL, "Impianti e predisposizioni"),
+        custom("IMP-ELETTRICO", "Interventi elettrici · da coordinare",
+            "Predisposizione o modifica di punti luce, prese e collegamenti secondo il progetto dell'elettricista incaricato; importo da confermare.",
+            "cad.", QuantityBasis.MANUAL, "Impianti e predisposizioni"),
+        custom("IMP-SPOT", "Predisposizione corrugati per faretti",
+            "Predisposizione dei percorsi e dei punti di uscita dei corrugati nei punti concordati prima della chiusura del controsoffitto; collegamenti elettrici da coordinare.",
+            "cad.", QuantityBasis.MANUAL, "Impianti e predisposizioni"),
+        custom("IMP-RADIATORE", "Spostamento o adattamento radiatore",
+            "Opere murarie e coordinamento dello spostamento delle tubazioni e dell'elemento scaldante da parte dell'impiantista.",
+            "cad.", QuantityBasis.MANUAL, "Impianti e predisposizioni"),
+        custom("IMP-CLIMA", "Predisposizioni e ripristini climatizzatore",
+            "Apertura e successiva chiusura delle tracce necessarie alle linee frigorifere o scarichi condensa, in accordo con l'installatore incaricato.",
+            "ml", QuantityBasis.MANUAL, "Impianti e predisposizioni")
+    )
+
+    /**
+     * Tutte le 42 voci di capitolato restano disponibili in OGNI ambiente.
+     * Quelle già rappresentate da una voce guidata non vengono duplicate.
+     * Per le voci generiche non ipotizziamo mai una superficie: solo 1 a corpo
+     * quando pertinente, altrimenti quantità esplicita richiesta all'utente.
+     */
+    fun forType(type: String): List<RoomWorkTemplate> {
+        val base = when (type) {
+            RoomTypes.BATHROOM -> bathroom
+            RoomTypes.KITCHEN -> kitchen
+            RoomTypes.ROOM -> room
+            RoomTypes.BALCONY -> balcony
+            else -> other
+        }
+        val presentCatalogCodes = base.mapNotNull { it.catalogCode }.toSet()
+        val complements = StandardWorkCatalog.entries
+            .filterNot { it.code in presentCatalogCodes }
+            .map { entry ->
+                RoomWorkTemplate(
+                    code = "STD-" + entry.code,
+                    title = entry.title,
+                    description = entry.description,
+                    unit = entry.unit,
+                    basis = if (entry.unit == "corpo" || entry.unit == "forfait") QuantityBasis.BODY else QuantityBasis.MANUAL,
+                    category = entry.group,
+                    enabledByDefault = false,
+                    references = entry.references,
+                    catalogCode = entry.code
+                )
+            }
+        return (base + specialistExtras + complements).distinctBy { it.code }
+    }
 
     fun itemCode(roomId: String, workCode: String) = "$ITEM_PREFIX$roomId/$workCode"
     fun bodyItemCode(roomId: String) = itemCode(roomId, BODY_CODE)
