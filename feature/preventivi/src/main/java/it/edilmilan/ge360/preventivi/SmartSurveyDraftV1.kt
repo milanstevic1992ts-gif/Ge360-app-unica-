@@ -264,8 +264,9 @@ object SmartSurveyDraftV1 {
             }
             // Evita che i pacchetti siano addebitati insieme alle stesse opere
             // analitiche: non eliminiamo nulla in automatico, chiediamo verifica.
-            if ("SPC-PACCHETTO" in room.workCodes &&
-                room.workCodes.any { it in setOf("SPC", "PAV-SPC", "DEM-PAV") }) {
+            val allCodes = room.workCodes + room.scopedWorks.map { it.workCode }
+            if ("SPC-PACCHETTO" in allCodes &&
+                allCodes.any { it in setOf("SPC", "PAV-SPC", "DEM-PAV") }) {
                 add("${room.name}: pacchetto rimozione + posa SPC insieme a voci separate: verifica il doppio conteggio")
             }
             val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
