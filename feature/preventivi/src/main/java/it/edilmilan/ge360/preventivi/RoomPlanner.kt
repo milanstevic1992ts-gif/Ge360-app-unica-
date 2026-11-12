@@ -301,10 +301,10 @@ object RoomWorkCatalog {
 
     fun referencesFor(items: List<EstimateItem>): List<String> {
         val refs = mutableListOf<String>()
+        val templates = RoomTypes.ALL.flatMap { forType(it) }.associateBy { it.code }
         items.filter { isRoomWorkCode(it.priceListCode) }.forEach { item ->
             val workCode = item.priceListCode.substringAfterLast('/')
-            val template = (bathroom + kitchen + room + balcony + other).firstOrNull { it.code == workCode }
-            if (template != null) refs += template.references
+            templates[workCode]?.let { refs += it.references }
         }
         return refs.distinct()
     }
