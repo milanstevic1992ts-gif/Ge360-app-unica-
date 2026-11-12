@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feat/integrazione-rilievi-openplan3d-20261110
+      - feat/motore-superfici-lavorazioni-20261112
 
 concurrency:
   group: ge360-apk-${{ github.ref }}
@@ -77,7 +78,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: GE360-Rilievi-Libero-TEST
+          name: GE360-App-Unica-Superfici-TEST
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
