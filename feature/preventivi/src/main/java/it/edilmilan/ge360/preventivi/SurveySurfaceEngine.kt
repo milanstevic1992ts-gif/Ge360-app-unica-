@@ -184,10 +184,34 @@ object SurveySurfaceEngine {
     fun hasWorks(room: SmartSurveyRoomV1): Boolean =
         room.workCodes.isNotEmpty() || room.scopedWorks.isNotEmpty() || room.manualWorks.isNotEmpty()
 
+    /**
+     * Validazione strutturale indipendente dai testi di avviso, per non
+     * convertire in preventivo righe orfane o assegnate due volte.
+     */
+    fun hasFatalConflicts(room: SmartSurveyRoomV1): Boolean {
+        val wallIds = room.wallsList.map { it.id }
+        if (wallIds.size != wallIds.toSet().size) return true
+        if (wallIds.any { it.isBlank() || it in setOf(ROOM, FLOOR, CEILING) }) return true
+        val codes = RoomWorkCatalog.forType(room.type).map { it.code }.toSet()
+        val keys = mutableSetOf<Pair<String, String>>()
+        return room.scopedWorks.any { work ->
+            scope(room, work.scopeId) == null || work.scopeId == ROOM ||
+                work.workCode !in codes || work.workCode in room.workCodes ||
+                !keys.add(work.scopeId to work.workCode)
+        }
+    }
+
     fun checks(room: SmartSurveyRoomV1): List<String> = buildList {
         val codes = RoomWorkCatalog.forType(room.type).associateBy { it.code }
         val wallIds = room.wallsList.map { it.id }
         if (wallIds.size != wallIds.distinct().size) add("${room.name}: identificativi di parete duplicati")
+        if (wallIds.any { it.isBlank() || it in setOf(ROOM, FLOOR, CEILING) })
+            add("${room.name}: codice identificativo parete riservato o mancante")
+        val measuredWalls = room.wallsList.sumOf { it.netArea() }
+        if (room.walls() > 0.0 && measuredWalls > room.walls() + 0.25) {
+            add("${room.name}: somma delle pareti censite " + round2(measuredWalls) +
+                " m² superiore alla superficie totale dichiarata " + round2(room.walls()) + " m²: verifica")
+        }
         room.wallsList.forEach { wall ->
             if (wall.width <= 0.0 || wall.height <= 0.0) add("${room.name} · ${wall.name}: misure parete incomplete")
             if (wall.openingsArea > wall.grossArea())
