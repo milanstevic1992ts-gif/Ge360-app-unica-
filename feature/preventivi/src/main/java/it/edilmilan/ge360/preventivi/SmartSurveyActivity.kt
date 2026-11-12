@@ -357,7 +357,7 @@ class SmartSurveyActivity : AppCompatActivity() {
                     ), room.wetChoice) { SmartSurveyDraftV1.setWet(room, it) }
                 }
             }
-            action("☑ Checklist " + room.name) { checklist(room, phase) }
+            action("☑ CERCA E SPUNTA LAVORAZIONI · " + room.name) { checklist(room, phase) }
             if (phase == 5) {
                 action("€ Quantità, prezzi e optional") { editPrices(room) }
                 action("＋ LAVORAZIONE LIBERA") { editManualWork(room, SmartSurveyManualWorkV1(), true) }
@@ -390,21 +390,109 @@ class SmartSurveyActivity : AppCompatActivity() {
         val templates = RoomWorkCatalog.forType(room.type)
             .filter { SmartSurveyDraftV1.phase(it) == phase && (phase != 3 || it.code !in excluded) }
         if (templates.isEmpty()) return toast("Nessuna voce prevista per questa fase")
-        val selected = templates.map { it.code in room.workCodes }.toBooleanArray()
-        AlertDialog.Builder(this)
-            .setTitle(room.name + " · " + SmartSurveyDraftV1.STEPS[phase])
-            .setMultiChoiceItems(templates.map { it.title }.toTypedArray(), selected) { _, index, checked ->
-                selected[index] = checked
+
+        // Un solo pannello: ricerca immediata, categorie e spunta grande per uso in cantiere.
+        // I dati vengono aggiornati soltanto al tocco su APPLICA, mai mentre si filtra.
+        val pending = room.workCodes.toMutableSet()
+        val holder = form()
+        val search = EditText(this).apply {
+            hint = "Cerca: cartongesso, autolivellante, vasca..."
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            textSize = 15f
+        }
+        holder.addView(search, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+
+        val filters = listOf("Tutte le categorie", "Solo selezionate") +
+            templates.map { it.category }.distinct().sorted()
+        val category = Spinner(this).apply {
+            adapter = ArrayAdapter(this@SmartSurveyActivity, android.R.layout.simple_spinner_dropdown_item, filters)
+        }
+        holder.addView(category, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+
+        val selectedLabel = TextView(this).apply {
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Ge360Brand.ForestDark)
+            setPadding(dp(6), dp(4), dp(6), dp(8))
+        }
+        holder.addView(selectedLabel)
+
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            addView(list)
+            isFillViewport = true
+        }
+        val availableHeight = (resources.displayMetrics.heightPixels * 0.46).toInt()
+        holder.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, minOf(dp(370), availableHeight)
+        ))
+
+        fun refreshChoices() {
+            val query = search.text.toString().trim()
+            val categoryName = filters[category.selectedItemPosition.coerceAtLeast(0)]
+            val matches = templates.filter { template ->
+                (categoryName == "Tutte le categorie" ||
+                    (categoryName == "Solo selezionate" && template.code in pending) ||
+                    categoryName == template.category) &&
+                    (query.isBlank() || listOf(template.title, template.category, template.description)
+                        .any { it.contains(query, ignoreCase = true) })
             }
-            .setPositiveButton("Applica") { _, _ ->
-                templates.forEachIndexed { index, t ->
-                    if (selected[index]) room.workCodes += t.code else {
-                        room.workCodes -= t.code; room.options -= t.code
+            list.removeAllViews()
+            selectedLabel.text = "${templates.count { it.code in pending }} selezionate · ${matches.size} visibili"
+            if (matches.isEmpty()) {
+                list.addView(TextView(this).apply {
+                    text = "Nessuna lavorazione trovata. Cambia categoria o cerca un altro termine."
+                    setPadding(dp(6), dp(16), dp(6), dp(16))
+                })
+            } else {
+                matches.forEach { template ->
+                    list.addView(CheckBox(this).apply {
+                        text = template.title + "\n" + template.category + " · " + template.unit
+                        textSize = 14f
+                        minHeight = dp(56)
+                        isChecked = template.code in pending
+                        setOnCheckedChangeListener { _, checked ->
+                            if (checked) pending += template.code else pending -= template.code
+                            selectedLabel.text = "${templates.count { it.code in pending }} selezionate · ${matches.size} visibili"
+                        }
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    ))
+                }
+            }
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = refreshChoices()
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        category.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long
+            ) = refreshChoices()
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+        refreshChoices()
+
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · Lavorazioni da spuntare")
+            .setView(holder)
+            .setPositiveButton("APPLICA") { _, _ ->
+                templates.forEach { t ->
+                    if (t.code in pending) room.workCodes += t.code
+                    else {
+                        room.workCodes -= t.code
+                        room.options -= t.code
+                        // Quantità/prezzo precedenti restano in bozza: se l'utente
+                        // rispunta la voce non perde le misure già inserite.
                     }
                 }
-                persist(); render()
+                persist()
+                render()
             }
-            .setNegativeButton("Annulla", null).show()
+            .setNegativeButton("Annulla", null)
+            .show()
     }
 
     private fun editPrices(room: SmartSurveyRoomV1) {
