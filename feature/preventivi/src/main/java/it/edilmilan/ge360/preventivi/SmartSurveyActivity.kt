@@ -140,7 +140,7 @@ class SmartSurveyActivity : AppCompatActivity() {
             setPadding(dp(4), dp(2), dp(4), dp(24))
         }
         root.addView(ScrollView(this).apply {
-            fillViewport = true
+            isFillViewport = true
             addView(body)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         val footer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
