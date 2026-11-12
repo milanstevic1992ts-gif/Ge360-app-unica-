@@ -250,6 +250,27 @@ object SmartSurveyDraftV1 {
             val catalog = RoomWorkCatalog.forType(room.type).associateBy { it.code }
             val invalid = room.workCodes - catalog.keys
             if (invalid.isNotEmpty()) add("${room.name}: lavorazioni non valide per il tipo di ambiente: " + invalid.joinToString(", "))
+
+            // Avvisi soltanto: due lavorazioni possono essere corrette se su
+            // superfici diverse; non decidiamo al posto dell'artigiano.
+            val qLevels = setOf("SPEC-STUCCO-Q2", "SPEC-STUCCO-Q3", "SPEC-STUCCO-Q4")
+            if (room.workCodes.intersect(qLevels).size > 1) {
+                add("${room.name}: più livelli Q2/Q3/Q4 selezionati; verifica che le superfici siano distinte")
+            }
+            val paints = setOf(
+                "SPEC-PITT-LAV-BIANCA", "SPEC-PITT-LAV-COLORE",
+                "SPEC-PITT-TRASPIRANTE", "SPEC-PITT-ANTIMUFFA"
+            )
+            if (room.workCodes.intersect(paints).size > 1) {
+                add("${room.name}: più cicli di pittura selezionati; evita di conteggiare due volte le stesse pareti")
+            }
+            if (room.workCodes.any { it in paints } && room.workCodes.any { it in setOf("PITTURA", "CAT-CAP-09") }) {
+                add("${room.name}: pittura generica e specifica insieme; verifica eventuale doppio conteggio")
+            }
+            if ("SPEC-RAS-ARMATA" in room.workCodes && room.workCodes.any { it in setOf("RAS-ARM", "RASATURA") }) {
+                add("${room.name}: rasatura armata e altra rasatura selezionate; verifica i cicli realmente distinti")
+            }
+
             room.workCodes.forEach workLoop@ { code ->
                 val template = catalog[code] ?: return@workLoop
                 if (quantity(room, template) <= 0) add("${room.name} · ${template.title}: quantità da inserire")
