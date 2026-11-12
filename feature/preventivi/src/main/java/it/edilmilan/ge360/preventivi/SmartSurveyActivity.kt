@@ -240,7 +240,10 @@ class SmartSurveyActivity : AppCompatActivity() {
                 val newType = type.selectedItem.toString()
                 val newName = name.text.toString().trim().ifBlank { "Ambiente" }
                 val allowed = RoomWorkCatalog.forType(newType).map { it.code }.toSet()
-                val toRemove = if (newType != room.type) room.workCodes.filter { it !in allowed } else emptyList()
+                val toRemove = if (newType != room.type)
+                    room.workCodes.filter { it !in allowed } +
+                        room.scopedWorks.filter { it.workCode !in allowed }.map { it.workCode }
+                else emptyList()
                 val applyChange: () -> Unit = {
                     room.name = newName
                     if (newType != room.type) {
@@ -248,6 +251,7 @@ class SmartSurveyActivity : AppCompatActivity() {
                         room.unitPrices.keys.retainAll(allowed)
                         room.quantities.keys.retainAll(allowed)
                         room.options.retainAll(allowed)
+                        room.scopedWorks.removeAll { it.workCode !in allowed }
                         if (newType != RoomTypes.BATHROOM) {
                             room.floorChoice = SmartSurveyDraftV1.UNKNOWN
                             room.wetChoice = SmartSurveyDraftV1.UNKNOWN
@@ -282,6 +286,12 @@ class SmartSurveyActivity : AppCompatActivity() {
         survey.rooms.forEach { room ->
             val summary = "${room.name} · pav. ${fmt(room.floor())} m² · pareti ${fmt(room.walls())} m²"
             action(summary) { editMeasures(room) }
+            action("🧱 PARETI DI " + room.name.uppercase(Locale.ITALY) +
+                " · " + room.wallsList.size + " registrate") { manageWalls(room) }
+            if (room.wallsList.isNotEmpty()) info(
+                "Pareti censite: " + fmt(room.wallsList.sumOf { it.netArea() }) +
+                    " m² netti (non sostituiscono automaticamente i m² totali dell'ambiente)."
+            )
         }
         if (survey.rooms.isEmpty()) action("+ Aggiungi ambiente") { survey.step = 1; persist(); render() }
     }
@@ -319,6 +329,93 @@ class SmartSurveyActivity : AppCompatActivity() {
             }
     }
 
+    /** Nome + dimensioni + aperture della parete, conservando l'UUID tra i rilievi. */
+    private fun manageWalls(room: SmartSurveyRoomV1) {
+        val labels = room.wallsList.map { wall ->
+            "🧱 ${wall.name} · ${fmt(wall.netArea())} m² netti · " +
+                room.scopedWorks.count { it.scopeId == wall.id } + " lavorazioni"
+        } + "＋ AGGIUNGI PARETE"
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · pareti")
+            .setItems(labels.toTypedArray()) { _, index ->
+                if (index == room.wallsList.size) {
+                    editWall(room, SurveyWallV1(name = "Parete " + (room.wallsList.size + 1)), true)
+                } else editWall(room, room.wallsList[index], false)
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun editWall(room: SmartSurveyRoomV1, wall: SurveyWallV1, isNew: Boolean) {
+        val layout = form()
+        val name = input("Nome parete (es. Parete finestra / Parete 1)", wall.name, holder = layout)
+        val width = number("Lunghezza parete (m)", wall.width, layout)
+        val height = number("Altezza parete (m)", if (wall.height > 0.0) wall.height else room.height, layout)
+        val openings = number("Aperture da sottrarre (m²) · facoltativo", wall.openingsArea, layout)
+        val note = input("Note e particolarità della parete", wall.note, true, layout)
+        info("Area netta parete = lunghezza × altezza − aperture misurate. " +
+            "Le aperture non sono mai dedotte in automatico.", layout)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (isNew) "Nuova parete · " + room.name else "Modifica · " + wall.name)
+            .setView(ScrollView(this).apply { addView(layout) })
+            .setPositiveButton("Salva parete", null)
+            .setNegativeButton("Annulla", null)
+            .apply { if (!isNew) setNeutralButton("Elimina parete", null) }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val w = amount(width)
+                val h = amount(height)
+                val o = amount(openings)
+                if (w == null || h == null || o == null || w <= 0 || h <= 0 || o >= w * h) {
+                    return@setOnClickListener toast("Controlla lunghezza, altezza e aperture (minori dell'area lorda)")
+                }
+                wall.name = name.text.toString().trim().ifBlank { "Parete " + (room.wallsList.size + 1) }
+                wall.width = w; wall.height = h; wall.openingsArea = o
+                wall.note = note.text.toString().trim()
+                if (isNew) room.wallsList += wall
+                persist()
+                dialog.dismiss()
+                render()
+            }
+            if (!isNew) dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                AlertDialog.Builder(this@SmartSurveyActivity)
+                    .setTitle("Eliminare " + wall.name + "?")
+                    .setMessage("Verranno eliminate anche le " +
+                        room.scopedWorks.count { it.scopeId == wall.id } +
+                        " lavorazioni assegnate a questa parete. Gli altri locali non cambiano.")
+                    .setPositiveButton("Elimina") { _, _ ->
+                        SurveySurfaceEngine.removeWall(room, wall.id)
+                        persist()
+                        dialog.dismiss()
+                        render()
+                    }.setNegativeButton("Annulla", null).show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun chooseWorkSurface(room: SmartSurveyRoomV1) {
+        val scopes = SurveySurfaceEngine.scopes(room)
+        val options = scopes.map { scope ->
+            val count = if (scope.id == SurveySurfaceEngine.ROOM) room.workCodes.size
+            else room.scopedWorks.count { it.scopeId == scope.id }
+            "${scope.title} · ${count} lavori"
+        } + "＋ Aggiungi una nuova parete"
+        AlertDialog.Builder(this)
+            .setTitle(room.name + " · DOVE si eseguono i lavori?")
+            .setItems(options.toTypedArray()) { _, index ->
+                if (index == scopes.size) {
+                    editWall(room, SurveyWallV1(name = "Parete " + (room.wallsList.size + 1)), true)
+                } else {
+                    checklist(room, null, scopes[index].id)
+                }
+            }
+            .setNegativeButton("Indietro", null)
+            .show()
+    }
+
     private fun stepWorks(phase: Int) {
         info(when (phase) {
             3 -> "Demolizioni: seleziona ciò che è previsto. Per il bagno scegli alternative esclusive; non vengono assunte automaticamente."
@@ -329,8 +426,12 @@ class SmartSurveyActivity : AppCompatActivity() {
             val total = room.workCodes.count { code ->
                 RoomWorkCatalog.forType(room.type).any { it.code == code && SmartSurveyDraftV1.phase(it) == phase }
             }
-            label(room.name + " · " + total + " selezioni", true)
+            label(room.name + " · " + total + " selezioni · " +
+                room.scopedWorks.size + " lavori su superfici", true)
             if (phase == 3) {
+                action("🧱 DOVE LAVORIAMO? · Stanza / Parete / Soffitto / Pavimento") {
+                    chooseWorkSurface(room)
+                }
                 action("☑ CHECKLIST COMPLETA · TUTTE LE LAVORAZIONI") { checklist(room, null) }
                 info("Cerca un lavoro per nome e spuntalo. Le voci del capitolato e le lavorazioni specifiche sono tutte disponibili; nessun prezzo precompilato.")
             }
@@ -727,10 +828,13 @@ class SmartSurveyActivity : AppCompatActivity() {
         label(survey.clientName.ifBlank { "Cliente non indicato" }, true)
         label(survey.title.ifBlank { "Intervento senza titolo" })
         label("Ambienti: " + survey.rooms.size + " · Foto locali: " + survey.photoFiles.size)
-        val count = survey.rooms.sumOf { it.workCodes.size + it.manualWorks.size }
+        val count = survey.rooms.sumOf { it.workCodes.size + it.scopedWorks.size + it.manualWorks.size }
         label("Lavorazioni selezionate: " + count, true)
         survey.rooms.forEach { room ->
-            label("• " + room.name + " · pav. " + fmt(room.floor()) + " m² · pareti " + fmt(room.walls()) + " m²")
+            label("• " + room.name + " · pav. " + fmt(room.floor()) +
+                " m² · pareti " + fmt(room.walls()) +
+                " m² · " + room.wallsList.size + " pareti nominate · " +
+                room.scopedWorks.size + " lavori per superficie")
         }
         val warnings = SmartSurveyDraftV1.checks(survey)
         label("Controlli da completare: " + warnings.size, true)
