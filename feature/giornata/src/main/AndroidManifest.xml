@@ -8,6 +8,9 @@
             android:name=".DailyWorkActivity"
             android:exported="false" />
         <activity
+            android:name=".EveningReportActivity"
+            android:exported="false" />
+        <activity
             android:name=".JobsiteLaborActivity"
             android:exported="false" />
         <activity

@@ -30,6 +30,7 @@ import it.edilmilan.ge360.core.common.ui.ge360Badge
 import it.edilmilan.ge360.galleria.GalleryActivity
 import it.edilmilan.ge360.galleria.GalleryStore
 import it.edilmilan.ge360.giornata.DailyStore
+import it.edilmilan.ge360.giornata.EveningReportActivity
 import it.edilmilan.ge360.giornata.CompensationActivity
 import it.edilmilan.ge360.giornata.JobsiteLaborActivity
 import it.edilmilan.ge360.giornata.laborDayCostForJobsite
@@ -135,6 +136,14 @@ class JobsiteHubActivity : AppCompatActivity() {
         body.addView(summaryContainer)
 
         body.addView(sectionTitle("OPERATIVO", "Le attività che servono durante il lavoro."))
+        body.addView(actionCard(
+            ActionSpec("📝", "RAPPORTINO SERALE", "Lavori fatti oggi, domani e imprevisti · salvato qui") {
+                openContext(EveningReportActivity::class.java)
+            }
+        ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(82)).apply {
+            bottomMargin = dp(10)
+        })
+
         body.addView(actionRow(
             ActionSpec("✅", "Cronologia / lavori", "Checklist, fasi e attività registrate") { openContext(JobsiteCenterActivity::class.java) },
             ActionSpec("👷", "Ore / manodopera", "Calendario, operatori e costo per giornata") { openContext(JobsiteLaborActivity::class.java) }
