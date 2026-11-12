@@ -484,8 +484,8 @@ class SmartSurveyActivity : AppCompatActivity() {
                     else {
                         room.workCodes -= t.code
                         room.options -= t.code
-                        room.quantities.remove(t.code)
-                        room.unitPrices.remove(t.code)
+                        // Quantità/prezzo precedenti restano in bozza: se l'utente
+                        // rispunta la voce non perde le misure già inserite.
                     }
                 }
                 persist()
